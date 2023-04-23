@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 lazy_static = "1.4.0"
 openssl = "0.10.50"
-base64 = "0.21.0"
 
 futures = "0.3.28"
 tokio = { version = "1.27.0", features = ["full", "io-util"] }
@@ -14,4 +13,5 @@ tokio-util = { version = "0.7.7", features = ["codec"] }
 
 bytes = "1.4.0"
 rtsp-types = "0.0.5"
-tower = { version = "0.4.13", features = ["util", "full"] }
+sdp-types = "0.1.5"
+tower = { version = "0.4.13", features = ["util"] }
