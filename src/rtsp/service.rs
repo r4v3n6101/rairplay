@@ -1,42 +1,35 @@
 use std::{
     convert::Infallible,
+    future::ready,
     pin::Pin,
+    sync::Mutex,
     task::{Context, Poll},
 };
 
-use futures::{Future, FutureExt};
+use futures::Future;
 use rtsp_types::{
-    headers::{Public, Transports, CSEQ, SERVER},
+    headers::{Public, Transports, CSEQ},
     Empty, Method, Request, Response, StatusCode, Version,
 };
 use sdp_types::Session;
 use tower::Service;
+use tracing::{debug, error, info, warn};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default)]
+struct State {
+    session: Option<Session>,
+}
+
+#[derive(Debug, Default)]
 pub struct RtspService {
-    name: String,
-}
-
-impl Default for RtspService {
-    fn default() -> Self {
-        Self {
-            name: "AirTunes/130.14".into(),
-            //session: None,
-        }
-    }
-}
-
-impl RtspService {
-    pub fn name(self, name: String) -> Self {
-        Self { name, ..self }
-    }
+    state: Mutex<State>,
 }
 
 impl<I> Service<Request<I>> for RtspService
 where
     I: AsRef<[u8]> + 'static,
 {
-    type Response = Response<Vec<u8>>;
+    type Response = Response<Empty>;
     type Error = Infallible;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
 
@@ -45,63 +38,63 @@ where
     }
 
     fn call(&mut self, req: Request<I>) -> Self::Future {
-        Box::pin(process_request(req, self.name.clone()).map(Ok))
-    }
-}
+        let Some(cseq) = req.header(&CSEQ).cloned() else {
+            error!("CSEQ not present in headers");
 
-async fn process_request<B: AsRef<[u8]>>(
-    req: Request<B>,
-    service_name: String,
-) -> Response<Vec<u8>> {
-    let Some(cseq) = req.header(&CSEQ).cloned() else {
-        // TODO : trace cseq not present
-        return Response::builder(Version::V1_0, StatusCode::HeaderFieldNotValidForResource).build(Vec::new());
-    };
+            return Box::pin(ready(Ok(Response::builder(Version::V1_0, StatusCode::NotFound).empty())));
+        };
 
-    let mut resp = match req.method() {
-        Method::Options => Response::builder(Version::V1_0, StatusCode::Ok)
-            .typed_header(
-                &Public::builder()
-                    .method(Method::Options)
-                    .method(Method::Announce)
-                    .method(Method::Setup)
-                    .method(Method::Record)
-                    .method(Method::Teardown)
-                    .build(),
-            )
-            .build(Vec::new()),
-        Method::Announce => {
-            match Session::parse(req.body().as_ref()) {
+        let mut resp = match req.method() {
+            Method::Options => Response::builder(Version::V1_0, StatusCode::Ok)
+                .typed_header(
+                    &Public::builder()
+                        .method(Method::Options)
+                        .method(Method::Announce)
+                        .method(Method::Setup)
+                        .method(Method::Record)
+                        .method(Method::Teardown)
+                        .build(),
+                )
+                .empty(),
+            Method::Announce => match Session::parse(req.body().as_ref()) {
                 Ok(session) => {
-                    //if let Some(old_session) = self.session.replace(session) {
-                    // TODO : just trace
-                    //}
-                    Response::builder(Version::V1_0, StatusCode::Ok).build(Vec::new())
+                    info!(?session, "new session");
+                    if let Some(old_session) = self.state.lock().unwrap().session.replace(session) {
+                        warn!(?old_session, "session changed without TEARDOWN");
+                    }
+
+                    Response::builder(Version::V1_0, StatusCode::Ok).empty()
                 }
-                Err(e) => {
-                    // TODO : trace
-                    Response::builder(Version::V1_0, StatusCode::BadRequest).build(Vec::new())
+                Err(err) => {
+                    error!(%err, "SDP parsing failed");
+
+                    Response::builder(Version::V1_0, StatusCode::BadRequest).empty()
                 }
+            },
+            Method::Setup => {
+                let transports = req.typed_header::<Transports>().unwrap(); // TODO : it's bug here
+                println!("transport: {:?}", transports);
+
+                Response::builder(Version::V1_0, StatusCode::Ok).empty()
             }
-        }
-        Method::Setup => {
-            let transports = req.typed_header::<Transports>().unwrap(); // TODO : it's bug here
-            println!("transport: {:?}", transports);
+            Method::Teardown => {
+                if let Some(old_session) = self.state.lock().unwrap().session.take() {
+                    debug!(?old_session, "session closed");
+                }
 
-            todo!()
-        }
-        Method::Record => {
-            unimplemented!("record not supported")
-        }
-        _ => {
-            println!("Unsupported request: {:?}", req.replace_body(Empty));
-            unimplemented!()
-        }
-    };
+                Response::builder(Version::V1_0, StatusCode::Ok).empty()
+            }
+            _ => {
+                warn!("unsupported method called");
 
-    // It must be present in the response and must equal to one in the request.
-    resp.insert_header(CSEQ, cseq);
-    resp.insert_header(SERVER, service_name);
+                Response::builder(Version::V1_0, StatusCode::BadRequest).empty()
+            }
+        };
 
-    resp
+        // It must be present in the response and must equal to one in the request.
+        resp.insert_header(CSEQ, cseq);
+        // TODO : global context mb: resp.insert_header(SERVER, storage.name);
+
+        Box::pin(ready(Ok(resp)))
+    }
 }

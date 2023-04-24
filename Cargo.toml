@@ -4,14 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bytes = "1.4.0"
 lazy_static = "1.4.0"
-openssl = "0.10.50"
-
+# Until version isn't bumped so I can pull it from crates.io
+rtsp-types = { git = "https://github.com/sdroege/rtsp-types", branch = "main" }
+sdp-types = "0.1.5"
+tower = { version = "0.4.13", features = ["util"] }
 futures = "0.3.28"
 tokio = { version = "1.27.0", features = ["full", "io-util"] }
 tokio-util = { version = "0.7.7", features = ["codec"] }
-
-bytes = "1.4.0"
-rtsp-types = "0.0.5"
-sdp-types = "0.1.5"
-tower = { version = "0.4.13", features = ["util"] }
+tracing = "0.1.37"
+openssl = "0.10.50"

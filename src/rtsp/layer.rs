@@ -1,23 +1,26 @@
 use std::{
+    net::IpAddr,
     pin::Pin,
     task::{Context, Poll},
 };
 
 use futures::{Future, TryFutureExt};
-use rtsp_types::{Request, Response};
+use rtsp_types::{Empty, Request, Response};
 use tower::{Layer, Service};
 
-use crate::auth::rsa::auth_with_challenge;
+use crate::crypt::rsa::auth_with_challenge;
 
 #[derive(Debug, Clone)]
 pub struct RsaAuth<I> {
+    addr: IpAddr,
+    mac: [u8; 6],
     inner: I,
 }
 
 impl<I, B> Service<Request<B>> for RsaAuth<I>
 where
     B: AsRef<[u8]>,
-    I: Service<Request<B>, Response = Response<Vec<u8>>>,
+    I: Service<Request<B>, Response = Response<Empty>>,
     I::Future: 'static,
 {
     type Response = I::Response;
@@ -32,7 +35,7 @@ where
         let auth_token = req
             .header(&"Apple-Challenge".try_into().unwrap())
             .and_then(|challenge| {
-                if let Ok(token) = auth_with_challenge(challenge.as_str()) {
+                if let Ok(token) = auth_with_challenge(challenge.as_str(), &self.addr, &self.mac) {
                     // TODO : log?
                     Some(token)
                 } else {
@@ -53,7 +56,16 @@ where
 }
 
 #[derive(Debug, Clone)]
-pub struct RsaAuthLayer;
+pub struct RsaAuthLayer {
+    addr: IpAddr,
+    mac: [u8; 6],
+}
+
+impl RsaAuthLayer {
+    pub fn new(addr: IpAddr, mac: [u8; 6]) -> Self {
+        Self { addr, mac }
+    }
+}
 
 impl<S> Layer<S> for RsaAuthLayer
 where
@@ -62,6 +74,10 @@ where
     type Service = RsaAuth<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        RsaAuth { inner }
+        RsaAuth {
+            addr: self.addr,
+            mac: self.mac,
+            inner,
+        }
     }
 }

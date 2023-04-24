@@ -1,5 +1,7 @@
-mod auth;
+mod crypt;
 mod rtsp;
+
+use std::net::Ipv4Addr;
 
 use futures::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
@@ -20,7 +22,10 @@ async fn main() {
         );
 
         ServiceBuilder::new()
-            .layer(rtsp::RsaAuthLayer)
+            .layer(rtsp::RsaAuthLayer::new(
+                Ipv4Addr::new(172, 20, 10, 6).into(),
+                *b"\xA0\xDB\x0C\x69\xD3\x6F",
+            ))
             .service(rtsp::Service::default())
             .call_all(rx.filter_map(|res| async {
                 match res {
