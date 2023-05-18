@@ -7,7 +7,7 @@ use openssl::{
     rsa::{Padding, Rsa},
 };
 
-use super::aes;
+use super::aes::AesDecryptor;
 
 lazy_static! {
     // TODO : remove openssl as dependency
@@ -39,12 +39,12 @@ pub fn auth_with_challenge(
     Ok(base64::encode_block(&to))
 }
 
-pub fn decrypt_aeskey(rsaaeskey64: &str, aesiv64: &str) -> io::Result<aes::Key> {
+pub fn decrypt_aeskey(rsaaeskey64: &str, aesiv64: &str) -> io::Result<AesDecryptor> {
     let aeskey = base64::decode_block(rsaaeskey64)?;
     let aesiv = base64::decode_block(aesiv64)?;
 
     let mut aeskey_to = vec![0; 256];
     AIRPORT_PRIVATE_KEY.private_decrypt(&aeskey, &mut aeskey_to, Padding::PKCS1)?;
 
-    aes::Key::new(aeskey_to, aesiv).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))
+    AesDecryptor::new(aeskey_to, aesiv).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))
 }

@@ -25,7 +25,9 @@ impl Decoder for RtspCodec {
             return Ok(None);
         }
 
-        match Message::parse(&src.split_to(src.len())) {
+        let abc = &src.split_to(src.len());
+        println!("{}", String::from_utf8_lossy(abc));
+        match Message::parse(abc) {
             Ok((msg, _)) => match msg {
                 Message::Request(req) => Ok(Some(req)),
                 _ => Err(io::Error::new(
@@ -35,6 +37,7 @@ impl Decoder for RtspCodec {
             },
             Err(ParseError::Incomplete) => Ok(None),
             Err(ParseError::Error) => {
+                // TODO : it crashes here
                 Err(io::Error::new(io::ErrorKind::InvalidData, "parse error"))
             }
         }

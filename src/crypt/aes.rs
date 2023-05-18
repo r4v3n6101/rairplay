@@ -3,24 +3,24 @@ use openssl::{
     symm::Mode,
 };
 
-pub struct Key {
+use super::Decryptor;
+
+pub struct AesDecryptor {
     key: AesKey,
     iv: Vec<u8>,
 }
 
-impl Key {
+impl AesDecryptor {
     pub(crate) fn new(key: Vec<u8>, iv: Vec<u8>) -> Result<Self, &'static str> {
         Ok(Self {
             key: AesKey::new_decrypt(&key).map_err(|_| "invalid key")?,
             iv,
         })
     }
+}
 
-    pub fn decrypt(&mut self, data: &[u8]) -> Vec<u8> {
-        // TODO : don't know how much bytes
-        let mut out = vec![0; 1024];
-        aes_ige(data, &mut out, &self.key, &mut self.iv, Mode::Decrypt);
-
-        out
+impl Decryptor for AesDecryptor {
+    fn decrypt(&mut self, input: &[u8], output: &mut [u8]) {
+        aes_ige(input, output, &self.key, &mut self.iv, Mode::Decrypt);
     }
 }

@@ -5,7 +5,7 @@ use std::{
 };
 
 use futures::{Future, TryFutureExt};
-use rtsp_types::{Empty, Request, Response};
+use rtsp_types::{Request, Response};
 use tower::{Layer, Service};
 
 use crate::crypt::rsa::auth_with_challenge;
@@ -20,7 +20,7 @@ pub struct RsaAuth<I> {
 impl<I, B> Service<Request<B>> for RsaAuth<I>
 where
     B: AsRef<[u8]>,
-    I: Service<Request<B>, Response = Response<Empty>>,
+    I: Service<Request<B>, Response = Response<Vec<u8>>>,
     I::Future: 'static,
 {
     type Response = I::Response;
