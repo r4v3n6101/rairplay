@@ -1,6 +1,6 @@
-use std::io;
+use std::{io, println};
 
-use bytes::{BufMut, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use rtsp_types::{Message, ParseError, Request, Response, WriteError};
 use tokio_util::codec::{Decoder, Encoder};
 
@@ -25,19 +25,19 @@ impl Decoder for RtspCodec {
             return Ok(None);
         }
 
-        let abc = &src.split_to(src.len());
-        println!("{}", String::from_utf8_lossy(abc));
-        match Message::parse(abc) {
-            Ok((msg, _)) => match msg {
-                Message::Request(req) => Ok(Some(req)),
-                _ => Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "wrong packet type",
-                )),
-            },
+        match Message::parse(&src) {
+            Ok((msg, _)) => {
+                src.advance(src.len());
+                match msg {
+                    Message::Request(req) => Ok(Some(req)),
+                    _ => Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "wrong packet type",
+                    )),
+                }
+            }
             Err(ParseError::Incomplete) => Ok(None),
             Err(ParseError::Error) => {
-                // TODO : it crashes here
                 Err(io::Error::new(io::ErrorKind::InvalidData, "parse error"))
             }
         }
