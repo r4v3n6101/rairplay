@@ -1,13 +1,13 @@
 use std::io;
 
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut, Buf};
 use rtp_rs::{RtpPacketBuilder, RtpReader, RtpReaderError};
 use tokio_util::codec::{Decoder, Encoder};
 
 pub struct RtpPacket {
     pub ty: u8,
     pub marked: bool,
-    pub payload: Vec<u8>,
+    pub payload: Bytes,
 }
 
 pub struct RtpCodec;
@@ -20,7 +20,7 @@ impl Encoder<RtpPacket> for RtpCodec {
             .payload_type(item.ty)
             .marked(item.marked)
             .payload(&item.payload);
-        dst.reserve(rtp.target_length());
+        dst.reserve(rtp.target_length() - dst.len());
         rtp.build_into_unchecked(dst.as_mut());
 
         Ok(())
@@ -32,21 +32,28 @@ impl Decoder for RtpCodec {
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        match RtpReader::new(src.split_to(src.len()).as_ref()) {
-            Ok(reader) => Ok(Some(RtpPacket {
-                ty: reader.payload_type(),
-                marked: reader.mark(),
-                payload: reader.payload().to_vec(),
-            })),
+        let (ty, marked, payload_offset) = match RtpReader::new(src) {
+            Ok(reader) => (
+                reader.payload_type(),
+                reader.mark(),
+                reader.payload_offset(),
+            ),
             Err(RtpReaderError::BufferTooShort(buf_len)) => {
                 src.reserve(RtpReader::MIN_HEADER_LEN - buf_len);
-                Ok(None)
+                return Ok(None);
             }
             Err(RtpReaderError::HeadersTruncated { header_len, .. }) => {
                 src.reserve(header_len);
-                Ok(None)
+                return Ok(None);
             }
-            Err(_) => Err(io::Error::new(io::ErrorKind::Other, "rtp parsing error")),
-        }
+            Err(_) => return Err(io::Error::new(io::ErrorKind::Other, "rtp parsing error")),
+        };
+
+        src.advance(payload_offset);
+        Ok(Some(RtpPacket {
+            ty,
+            marked,
+            payload: src.copy_to_bytes(src.len()),
+        }))
     }
 }

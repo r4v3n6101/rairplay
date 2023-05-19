@@ -14,31 +14,38 @@ use rtsp_types::{
     },
     Method, Request, Response, StatusCode, Version,
 };
+use tokio::sync::RwLock;
 use tower::Service;
 use tracing::{error, info, warn};
 
-use crate::{rtp::spawn_listener, session::ClientSession};
+use crate::{
+    audio::{AudioCipher, AudioSink},
+    rtp::spawn_listener,
+};
 
 #[derive(Debug)]
-pub struct RtspService {
+pub struct RtspService<A> {
     local_addr: IpAddr,
     peer_addr: IpAddr,
-    client_session: Option<Arc<ClientSession>>,
+    audio_sink: Option<Arc<RwLock<A>>>,
+    audio_cipher: Option<Box<dyn AudioCipher + Send>>,
 }
 
-impl RtspService {
+impl<A> RtspService<A> {
     pub fn new(local_addr: IpAddr, peer_addr: IpAddr) -> Self {
         Self {
             local_addr,
             peer_addr,
-            client_session: None,
+            audio_sink: None,
+            audio_cipher: None,
         }
     }
 }
 
-impl<I> Service<Request<I>> for RtspService
+impl<I, A> Service<Request<I>> for RtspService<A>
 where
     I: AsRef<[u8]> + 'static,
+    A: AudioSink + Send + Sync + Unpin + 'static,
 {
     type Response = Response<Vec<u8>>;
     type Error = Infallible;
@@ -70,10 +77,12 @@ where
                 .build(Vec::new()),
             Method::Announce => match sdp_types::Session::parse(req.body().as_ref()) {
                 Ok(session) => {
-                    let session = Arc::new(ClientSession::default());
-                    info!(?session, "new session");
-                    if let Some(old_session) = self.client_session.replace(session) {
-                        warn!(?old_session, "ANNOUNCE session without TEARDOWN");
+                    // TODO : replace from session info
+                    let audio_sink = Arc::new(RwLock::new(A::initialize(0, 0, 0)));
+                    // TODO : log params
+                    info!("create new audio sink");
+                    if self.audio_sink.replace(audio_sink).is_some() {
+                        warn!("created new sink without tearing down previous");
                     }
                     Response::builder(Version::V1_0, StatusCode::Ok).build(Vec::new())
                 }
@@ -83,17 +92,17 @@ where
                 }
             },
             Method::Teardown => {
-                if let Some(old_session) = self.client_session.take() {
-                    info!(?old_session, "session closed");
+                if self.audio_sink.take().is_some() {
+                    info!("audio sink closed");
                 } else {
-                    warn!("TEARDOWN without existing session");
+                    warn!("no audio sink for tearing down");
                 }
 
                 Response::builder(Version::V1_0, StatusCode::Ok).build(Vec::new())
             }
             Method::Setup => {
-                let Some(session) = &self.client_session else {
-                    error!("session not set");
+                let Some(audio_sink) = &self.audio_sink else {
+                    error!("audio sink isn't initialized");
                     return future::ok(Response::builder(Version::V1_0, StatusCode::SessionNotFound)
                         .build(Vec::new()));
                 };
@@ -101,9 +110,10 @@ where
                     if let Some(Transport::Rtp(rtp)) = transports.first() {
                         // TODO : use ports from incoming rtp transport
                         let rtp_transport = spawn_listener(
-                            Arc::downgrade(session),
                             self.local_addr,
                             self.peer_addr,
+                            Arc::downgrade(audio_sink),
+                            self.audio_cipher.take(),
                         )
                         .unwrap(); // TODO :
                         let mut ports = BTreeMap::new();

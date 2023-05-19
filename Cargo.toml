@@ -12,7 +12,7 @@ sdp-types = "0.1.5"
 tower = { version = "0.4.13", features = ["util", "make"] }
 futures = "0.3.28"
 tokio = { version = "1.27.0", features = ["full", "io-util"] }
-tokio-util = { version = "0.7.8", features = ["codec", "net"] }
+tokio-util = { version = "0.7.8", features = ["codec", "net", "compat"] }
 tracing = "0.1.37"
 openssl = "0.10.50"
 tracing-subscriber = "0.3.17"

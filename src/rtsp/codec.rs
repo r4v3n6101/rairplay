@@ -1,4 +1,4 @@
-use std::{io, println};
+use std::io;
 
 use bytes::{Buf, BufMut, BytesMut};
 use rtsp_types::{Message, ParseError, Request, Response, WriteError};

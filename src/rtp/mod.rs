@@ -4,9 +4,10 @@ use std::{
     sync::Weak,
 };
 
+use tokio::sync::RwLock;
 use tracing::{debug, instrument};
 
-use crate::session::ClientSession;
+use crate::audio::{AudioCipher, AudioSink};
 
 use self::audio::forward_decrypted_audio;
 
@@ -20,12 +21,17 @@ pub struct RtpTransport {
     pub timing_port: u16,
 }
 
-#[instrument(ret)]
-pub fn spawn_listener(
-    session: Weak<ClientSession>,
+#[instrument]
+pub fn spawn_listener<A, C>(
     bind_addr: IpAddr,
     remote_addr: IpAddr,
-) -> io::Result<RtpTransport> {
+    audio_sink: Weak<RwLock<A>>,
+    cipher: Option<C>,
+) -> io::Result<RtpTransport>
+where
+    A: AudioSink + Send + Sync + Unpin + 'static,
+    C: AudioCipher + Send + 'static,
+{
     let create_chan = move |port| {
         let sock = UdpSocket::bind(SocketAddr::new(bind_addr, 0))?;
         debug!(?sock, "created udp socket");
@@ -50,7 +56,8 @@ pub fn spawn_listener(
 
     tokio::spawn(forward_decrypted_audio(
         tokio::net::UdpSocket::from_std(audio)?,
-        Weak::clone(&session),
+        Weak::clone(&audio_sink),
+        cipher,
     ));
 
     Ok(transport)

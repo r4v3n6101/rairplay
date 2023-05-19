@@ -1,37 +1,53 @@
-use std::sync::Weak;
+use std::{marker::Unpin, sync::Weak};
 
-use futures::{Sink, StreamExt};
-use tokio::net::UdpSocket;
+use futures::{SinkExt, StreamExt};
+use tokio::{net::UdpSocket, sync::RwLock};
 use tokio_util::udp::UdpFramed;
-use tracing::{instrument, trace, warn};
+use tracing::{info, instrument, trace, warn};
 
-use crate::session::ClientSession;
+use crate::audio::{AudioCipher, AudioSink};
 
 use super::codec::RtpCodec;
 
-// TODO : think about u8 instead of sinking Vec
-pub trait AudioSink: Sink<Vec<u8>> {
-    fn create(sample_rate: u32, sample_size: u16, channels: u8) -> Self;
-    // TODO : remove mutability?
-    fn set_volume(&mut self, value: f32);
-    fn get_volume(&self) -> f32;
-}
-
-// TODO : not key, but decryptor (as fairplay isn't aes)
 #[instrument]
-pub async fn forward_decrypted_audio(socket: UdpSocket, session: Weak<ClientSession>) {
+pub async fn forward_decrypted_audio<A, C>(
+    socket: UdpSocket,
+    audio_sink: Weak<RwLock<A>>,
+    mut cipher: Option<C>,
+) where
+    A: AudioSink + Unpin,
+    C: AudioCipher,
+{
     let mut rx = UdpFramed::new(socket, RtpCodec);
-    while let Some(res) = rx.next().await {
+    loop {
+        let Some(audio_sink) = audio_sink.upgrade() else {
+            info!("audio sink disconnected from forwarder");
+            break;
+        };
+
+        let Some(res) = rx.next().await else {
+            info!("audio socket closed");
+            break;
+        };
+
         match res {
             Ok((packet, _)) => {
-                trace!("received rtp audio packet");
-                let buf = vec![0; packet.payload.len()];
+                trace!(len = packet.payload.len(), "received rtp audio packet");
+                // TODO : try not allocate and instead just feed stream
+                let buf = if let Some(ref mut cipher) = cipher {
+                    let mut buf = vec![0; packet.payload.len()];
+                    cipher.decrypt(&packet.payload, &mut buf);
+                    // TODO : print afterall size, that shouldn't be the same
+                    trace!("packet decrypted");
+                    buf
+                } else {
+                    packet.payload.to_vec()
+                };
 
-                trace!(len = buf.len(), "packet decryption");
-                // TODO : key.decrypt(&packet.payload, &mut buf);
+                audio_sink.write().await.feed(buf).await;
             }
             Err(err) => {
-                // TODO : retry it via control?
+                // TODO : retry via control socket?
                 warn!(%err, "corrupted packet, skipping it");
                 continue;
             }
