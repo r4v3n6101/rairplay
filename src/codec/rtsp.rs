@@ -36,7 +36,12 @@ impl Decoder for RtspCodec {
                     )),
                 }
             }
-            Err(ParseError::Incomplete) => Ok(None),
+            Err(ParseError::Incomplete(needed)) => {
+                if let Some(add_len) = needed {
+                    src.reserve(add_len.get());
+                }
+                Ok(None)
+            }
             Err(ParseError::Error) => {
                 Err(io::Error::new(io::ErrorKind::InvalidData, "parse error"))
             }
