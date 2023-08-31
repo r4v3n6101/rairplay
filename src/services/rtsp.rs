@@ -1,6 +1,7 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     convert::Infallible,
+    net::IpAddr,
     str,
     sync::Arc,
     task::{Context, Poll},
@@ -13,10 +14,21 @@ use rtsp_types::{
         Public, RtpLowerTransport, RtpProfile, RtpTransport, RtpTransportParameters, Transport,
         TransportMode, Transports, CONTENT_TYPE, CSEQ,
     },
-    Method, Request, Response, StatusCode, Url, Version,
+    Method, Request, Response, StatusCode, Version,
 };
 use tower::Service;
 use tracing::{debug, error, info, warn};
+
+use crate::crypto;
+
+use super::session::{CodecFormat, Session};
+
+macro_rules! scan {
+    ( $string:expr, $sep:expr, $( $x:ty ),+ ) => {{
+        let mut iter = $string.split($sep);
+        ($(iter.next().and_then(|word| word.parse::<$x>().ok()),)*)
+    }}
+}
 
 type VecResponse = Response<Vec<u8>>;
 
@@ -25,23 +37,29 @@ fn resp(code: StatusCode) -> VecResponse {
     Response::builder(Version::V1_0, code).build(Vec::new())
 }
 
-fn get_request_uri<B>(req: &Request<B>) -> Result<&Url, VecResponse> {
-    req.request_uri().ok_or_else(|| {
+#[inline]
+fn get_session_id<B>(req: &Request<B>) -> Result<&str, VecResponse> {
+    req.request_uri().map(|u| &u.path()[1..]).ok_or_else(|| {
         error!("request uri is empty");
-        Response::builder(Version::V1_0, StatusCode::BadRequest).build(Vec::new())
+        resp(StatusCode::BadRequest)
     })
 }
 
-fn get_session_id<B>(req: &Request<B>) -> Result<&str, Response<Vec<u8>>> {
-    get_request_uri(req).map(|u| &u.path()[1..])
-}
-
-#[derive(Debug, Default)]
 pub struct RtspService {
-    sessions: AudioSessionStorage,
+    addr: IpAddr,
+    mac_addr: [u8; 6],
+    sessions: HashMap<String, Arc<Session>>,
 }
 
 impl RtspService {
+    pub fn new(addr: IpAddr, mac_addr: [u8; 6]) -> Self {
+        Self {
+            addr,
+            mac_addr,
+            sessions: Default::default(),
+        }
+    }
+
     fn handle_options(&self) -> VecResponse {
         Response::builder(Version::V1_0, StatusCode::Ok)
             .typed_header(
@@ -58,10 +76,86 @@ impl RtspService {
             .build(Vec::new())
     }
 
-    fn handle_announce<B: AsRef<[u8]>>(&self, req: &Request<B>) -> VecResponse {
+    fn handle_announce<B: AsRef<[u8]>>(&mut self, req: &Request<B>) -> VecResponse {
+        #[inline]
+        fn parse_alac_fmtp(input: &str) -> Option<CodecFormat> {
+            let params = scan!(
+                input,
+                char::is_whitespace,
+                u8,
+                u32,
+                u8,
+                u8,
+                u8,
+                u8,
+                u8,
+                u8,
+                u16,
+                u32,
+                u32,
+                u32
+            );
+            Some(CodecFormat::ALAC {
+                frame_len: params.1?,
+                compatible_version: params.2?,
+                bit_depth: params.3?,
+                pb: params.4?,
+                mb: params.5?,
+                kb: params.6?,
+                channels_num: params.7?,
+                max_run: params.8?,
+                max_frame_bytes: params.9?,
+                avg_bit_rate: params.10?,
+                sample_rate: params.11?,
+            })
+        }
+
         match sdp_types::Session::parse(req.body().as_ref()) {
             Ok(session) => {
-                // TODO
+                let codec_fmt = match session.get_first_attribute_value("fmtp") {
+                    // TODO : it may be not ALAC
+                    Ok(Some(res)) => match parse_alac_fmtp(res) {
+                        Some(x) => x,
+                        None => {
+                            error!("some of alac parameters're missing");
+                            return resp(StatusCode::BadRequest);
+                        }
+                    },
+                    Ok(None) => {
+                        error!("empty fmtp attribute");
+                        return resp(StatusCode::BadRequest);
+                    }
+                    Err(_) => {
+                        error!("fmtp attribute not provided");
+                        return resp(StatusCode::BadRequest);
+                    }
+                };
+
+                // TODO : it may be not rsaaeskey
+                let (aes_key, aes_iv) = match (
+                    session.get_first_attribute_value("fpaeskey"),
+                    session.get_first_attribute_value("aesiv"),
+                ) {
+                    (Ok(Some(fpaeskey)), Ok(Some(aesiv))) => {
+                        match crypto::rsaaeskey(fpaeskey, aesiv) {
+                            Ok(x) => x,
+                            Err(e) => {
+                                error!(%e, "error parsing either aes or iv");
+                                return resp(StatusCode::BadRequest);
+                            }
+                        }
+                    }
+                    _ => {
+                        error!("either aes or iv not provided");
+                        return resp(StatusCode::BadRequest);
+                    }
+                };
+
+                self.sessions.insert(
+                    session.origin.sess_id,
+                    Arc::new(Session::init(codec_fmt, aes_key, aes_iv)),
+                );
+
                 resp(StatusCode::Ok)
             }
             Err(err) => {
@@ -115,11 +209,11 @@ impl RtspService {
                     .build(Vec::new())
             } else {
                 error!(?transports, "no supported transport");
-                Response::builder(Version::V1_0, StatusCode::UnsupportedTransport).build(Vec::new())
+                resp(StatusCode::UnsupportedTransport)
             }
         } else {
             error!("no transport header");
-            Response::builder(Version::V1_0, StatusCode::BadRequest).build(Vec::new())
+            resp(StatusCode::BadRequest)
         }
     }
 
@@ -128,7 +222,7 @@ impl RtspService {
             Ok(sess_id) => sess_id,
             Err(resp) => return resp,
         };
-        if let Some(old_session) = self.sessions.close_session(id) {
+        if let Some(old_session) = self.sessions.remove(id) {
             info!(%id, ?old_session, "session closed");
         } else {
             warn!(%id, "no session to close");
@@ -149,7 +243,7 @@ impl RtspService {
             Ok(sess_id) => sess_id,
             Err(resp) => return resp,
         };
-        let Some(session) = self.sessions.get_session(id) else {
+        let Some(session) = self.sessions.get(id) else {
             error!(%id, "session not found");
             return resp(StatusCode::SessionNotFound);
         };
@@ -203,7 +297,23 @@ where
     fn call(&mut self, req: Request<I>) -> Self::Future {
         let Some(cseq) = req.header(&CSEQ).cloned() else {
             error!("CSEQ not present in headers");
-            return future::ok(Response::builder(Version::V1_0, StatusCode::BadRequest).build(Vec::new()));
+            return future::ok(resp(StatusCode::BadRequest));
+        };
+
+        let auth_token = match req.header(&"Apple-Challenge".try_into().unwrap()) {
+            Some(challenge) => {
+                match crypto::auth_with_challenge(challenge.as_str(), &self.addr, &self.mac_addr) {
+                    Ok(token) => {
+                        info!(token, "authenticated connection");
+                        Some(token)
+                    }
+                    Err(e) => {
+                        error!(%e, "couldn't authenticate");
+                        return future::ok(resp(StatusCode::Unauthorized));
+                    }
+                }
+            }
+            None => None,
         };
 
         let mut resp = match req.method() {
@@ -216,17 +326,20 @@ where
             Method::Record | Method::Extension(_) => {
                 // TODO : remove
 
-                Response::builder(Version::V1_0, StatusCode::Ok).build(Vec::new())
+                resp(StatusCode::Ok)
             }
             _ => {
                 warn!(method = ?req.method(), "unsupported method called");
 
-                Response::builder(Version::V1_0, StatusCode::BadRequest).build(Vec::new())
+                resp(StatusCode::BadGateway)
             }
         };
 
         // It must be present in the response and must equal to the one in the request.
         resp.insert_header(CSEQ, cseq);
+        if let Some(token) = auth_token {
+            resp.append_header("Apple-Response".try_into().unwrap(), token);
+        }
 
         future::ok(resp)
     }

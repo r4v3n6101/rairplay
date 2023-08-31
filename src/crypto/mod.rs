@@ -17,7 +17,7 @@ lazy_static! {
 pub fn auth_with_challenge(
     challenge64: &str,
     addr: &IpAddr,
-    mac_addr: impl AsRef<[u8; 6]>,
+    mac_addr: &[u8; 6],
 ) -> io::Result<String> {
     let challenge = base64::decode_block(challenge64)?;
 
