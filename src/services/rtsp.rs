@@ -1,5 +1,4 @@
 use std::{
-    collections::{BTreeMap, HashMap},
     convert::Infallible,
     net::IpAddr,
     str,
@@ -8,12 +7,11 @@ use std::{
 };
 
 use bytes::Bytes;
+use dashmap::DashMap;
 use futures::future::{self, Ready};
+use mac_address2::MacAddress;
 use rtsp_types::{
-    headers::{
-        Public, RtpLowerTransport, RtpProfile, RtpTransport, RtpTransportParameters, Transport,
-        TransportMode, Transports, CONTENT_TYPE, CSEQ,
-    },
+    headers::{Public, CONTENT_TYPE, CSEQ},
     Method, Request, Response, StatusCode, Version,
 };
 use tower::Service;
@@ -24,7 +22,7 @@ use crate::crypto;
 use super::session::{CodecFormat, Session};
 
 macro_rules! scan {
-    ( $string:expr, $sep:expr, $( $x:ty ),+ ) => {{
+    ( $string:expr, $sep:expr, $( $x:ty ) + ) => {{
         let mut iter = $string.split($sep);
         ($(iter.next().and_then(|word| word.parse::<$x>().ok()),)*)
     }}
@@ -47,16 +45,18 @@ fn get_session_id<B>(req: &Request<B>) -> Result<&str, VecResponse> {
 
 pub struct RtspService {
     addr: IpAddr,
-    mac_addr: [u8; 6],
-    sessions: HashMap<String, Arc<Session>>,
+    mac_addr: MacAddress,
+    sessions: Arc<DashMap<String, Session>>,
+    streams: DashMap<String, ()>,
 }
 
 impl RtspService {
-    pub fn new(addr: IpAddr, mac_addr: [u8; 6]) -> Self {
+    pub fn new(addr: IpAddr, mac_addr: MacAddress) -> Self {
         Self {
             addr,
             mac_addr,
             sessions: Default::default(),
+            streams: Default::default(),
         }
     }
 
@@ -82,18 +82,7 @@ impl RtspService {
             let params = scan!(
                 input,
                 char::is_whitespace,
-                u8,
-                u32,
-                u8,
-                u8,
-                u8,
-                u8,
-                u8,
-                u8,
-                u16,
-                u32,
-                u32,
-                u32
+                u8 u32 u8 u8 u8 u8 u8 u8 u16 u32 u32 u32
             );
             Some(CodecFormat::ALAC {
                 frame_len: params.1?,
@@ -121,22 +110,18 @@ impl RtspService {
                             return resp(StatusCode::BadRequest);
                         }
                     },
-                    Ok(None) => {
-                        error!("empty fmtp attribute");
-                        return resp(StatusCode::BadRequest);
-                    }
-                    Err(_) => {
+                    _ => {
                         error!("fmtp attribute not provided");
                         return resp(StatusCode::BadRequest);
                     }
                 };
 
-                // TODO : it may be not rsaaeskey
                 let (aes_key, aes_iv) = match (
                     session.get_first_attribute_value("fpaeskey"),
                     session.get_first_attribute_value("aesiv"),
                 ) {
                     (Ok(Some(fpaeskey)), Ok(Some(aesiv))) => {
+                        // TODO : it may be not rsaaeskey
                         match crypto::rsaaeskey(fpaeskey, aesiv) {
                             Ok(x) => x,
                             Err(e) => {
@@ -153,7 +138,7 @@ impl RtspService {
 
                 self.sessions.insert(
                     session.origin.sess_id,
-                    Arc::new(Session::init(codec_fmt, aes_key, aes_iv)),
+                    Session::init(codec_fmt, aes_key, aes_iv),
                 );
 
                 resp(StatusCode::Ok)
@@ -166,55 +151,7 @@ impl RtspService {
     }
 
     fn handle_setup<B>(&self, req: &Request<B>) -> VecResponse {
-        let Some(audio_sink) = &self.audio_sink else {
-            error!("audio sink isn't initialized");
-            return resp(StatusCode::SessionNotFound);
-        };
-        if let Ok(Some(transports)) = req.typed_header::<Transports>() {
-            if let Some(Transport::Rtp(rtp)) = transports.first() {
-                // TODO : use ports from incoming rtp transport
-                let rtp_transport = spawn_listener(
-                    self.local_addr,
-                    self.peer_addr,
-                    Arc::downgrade(audio_sink),
-                    self.audio_cipher.take(),
-                )
-                .unwrap(); // TODO :
-                let mut ports = BTreeMap::new();
-                ports.insert(
-                    "server_port".to_string(),
-                    Some(rtp_transport.audio_port.to_string()),
-                );
-                ports.insert(
-                    "control_port".to_string(),
-                    Some(rtp_transport.control_port.to_string()),
-                );
-                ports.insert(
-                    "timing_port".to_string(),
-                    Some(rtp_transport.timing_port.to_string()),
-                );
-                let rtp_transport = Transport::Rtp(RtpTransport {
-                    profile: RtpProfile::Avp,
-                    lower_transport: Some(RtpLowerTransport::Udp),
-                    params: RtpTransportParameters {
-                        unicast: true,
-                        mode: vec![TransportMode::Record],
-                        others: ports,
-                        ..Default::default()
-                    },
-                });
-
-                Response::builder(Version::V1_0, StatusCode::Ok)
-                    .typed_header(&Transports::from(vec![rtp_transport]))
-                    .build(Vec::new())
-            } else {
-                error!(?transports, "no supported transport");
-                resp(StatusCode::UnsupportedTransport)
-            }
-        } else {
-            error!("no transport header");
-            resp(StatusCode::BadRequest)
-        }
+        todo!("implement")
     }
 
     fn handle_teardown<B>(&self, req: &Request<B>) -> VecResponse {
@@ -223,7 +160,9 @@ impl RtspService {
             Err(resp) => return resp,
         };
         if let Some(old_session) = self.sessions.remove(id) {
-            info!(%id, ?old_session, "session closed");
+            // TODO : what to log?
+            // Prev code: info!(%id, ?old_session, "session closed");
+            todo!("impl")
         } else {
             warn!(%id, "no session to close");
         }
@@ -266,9 +205,8 @@ impl RtspService {
             }
             "image/jpeg" => {
                 // TODO : get owned
-                let img = Bytes::from(req.body().as_ref());
+                let img = Bytes::copy_from_slice(req.body().as_ref());
                 debug!(len = img.len(), "new artwork");
-                session.get_metadata().set_artwork(img);
             }
             "application/x-dmap-tagged" => {
                 // TODO
@@ -302,7 +240,11 @@ where
 
         let auth_token = match req.header(&"Apple-Challenge".try_into().unwrap()) {
             Some(challenge) => {
-                match crypto::auth_with_challenge(challenge.as_str(), &self.addr, &self.mac_addr) {
+                match crypto::auth_with_challenge(
+                    challenge.as_str(),
+                    &self.addr,
+                    &self.mac_addr.bytes(),
+                ) {
                     Ok(token) => {
                         info!(token, "authenticated connection");
                         Some(token)

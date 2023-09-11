@@ -19,12 +19,23 @@ pub enum CodecFormat {
     },
 }
 
+pub enum SessionWithState {
+    Announced {
+        codec: CodecFormat,
+        aes_key: Vec<u8>,
+        aes_iv: Vec<u8>,
+    },
+    Setup {
+
+    }
+}
+
 //#[derive(Debug)]
 pub struct Session {
     pub codec: CodecFormat,
-    // TODO : replace with enum as it may be FairPlay, not AES
     pub aes_key: AesKey,
     pub iv: Mutex<Vec<u8>>,
+
     rtp_start: AtomicU64,
     rtp_current: AtomicU64,
     rtp_end: AtomicU64,
