@@ -12,14 +12,15 @@ use futures::future::{self, Ready};
 use mac_address2::MacAddress;
 use rtsp_types::{
     headers::{Public, CONTENT_TYPE, CSEQ},
-    Method, Request, Response, StatusCode, Version,
+    Method, StatusCode, Version, Response,
 };
 use tower::Service;
 use tracing::{debug, error, info, warn};
 
-use crate::crypto;
-
-use super::session::{CodecFormat, Session};
+use crate::{
+    codecs::rtsp::{RtspRequest, RtspResponse},
+    crypto,
+};
 
 macro_rules! scan {
     ( $string:expr, $sep:expr, $( $x:ty ) + ) => {{
@@ -28,15 +29,13 @@ macro_rules! scan {
     }}
 }
 
-type VecResponse = Response<Vec<u8>>;
-
 #[inline]
-fn resp(code: StatusCode) -> VecResponse {
+fn resp(code: StatusCode) -> RtspResponse {
     Response::builder(Version::V1_0, code).build(Vec::new())
 }
 
 #[inline]
-fn get_session_id<B>(req: &Request<B>) -> Result<&str, VecResponse> {
+fn get_session_id(req: &RtspRequest) -> Result<&str, RtspResponse> {
     req.request_uri().map(|u| &u.path()[1..]).ok_or_else(|| {
         error!("request uri is empty");
         resp(StatusCode::BadRequest)
@@ -46,8 +45,7 @@ fn get_session_id<B>(req: &Request<B>) -> Result<&str, VecResponse> {
 pub struct RtspService {
     addr: IpAddr,
     mac_addr: MacAddress,
-    sessions: Arc<DashMap<String, Session>>,
-    streams: DashMap<String, ()>,
+    sessions: Arc<DashMap<String, ()>>,
 }
 
 impl RtspService {
@@ -56,11 +54,10 @@ impl RtspService {
             addr,
             mac_addr,
             sessions: Default::default(),
-            streams: Default::default(),
         }
     }
 
-    fn handle_options(&self) -> VecResponse {
+    fn handle_options(&self) -> RtspResponse {
         Response::builder(Version::V1_0, StatusCode::Ok)
             .typed_header(
                 &Public::builder()
@@ -76,8 +73,8 @@ impl RtspService {
             .build(Vec::new())
     }
 
-    fn handle_announce<B: AsRef<[u8]>>(&mut self, req: &Request<B>) -> VecResponse {
-        #[inline]
+    fn handle_announce(&mut self, req: &RtspRequest) -> RtspResponse {
+        /* #[inline]
         fn parse_alac_fmtp(input: &str) -> Option<CodecFormat> {
             let params = scan!(
                 input,
@@ -97,13 +94,13 @@ impl RtspService {
                 avg_bit_rate: params.10?,
                 sample_rate: params.11?,
             })
-        }
+        } */
 
         match sdp_types::Session::parse(req.body().as_ref()) {
             Ok(session) => {
                 let codec_fmt = match session.get_first_attribute_value("fmtp") {
                     // TODO : it may be not ALAC
-                    Ok(Some(res)) => match parse_alac_fmtp(res) {
+                    Ok(Some(res)) => match todo!() {
                         Some(x) => x,
                         None => {
                             error!("some of alac parameters're missing");
@@ -138,7 +135,7 @@ impl RtspService {
 
                 self.sessions.insert(
                     session.origin.sess_id,
-                    Session::init(codec_fmt, aes_key, aes_iv),
+                    (), // Session::init(codec_fmt, aes_key, aes_iv),
                 );
 
                 resp(StatusCode::Ok)
@@ -150,11 +147,11 @@ impl RtspService {
         }
     }
 
-    fn handle_setup<B>(&self, req: &Request<B>) -> VecResponse {
+    fn handle_setup(&self, req: &RtspRequest) -> RtspResponse {
         todo!("implement")
     }
 
-    fn handle_teardown<B>(&self, req: &Request<B>) -> VecResponse {
+    fn handle_teardown(&self, req: &RtspRequest) -> RtspResponse {
         let id = match get_session_id(req) {
             Ok(sess_id) => sess_id,
             Err(resp) => return resp,
@@ -169,7 +166,7 @@ impl RtspService {
         resp(StatusCode::Ok)
     }
 
-    fn handle_get_parameter<B>(&self, req: &Request<B>) -> VecResponse {
+    fn handle_get_parameter(&self, req: &RtspRequest) -> RtspResponse {
         let id = match get_session_id(req) {
             Ok(sess_id) => sess_id,
             Err(resp) => return resp,
@@ -177,7 +174,7 @@ impl RtspService {
         todo!()
     }
 
-    fn handle_set_parameter<B: AsRef<[u8]>>(&self, req: &Request<B>) -> VecResponse {
+    fn handle_set_parameter(&self, req: &RtspRequest) -> RtspResponse {
         let id = match get_session_id(req) {
             Ok(sess_id) => sess_id,
             Err(resp) => return resp,
@@ -220,11 +217,8 @@ impl RtspService {
     }
 }
 
-impl<I> Service<Request<I>> for RtspService
-where
-    I: AsRef<[u8]> + 'static,
-{
-    type Response = VecResponse;
+impl Service<RtspRequest> for RtspService {
+    type Response = RtspResponse;
     type Error = Infallible;
     type Future = Ready<Result<Self::Response, Self::Error>>;
 
@@ -232,7 +226,7 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, req: Request<I>) -> Self::Future {
+    fn call(&mut self, req: RtspRequest) -> Self::Future {
         let Some(cseq) = req.header(&CSEQ).cloned() else {
             error!("CSEQ not present in headers");
             return future::ok(resp(StatusCode::BadRequest));

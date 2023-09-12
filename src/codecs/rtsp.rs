@@ -1,15 +1,19 @@
 use std::io;
 
+use asynchronous_codec::{Decoder, Encoder};
 use bytes::{Buf, BufMut, BytesMut};
 use rtsp_types::{Message, ParseError, Request, Response, WriteError};
-use tokio_util::codec::{Decoder, Encoder};
+
+pub type RtspRequest = Request<Vec<u8>>;
+pub type RtspResponse = Response<Vec<u8>>;
 
 pub struct RtspCodec;
 
-impl<B: AsRef<[u8]>> Encoder<Response<B>> for RtspCodec {
+impl Encoder for RtspCodec {
+    type Item = RtspResponse;
     type Error = io::Error;
 
-    fn encode(&mut self, item: Response<B>, dst: &mut BytesMut) -> Result<(), Self::Error> {
+    fn encode(&mut self, item: RtspResponse, dst: &mut BytesMut) -> Result<(), Self::Error> {
         item.write(&mut dst.writer()).map_err(|err| match err {
             WriteError::IoError(io_err) => io_err,
         })
@@ -17,7 +21,7 @@ impl<B: AsRef<[u8]>> Encoder<Response<B>> for RtspCodec {
 }
 
 impl Decoder for RtspCodec {
-    type Item = Request<Vec<u8>>;
+    type Item = RtspRequest;
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
