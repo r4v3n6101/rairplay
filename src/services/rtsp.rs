@@ -2,24 +2,24 @@ use std::{
     convert::Infallible,
     net::IpAddr,
     str,
-    sync::Arc,
     task::{Context, Poll},
 };
 
-use bytes::Bytes;
-use dashmap::DashMap;
+use bytes::{BufMut, Bytes};
 use futures::future::{self, Ready};
 use mac_address2::MacAddress;
 use rtsp_types::{
     headers::{Public, CONTENT_TYPE, CSEQ},
-    Method, StatusCode, Version, Response,
+    HeaderValue, Method, Response, StatusCode, Version,
 };
+use symphonia_core::codecs::{CodecParameters, CODEC_TYPE_ALAC};
 use tower::Service;
 use tracing::{debug, error, info, warn};
 
 use crate::{
     codecs::rtsp::{RtspRequest, RtspResponse},
-    crypto,
+    crypto::{self, KeyEncryption},
+    state::{State, StateStorage},
 };
 
 macro_rules! scan {
@@ -42,10 +42,42 @@ fn get_session_id(req: &RtspRequest) -> Result<&str, RtspResponse> {
     })
 }
 
+#[inline]
+fn parse_alac_fmtp(input: &str) -> Option<CodecParameters> {
+    let params = scan!(
+        input,
+        char::is_whitespace,
+        u8 u32 u8 u8 u8 u8 u8 u8 u16 u32 u32 u32
+    );
+
+    let mut magic_cookie = Box::new([0u8; 24]);
+    {
+        let mut buf = magic_cookie.as_mut_slice();
+        buf.put_u32(params.1?);
+        buf.put_u8(params.2?);
+        buf.put_u8(params.3?);
+        buf.put_u8(params.4?);
+        buf.put_u8(params.5?);
+        buf.put_u8(params.6?);
+        buf.put_u8(params.7?);
+        buf.put_u16(params.8?);
+        buf.put_u32(params.9?);
+        buf.put_u32(params.10?);
+        buf.put_u32(params.11?);
+    }
+
+    // TODO : fill extra fields?
+    Some(CodecParameters {
+        codec: CODEC_TYPE_ALAC,
+        extra_data: Some(magic_cookie),
+        ..Default::default()
+    })
+}
+
 pub struct RtspService {
     addr: IpAddr,
     mac_addr: MacAddress,
-    sessions: Arc<DashMap<String, ()>>,
+    storage: StateStorage,
 }
 
 impl RtspService {
@@ -53,7 +85,7 @@ impl RtspService {
         Self {
             addr,
             mac_addr,
-            sessions: Default::default(),
+            storage: Default::default(),
         }
     }
 
@@ -74,33 +106,11 @@ impl RtspService {
     }
 
     fn handle_announce(&mut self, req: &RtspRequest) -> RtspResponse {
-        /* #[inline]
-        fn parse_alac_fmtp(input: &str) -> Option<CodecFormat> {
-            let params = scan!(
-                input,
-                char::is_whitespace,
-                u8 u32 u8 u8 u8 u8 u8 u8 u16 u32 u32 u32
-            );
-            Some(CodecFormat::ALAC {
-                frame_len: params.1?,
-                compatible_version: params.2?,
-                bit_depth: params.3?,
-                pb: params.4?,
-                mb: params.5?,
-                kb: params.6?,
-                channels_num: params.7?,
-                max_run: params.8?,
-                max_frame_bytes: params.9?,
-                avg_bit_rate: params.10?,
-                sample_rate: params.11?,
-            })
-        } */
-
         match sdp_types::Session::parse(req.body().as_ref()) {
             Ok(session) => {
-                let codec_fmt = match session.get_first_attribute_value("fmtp") {
+                let codec_params = match session.get_first_attribute_value("fmtp") {
                     // TODO : it may be not ALAC
-                    Ok(Some(res)) => match todo!() {
+                    Ok(Some(res)) => match parse_alac_fmtp(res) {
                         Some(x) => x,
                         None => {
                             error!("some of alac parameters're missing");
@@ -113,18 +123,15 @@ impl RtspService {
                     }
                 };
 
-                let (aes_key, aes_iv) = match (
+                let encryption = match (
                     session.get_first_attribute_value("fpaeskey"),
                     session.get_first_attribute_value("aesiv"),
                 ) {
                     (Ok(Some(fpaeskey)), Ok(Some(aesiv))) => {
                         // TODO : it may be not rsaaeskey
-                        match crypto::rsaaeskey(fpaeskey, aesiv) {
-                            Ok(x) => x,
-                            Err(e) => {
-                                error!(%e, "error parsing either aes or iv");
-                                return resp(StatusCode::BadRequest);
-                            }
+                        KeyEncryption::Rsa {
+                            aeskey64: fpaeskey.to_string(),
+                            aesiv64: aesiv.to_string(),
                         }
                     }
                     _ => {
@@ -133,9 +140,12 @@ impl RtspService {
                     }
                 };
 
-                self.sessions.insert(
+                self.storage.insert(
                     session.origin.sess_id,
-                    (), // Session::init(codec_fmt, aes_key, aes_iv),
+                    State::Announced {
+                        codec_params,
+                        encryption,
+                    },
                 );
 
                 resp(StatusCode::Ok)
@@ -156,13 +166,8 @@ impl RtspService {
             Ok(sess_id) => sess_id,
             Err(resp) => return resp,
         };
-        if let Some(old_session) = self.sessions.remove(id) {
-            // TODO : what to log?
-            // Prev code: info!(%id, ?old_session, "session closed");
-            todo!("impl")
-        } else {
-            warn!(%id, "no session to close");
-        }
+        self.storage.remove(id);
+
         resp(StatusCode::Ok)
     }
 
@@ -174,39 +179,69 @@ impl RtspService {
         todo!()
     }
 
-    fn handle_set_parameter(&self, req: &RtspRequest) -> RtspResponse {
-        let id = match get_session_id(req) {
+    fn handle_set_parameter(&self, req: RtspRequest) -> RtspResponse {
+        let id = match get_session_id(&req).map(ToOwned::to_owned) {
             Ok(sess_id) => sess_id,
             Err(resp) => return resp,
         };
-        let Some(session) = self.sessions.get(id) else {
-            error!(%id, "session not found");
-            return resp(StatusCode::SessionNotFound);
-        };
-        let Some(content_type) = req.header(&CONTENT_TYPE) else {
-            error!("content type header not provided");
+        if !self.storage.has(&id) {
+            error!(%id, "no state");
+            return resp(StatusCode::NotFound);
+        }
+        let Some(content_type) = req
+            .header(&CONTENT_TYPE)
+            .map(HeaderValue::as_str)
+            .map(ToOwned::to_owned)
+        else {
+            error!("Content-Type not provided");
             return resp(StatusCode::BadRequest);
         };
+        let body = req.into_body();
 
         match content_type.as_str() {
             "text/parameters" => {
-                let body = match str::from_utf8(req.body().as_ref()) {
+                let body = match str::from_utf8(&body) {
                     Ok(s) => s,
                     Err(err) => {
                         error!(%err, "body must be utf-8");
                         return resp(StatusCode::BadRequest);
                     }
                 };
+                debug!(%body, "text body");
 
-                // TODO : read volume/progress and set
+                if let Some(volume) = body.strip_prefix("volume: ") {
+                    let Ok(volume) = volume.parse::<f64>() else {
+                        error!("invalid volume float");
+                        return resp(StatusCode::BadRequest);
+                    };
+
+                    self.storage
+                        .update_metadata(&id, |meta| meta.volume = volume);
+                } else if let Some(progress) = body.strip_prefix("progress: ") {
+                    let (Some(begin), Some(current), Some(end)) =
+                        scan!(progress, |c| c == '/', u32 u32 u32)
+                    else {
+                        error!("invalid progress format");
+                        return resp(StatusCode::BadRequest);
+                    };
+
+                    self.storage.update_metadata(&id, |meta| {
+                        meta.begin_pos = begin;
+                        meta.current_pos = current;
+                        meta.end_pos = end;
+                    });
+                } else {
+                    warn!("unknown text format");
+                }
             }
             "image/jpeg" => {
-                // TODO : get owned
-                let img = Bytes::copy_from_slice(req.body().as_ref());
+                let img = Bytes::from(body);
                 debug!(len = img.len(), "new artwork");
+
+                self.storage.update_metadata(&id, |meta| meta.artwork = img);
             }
             "application/x-dmap-tagged" => {
-                // TODO
+                // TODO : dmap parser for more metainfo
             }
             other => {
                 warn!(content_type = other, "unknown content type");
@@ -234,11 +269,7 @@ impl Service<RtspRequest> for RtspService {
 
         let auth_token = match req.header(&"Apple-Challenge".try_into().unwrap()) {
             Some(challenge) => {
-                match crypto::auth_with_challenge(
-                    challenge.as_str(),
-                    &self.addr,
-                    &self.mac_addr.bytes(),
-                ) {
+                match crypto::auth_with_challenge(challenge.as_str(), &self.addr, &self.mac_addr) {
                     Ok(token) => {
                         info!(token, "authenticated connection");
                         Some(token)
@@ -258,7 +289,7 @@ impl Service<RtspRequest> for RtspService {
             Method::Teardown => self.handle_teardown(&req),
             Method::Setup => self.handle_setup(&req),
             Method::GetParameter => self.handle_get_parameter(&req),
-            Method::SetParameter => self.handle_set_parameter(&req),
+            Method::SetParameter => self.handle_set_parameter(req),
             Method::Record | Method::Extension(_) => {
                 // TODO : remove
 
