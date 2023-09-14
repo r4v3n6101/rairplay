@@ -35,13 +35,13 @@ pub struct StateStorage {
 impl StateStorage {
     pub fn insert(&self, id: String, state: State) {
         info!(%id, "new state created");
-        if let Some(_) = self.inner.insert(id, state) {
+        if self.inner.insert(id, state).is_some() {
             warn!("replaced previous state");
         }
     }
 
     pub fn remove(&self, id: &str) {
-        if let Some(_) = self.inner.remove(id) {
+        if self.inner.remove(id).is_some() {
             info!(%id, "removed state");
         } else {
             warn!(%id, "no state to remove");
