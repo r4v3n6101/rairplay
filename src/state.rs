@@ -48,18 +48,20 @@ impl StateStorage {
         }
     }
 
-    pub fn has(&self, id: &str) -> bool {
-        self.inner.contains_key(id)
+    // TODO : result
+    pub fn update_metadata(&self, id: &str, f: impl FnOnce(&mut Metadata)) {
+        if let Some(State::Initiailized { metadata }) = self.inner.get_mut(id).as_deref_mut() {
+            f(metadata);
+        } else {
+            warn!(%id, "no initialized state, skipping update");
+        }
     }
 
-    pub fn update_metadata(&self, id: &str, f: impl FnOnce(&mut Metadata)) {
-        match self.inner.get_mut(id).as_deref_mut() {
-            Some(State::Initiailized { metadata }) => {
-                f(metadata);
-            }
-            _ => {
-                warn!(%id, "no initialized state");
-            }
+    pub fn fetch_metadata<T>(&self, id: &str, f: impl FnOnce(&Metadata) -> T) -> Option<T> {
+        if let Some(State::Initiailized { metadata }) = self.inner.get(id).as_deref() {
+            Some(f(metadata))
+        } else {
+            None
         }
     }
 }

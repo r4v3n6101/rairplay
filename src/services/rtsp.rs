@@ -22,6 +22,7 @@ use crate::{
     state::{State, StateStorage},
 };
 
+// TODO : separate crate
 macro_rules! scan {
     ( $string:expr, $sep:expr, $( $x:ty ) + ) => {{
         let mut iter = $string.split($sep);
@@ -176,7 +177,40 @@ impl RtspService {
             Ok(sess_id) => sess_id,
             Err(resp) => return resp,
         };
-        todo!()
+        let body = match str::from_utf8(req.body()) {
+            Ok(s) => s,
+            Err(err) => {
+                error!(%err, "body must be utf-8");
+                return resp(StatusCode::BadRequest);
+            }
+        };
+        debug!(%body, "requested parameter");
+
+        if body.contains("volume") {
+            if let Some(volume) = self.storage.fetch_metadata(id, |meta| meta.volume) {
+                Response::builder(Version::V1_0, StatusCode::Ok)
+                    .header(CONTENT_TYPE, "text/parameters")
+                    .build(format!("volume: {}", volume).into_bytes())
+            } else {
+                error!(%id, "non-initialized stream");
+                resp(StatusCode::NotFound)
+            }
+        } else if body.contains("progress") {
+            if let Some((begin, current, end)) = self
+                .storage
+                .fetch_metadata(id, |meta| (meta.begin_pos, meta.current_pos, meta.end_pos))
+            {
+                Response::builder(Version::V1_0, StatusCode::Ok)
+                    .header(CONTENT_TYPE, "text/parameters")
+                    .build(format!("progress: {}/{}/{}", begin, current, end).into_bytes())
+            } else {
+                error!(%id, "non-initialized stream");
+                resp(StatusCode::NotFound)
+            }
+        } else {
+            warn!("unknown parameter");
+            resp(StatusCode::BadRequest)
+        }
     }
 
     fn handle_set_parameter(&self, req: RtspRequest) -> RtspResponse {
@@ -184,10 +218,6 @@ impl RtspService {
             Ok(sess_id) => sess_id,
             Err(resp) => return resp,
         };
-        if !self.storage.has(&id) {
-            error!(%id, "no state");
-            return resp(StatusCode::NotFound);
-        }
         let Some(content_type) = req
             .header(&CONTENT_TYPE)
             .map(HeaderValue::as_str)
