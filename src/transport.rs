@@ -26,7 +26,7 @@ use tokio_util::{
     io::{SinkWriter, StreamReader},
 };
 use tower::Service;
-use tracing::error;
+use tracing::{debug, error, trace};
 
 const MAX_HEADERS: usize = 32;
 const RTSP_VERSION: &[u8] = b"RTSP/1.0\r\n";
@@ -38,37 +38,37 @@ const REMAPPED_RTSP_PATH: &[u8] = b"/rtsp";
 type BoxStdError = Box<dyn std::error::Error + Send + Sync>;
 
 pin_project! {
-    struct IO<I, O> {
+    struct RW<R, W> {
         #[pin]
-        input: I,
+        reader: R,
         #[pin]
-        output: O,
+        writer: W,
     }
 }
-impl<I: tokio::io::AsyncRead, O> tokio::io::AsyncRead for IO<I, O> {
+impl<I: tokio::io::AsyncRead, O> tokio::io::AsyncRead for RW<I, O> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        self.project().input.poll_read(cx, buf)
+        self.project().reader.poll_read(cx, buf)
     }
 }
-impl<I, O: tokio::io::AsyncWrite> tokio::io::AsyncWrite for IO<I, O> {
+impl<I, O: tokio::io::AsyncWrite> tokio::io::AsyncWrite for RW<I, O> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        self.project().output.poll_write(cx, buf)
+        self.project().writer.poll_write(cx, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        self.project().output.poll_flush(cx)
+        self.project().writer.poll_flush(cx)
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        self.project().output.poll_shutdown(cx)
+        self.project().writer.poll_shutdown(cx)
     }
 }
 
@@ -85,15 +85,15 @@ where
 {
     loop {
         let (socket, remote_addr) = tcp_listener.accept().await.unwrap();
+        debug!(%remote_addr, "got a new tcp connection");
 
         let tower_service = svc.clone();
         tokio::spawn(async move {
             let (rx, tx) = split(socket);
-            let unified = IO {
-                input: StreamReader::new(FramedRead::new(rx, Rtsp2HttpCodec)),
-                output: SinkWriter::new(FramedWrite::new(tx, Rtsp2HttpCodec)),
-            };
-            let io = TokioIo::new(unified);
+            let io = TokioIo::new(RW {
+                reader: StreamReader::new(FramedRead::new(rx, Rtsp2HttpCodec)),
+                writer: SinkWriter::new(FramedWrite::new(tx, Rtsp2HttpCodec)),
+            });
             let hyper_service = service_fn(move |request| tower_service.clone().call(request));
             if let Err(err) = http1::Builder::new()
                 .serve_connection(io, hyper_service)
@@ -162,6 +162,12 @@ impl Decoder for Rtsp2HttpCodec {
                     // Body (i.e. remaining bytes after head of request)
                     output.put_slice(&src[len..]);
 
+                    trace!(
+                        "built new request, size {}, original size is {}",
+                        output.len(),
+                        src.len()
+                    );
+
                     // Empty the buffer, so the next frame can be pulled
                     src.clear();
 
@@ -193,6 +199,7 @@ impl Decoder for Rtsp2HttpCodec {
 
                 // Replacing version with HTTP and trying to parse again
                 src[pos..pos + RTSP_VERSION.len()].copy_from_slice(HTTP_VERSION);
+                trace!("replaced version at {pos} position");
             }
         }
     }
@@ -268,6 +275,12 @@ impl<T: AsRef<[u8]>> Encoder<T> for Rtsp2HttpCodec {
 
         // Body
         dst.put_slice(&item[len..]);
+
+        trace!(
+            "built new response, size is {}, original size is {}",
+            dst.len(),
+            item.len()
+        );
 
         Ok(())
     }
