@@ -1,20 +1,26 @@
 [package]
-name = "raop"
+name = "rairplay"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tracing = "0.1.37"
-bytes = "1.4.0"
-url = "2.3.1"
-lazy_static = "1.4.0"
-openssl = "0.10.50"
-tower = { version = "0.4.13", features = ["util"] }
-rtsp-types = "0.1.0"
-sdp-types = "0.1.5"
-rtp-rs = "0.6.0"
-futures = "0.3.28"
-dashmap = "5.5.3"
-mac_address2 = "2.0.1"
-symphonia-core = "0.5.3"
-asynchronous-codec = "0.6.2"
+serde = { version = "1", features = ["derive"] }
+tracing = "0.1"
+
+# Publishing service
+mdns-sd = "0.10"
+
+# Transport
+http-body = "1"
+httparse = "1"
+bytes = "1"
+tokio = { version = "1.35.1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+tower = "0.4"
+hyper = { version = "1", features = ["server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+futures = "0.3"
+pin-project-lite = "0.2"
+
+# HTTP/RTSP service
+axum = { version = "0.7" }
