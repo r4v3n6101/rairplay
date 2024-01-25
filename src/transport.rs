@@ -1,13 +1,20 @@
 use std::{
-    io::{self},
+    io,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use axum::Router;
 use bytes::{BufMut, Bytes, BytesMut};
-use httparse::{Error as HError, Header, Request, Response, Status, EMPTY_HEADER};
-use hyper::{body::Incoming, server::conn::http1, service::service_fn};
+use httparse::{
+    Error as HttparseError, Header, Request as HttparseRequest, Response as HttparseResponse,
+    Status, EMPTY_HEADER,
+};
+use hyper::{
+    body::{Body, Incoming},
+    server::conn::http1,
+    service::service_fn,
+    Request, Response,
+};
 use hyper_util::rt::TokioIo;
 use pin_project_lite::pin_project;
 use tokio::{
@@ -19,6 +26,7 @@ use tokio_util::{
     io::{SinkWriter, StreamReader},
 };
 use tower::Service;
+use tracing::error;
 
 const MAX_HEADERS: usize = 32;
 const RTSP_VERSION: &[u8] = b"RTSP/1.0\r\n";
@@ -26,6 +34,8 @@ const HTTP_VERSION: &[u8] = b"HTTP/1.1\r\n";
 const CRLF: &[u8] = b"\r\n";
 
 const REMAPPED_RTSP_PATH: &[u8] = b"/rtsp";
+
+type BoxStdError = Box<dyn std::error::Error + Send + Sync>;
 
 pin_project! {
     struct IO<I, O> {
@@ -62,32 +72,34 @@ impl<I, O: tokio::io::AsyncWrite> tokio::io::AsyncWrite for IO<I, O> {
     }
 }
 
-pub async fn serve_with_rtsp_remap(tcp_listener: TcpListener, app: Router) {
-    loop {
-        let (socket, _remote_addr) = tcp_listener.accept().await.unwrap();
+pub async fn serve_with_rtsp_remap<B, S>(tcp_listener: TcpListener, svc: S)
+where
+    B: Body + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<BoxStdError>,
 
-        let tower_service = app.clone();
+    S: Clone + Send + 'static,
+    S: Service<Request<Incoming>, Response = Response<B>>,
+    S::Future: Send,
+    S::Error: Into<BoxStdError>,
+{
+    loop {
+        let (socket, remote_addr) = tcp_listener.accept().await.unwrap();
+
+        let tower_service = svc.clone();
         tokio::spawn(async move {
             let (rx, tx) = split(socket);
-            let (rx, tx) = (
-                StreamReader::new(FramedRead::new(rx, Rtsp2HttpCodec)),
-                SinkWriter::new(FramedWrite::new(tx, Rtsp2HttpCodec)),
-            );
             let unified = IO {
-                input: rx,
-                output: tx,
+                input: StreamReader::new(FramedRead::new(rx, Rtsp2HttpCodec)),
+                output: SinkWriter::new(FramedWrite::new(tx, Rtsp2HttpCodec)),
             };
             let io = TokioIo::new(unified);
-
-            let hyper_service = service_fn(move |request: axum::http::Request<Incoming>| {
-                tower_service.clone().call(request)
-            });
-
+            let hyper_service = service_fn(move |request| tower_service.clone().call(request));
             if let Err(err) = http1::Builder::new()
                 .serve_connection(io, hyper_service)
                 .await
             {
-                eprintln!("failed to serve connection: {err:#}");
+                error!(%err, %remote_addr, "failed to serve connection");
             }
         });
     }
@@ -107,7 +119,7 @@ impl Decoder for Rtsp2HttpCodec {
         let mut non_http = false;
         loop {
             let mut headers = [EMPTY_HEADER; MAX_HEADERS];
-            let mut request = Request::new(&mut headers);
+            let mut request = HttparseRequest::new(&mut headers);
             match request.parse(src) {
                 Ok(Status::Complete(len)) => {
                     let uri = request.path.unwrap();
@@ -156,7 +168,7 @@ impl Decoder for Rtsp2HttpCodec {
                     return Ok(Some(output.freeze()));
                 }
                 Ok(Status::Partial) => return Ok(None),
-                Err(err @ HError::Version) => {
+                Err(err @ HttparseError::Version) => {
                     if !non_http {
                         non_http = true;
                     } else {
@@ -193,7 +205,7 @@ impl<T: AsRef<[u8]>> Encoder<T> for Rtsp2HttpCodec {
         let item = item.as_ref();
 
         let mut headers = [EMPTY_HEADER; MAX_HEADERS];
-        let mut response = Response::new(&mut headers);
+        let mut response = HttparseResponse::new(&mut headers);
         let len = match response.parse(item) {
             Ok(Status::Complete(len)) => len,
             Ok(Status::Partial) => {

@@ -11,13 +11,13 @@ tracing = "0.1"
 mdns-sd = "0.10"
 
 # Transport
+tower = "0.4"
 bytes = "1"
 httparse = "1"
 pin-project-lite = "0.2"
 # TODO : remove full, it's for developing
 tokio = { version = "1.35", features = ["net", "io-util", "full"] }
 tokio-util = { version = "0.7", features = ["codec", "io"] }
-tower = "0.4"
 hyper = { version = "1", features = ["server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 
