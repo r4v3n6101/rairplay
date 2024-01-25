@@ -11,16 +11,15 @@ tracing = "0.1"
 mdns-sd = "0.10"
 
 # Transport
-http-body = "1"
-httparse = "1"
 bytes = "1"
-tokio = { version = "1.35.1", features = ["full"] }
-tokio-util = { version = "0.7", features = ["compat"] }
+httparse = "1"
+pin-project-lite = "0.2"
+# TODO : remove full, it's for developing
+tokio = { version = "1.35", features = ["net", "io-util", "full"] }
+tokio-util = { version = "0.7", features = ["codec", "io"] }
 tower = "0.4"
 hyper = { version = "1", features = ["server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
-futures = "0.3"
-pin-project-lite = "0.2"
 
 # HTTP/RTSP service
 axum = { version = "0.7" }

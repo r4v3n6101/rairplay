@@ -1,24 +1,24 @@
-use axum::{
-    routing::{get, options},
-    Router,
-};
+use axum::{extract::Request, response::IntoResponse, routing::options, Router};
+use hyper::StatusCode;
 
 pub struct AirplayServer;
 
 impl AirplayServer {
     pub fn new() -> Router<()> {
-        let mut router = Router::<()>::new()
-            .route("/info", get(info))
-            .route("*", options(options_handler));
+        let router = Router::<()>::new()
+            .route("/rtsp", options(options_handler))
+            .fallback(invalid_request);
 
         router
     }
 }
 
-async fn options_handler() {
-    println!("Options called");
+async fn options_handler(req: Request) -> impl IntoResponse {
+    println!("Options called: {:?}", req);
+
+    (StatusCode::NOT_FOUND, [("Upgrade", "RTSP")])
 }
 
-async fn info() {
-    println!("hi there");
+async fn invalid_request() -> impl IntoResponse {
+    (StatusCode::NOT_FOUND, [("Upgrade", "RTSP")])
 }
