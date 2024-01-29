@@ -1,11 +1,20 @@
-use serde::Serialize;
+use axum::response::IntoResponse;
+use hyper::StatusCode;
+use serde::{Deserialize, Serialize};
+
+use super::{plist::BinaryPlist, RTSP_UPGRADE};
 
 const GROUP_UUID: &str = "89581713-3fa2-4d2d-8a0e-b6840cf6b3ae";
-const FEATURES: &str = "0x40018A10,0xE0300";
+const FEATURES: &str = "0x401FC200,0x300";
 const MAC_ADDR: &str = "9F:D7:AF:1F:D3:CD";
 
-#[derive(Debug, Serialize)]
-pub struct Airplay2TXTRecords {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InfoRequest {
+    pub qualifier: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InfoResponse {
     #[serde(rename = "acl")]
     pub access_control_level: u8,
     #[serde(rename = "deviceid")]
@@ -31,15 +40,9 @@ pub struct Airplay2TXTRecords {
     pub pairing_uuid: String,
     #[serde(rename = "pk")]
     pub pubkey: String,
-
-    // RAOP flags primarily
-    #[serde(rename = "ch")]
-    pub channels: u8,
-    #[serde(rename = "cn")]
-    pub compression: String,
 }
 
-impl Default for Airplay2TXTRecords {
+impl Default for InfoResponse {
     fn default() -> Self {
         Self {
             access_control_level: 0,
@@ -57,9 +60,14 @@ impl Default for Airplay2TXTRecords {
             source_version: "366.0".into(),
             pairing_uuid: GROUP_UUID.into(),
             pubkey: Default::default(),
-
-            channels: 2,
-            compression: "0,1,2".into(),
         }
     }
+}
+
+pub async fn handler(BinaryPlist(req): BinaryPlist<InfoRequest>) -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        RTSP_UPGRADE,
+        BinaryPlist(InfoResponse::default()),
+    )
 }

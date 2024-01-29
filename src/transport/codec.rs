@@ -1,113 +1,23 @@
-use std::{
-    io,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::io;
 
 use bytes::{BufMut, Bytes, BytesMut};
-use httparse::{
-    Error as HttparseError, Header, Request as HttparseRequest, Response as HttparseResponse,
-    Status, EMPTY_HEADER,
-};
-use hyper::{
-    body::{Body, Incoming},
-    server::conn::http1,
-    service::service_fn,
-    Request, Response,
-};
-use hyper_util::rt::TokioIo;
-use pin_project_lite::pin_project;
-use tokio::{
-    io::{split, ReadBuf},
-    net::TcpListener,
-};
-use tokio_util::{
-    codec::{Decoder, Encoder, FramedRead, FramedWrite},
-    io::{SinkWriter, StreamReader},
-};
-use tower::Service;
-use tracing::{debug, error, trace};
+use httparse::{Error, Request, Response, Status, EMPTY_HEADER};
+use hyper::Uri;
+use tokio_util::codec::{Decoder, Encoder};
+use tracing::trace;
 
 const MAX_HEADERS: usize = 32;
-const RTSP_VERSION: &[u8] = b"RTSP/1.0\r\n";
-const HTTP_VERSION: &[u8] = b"HTTP/1.1\r\n";
+
+const RTSP_PATH_PREFIX: &[u8] = b"/rtsp";
+const RTSP_VERSION: &[u8] = b"RTSP/1.0";
+const RTSP_VERSION_CRLF: &[u8] = b"RTSP/1.0\r\n";
+const HTTP_VERSION: &[u8] = b"HTTP/1.1";
+const HTTP_VERSION_CRLF: &[u8] = b"HTTP/1.1\r\n";
 const CRLF: &[u8] = b"\r\n";
 
-const REMAPPED_RTSP_PATH: &[u8] = b"/rtsp";
+pub struct Rtsp2Http;
 
-type BoxStdError = Box<dyn std::error::Error + Send + Sync>;
-
-pin_project! {
-    struct RW<R, W> {
-        #[pin]
-        reader: R,
-        #[pin]
-        writer: W,
-    }
-}
-impl<I: tokio::io::AsyncRead, O> tokio::io::AsyncRead for RW<I, O> {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        self.project().reader.poll_read(cx, buf)
-    }
-}
-impl<I, O: tokio::io::AsyncWrite> tokio::io::AsyncWrite for RW<I, O> {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<Result<usize, io::Error>> {
-        self.project().writer.poll_write(cx, buf)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        self.project().writer.poll_flush(cx)
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        self.project().writer.poll_shutdown(cx)
-    }
-}
-
-pub async fn serve_with_rtsp_remap<B, S>(tcp_listener: TcpListener, svc: S)
-where
-    B: Body + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxStdError>,
-
-    S: Clone + Send + 'static,
-    S: Service<Request<Incoming>, Response = Response<B>>,
-    S::Future: Send,
-    S::Error: Into<BoxStdError>,
-{
-    loop {
-        let (socket, remote_addr) = tcp_listener.accept().await.unwrap();
-        debug!(%remote_addr, "got a new tcp connection");
-
-        let tower_service = svc.clone();
-        tokio::spawn(async move {
-            let (rx, tx) = split(socket);
-            let io = TokioIo::new(RW {
-                reader: StreamReader::new(FramedRead::new(rx, Rtsp2HttpCodec)),
-                writer: SinkWriter::new(FramedWrite::new(tx, Rtsp2HttpCodec)),
-            });
-            let hyper_service = service_fn(move |request| tower_service.clone().call(request));
-            if let Err(err) = http1::Builder::new()
-                .serve_connection(io, hyper_service)
-                .await
-            {
-                error!(%err, %remote_addr, "failed to serve connection");
-            }
-        });
-    }
-}
-
-struct Rtsp2HttpCodec;
-
-impl Decoder for Rtsp2HttpCodec {
+impl Decoder for Rtsp2Http {
     type Item = Bytes;
     type Error = io::Error;
 
@@ -119,13 +29,13 @@ impl Decoder for Rtsp2HttpCodec {
         let mut non_http = false;
         loop {
             let mut headers = [EMPTY_HEADER; MAX_HEADERS];
-            let mut request = HttparseRequest::new(&mut headers);
+            let mut request = Request::new(&mut headers);
             match request.parse(src) {
                 Ok(Status::Complete(len)) => {
-                    let uri = request.path.unwrap();
+                    let path = request.path.unwrap();
 
                     // Should be enough to fulfill HTTP request and new header
-                    let mut output = BytesMut::with_capacity(src.len() + uri.len() + 32);
+                    let mut output = BytesMut::with_capacity(src.len() + path.len() + 32);
 
                     // Method
                     let method = request.method.unwrap();
@@ -133,20 +43,26 @@ impl Decoder for Rtsp2HttpCodec {
                     output.put_u8(b' ');
 
                     // URI path
-                    if non_http {
-                        output.put_slice(REMAPPED_RTSP_PATH);
-                    } else {
-                        output.put_slice(uri.as_bytes());
+                    match (path.parse::<Uri>(), non_http) {
+                        (Ok(rtsp_uri), true) => {
+                            output.put_slice(RTSP_PATH_PREFIX);
+                            if rtsp_uri.path() != "*" {
+                                output.put_slice(rtsp_uri.path().as_bytes());
+                            }
+                        }
+                        _ => {
+                            output.put_slice(path.as_bytes());
+                        }
                     }
                     output.put_u8(b' ');
 
-                    // Version & proto (it's always HTTP ver. 1)
-                    output.put_slice(HTTP_VERSION);
+                    // Version & proto (it's always HTTP/1.1)
+                    output.put_slice(HTTP_VERSION_CRLF);
 
-                    // Special headers for remapped RTSP
+                    // Original uri, for debugging
                     if non_http {
-                        output.put_slice(b"Referer: ");
-                        output.put_slice(uri.as_bytes());
+                        output.put_slice(b"x-rtsp-uri: ");
+                        output.put_slice(path.as_bytes());
                         output.put_slice(CRLF);
                     }
 
@@ -159,6 +75,7 @@ impl Decoder for Rtsp2HttpCodec {
                     }
                     output.put_slice(CRLF);
 
+                    // TODO : use Content-Length
                     // Body (i.e. remaining bytes after head of request)
                     output.put_slice(&src[len..]);
 
@@ -174,7 +91,7 @@ impl Decoder for Rtsp2HttpCodec {
                     return Ok(Some(output.freeze()));
                 }
                 Ok(Status::Partial) => return Ok(None),
-                Err(err @ HttparseError::Version) => {
+                Err(err @ Error::Version) => {
                     if !non_http {
                         non_http = true;
                     } else {
@@ -188,8 +105,8 @@ impl Decoder for Rtsp2HttpCodec {
 
             if non_http {
                 let Some(pos) = src
-                    .windows(RTSP_VERSION.len())
-                    .position(|bytes| bytes == RTSP_VERSION)
+                    .windows(RTSP_VERSION_CRLF.len())
+                    .position(|bytes| bytes == RTSP_VERSION_CRLF)
                 else {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
@@ -198,21 +115,21 @@ impl Decoder for Rtsp2HttpCodec {
                 };
 
                 // Replacing version with HTTP and trying to parse again
-                src[pos..pos + RTSP_VERSION.len()].copy_from_slice(HTTP_VERSION);
+                src[pos..pos + RTSP_VERSION_CRLF.len()].copy_from_slice(HTTP_VERSION_CRLF);
                 trace!("replaced version at {pos} position");
             }
         }
     }
 }
 
-impl<T: AsRef<[u8]>> Encoder<T> for Rtsp2HttpCodec {
+impl<T: AsRef<[u8]>> Encoder<T> for Rtsp2Http {
     type Error = io::Error;
 
     fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let item = item.as_ref();
 
         let mut headers = [EMPTY_HEADER; MAX_HEADERS];
-        let mut response = HttparseResponse::new(&mut headers);
+        let mut response = Response::new(&mut headers);
         let len = match response.parse(item) {
             Ok(Status::Complete(len)) => len,
             Ok(Status::Partial) => {
@@ -264,15 +181,20 @@ impl<T: AsRef<[u8]>> Encoder<T> for Rtsp2HttpCodec {
         // Headers
         for header in response.headers {
             if header != &EMPTY_HEADER {
-                let Header { name, value } = header;
-                dst.put_slice(name.as_bytes());
+                // TODO : is that necessary?
+                if header.name.eq_ignore_ascii_case("cseq") {
+                    dst.put_slice(b"CSeq");
+                } else {
+                    dst.put_slice(header.name.as_bytes());
+                }
                 dst.put_slice(b": ");
-                dst.put_slice(value);
+                dst.put_slice(header.value);
                 dst.put_slice(CRLF);
             }
         }
         dst.put_slice(CRLF);
 
+        // TODO : use Content-Length
         // Body
         dst.put_slice(&item[len..]);
 
