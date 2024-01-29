@@ -2,7 +2,7 @@ use axum::response::IntoResponse;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use super::{plist::BinaryPlist, RTSP_UPGRADE};
+use super::plist::BinaryPlist;
 
 const GROUP_UUID: &str = "89581713-3fa2-4d2d-8a0e-b6840cf6b3ae";
 const FEATURES: &str = "0x401FC200,0x300";
@@ -65,9 +65,5 @@ impl Default for InfoResponse {
 }
 
 pub async fn handler(BinaryPlist(req): BinaryPlist<InfoRequest>) -> impl IntoResponse {
-    (
-        StatusCode::OK,
-        RTSP_UPGRADE,
-        BinaryPlist(InfoResponse::default()),
-    )
+    (StatusCode::OK, BinaryPlist(InfoResponse::default()))
 }

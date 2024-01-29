@@ -43,10 +43,7 @@ where
     T: DeserializeOwned,
 {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, PlistRejection> {
-        match plist::from_bytes(bytes) {
-            Ok(value) => Ok(Self(value)),
-            Err(err) => Err(err.into()),
-        }
+        plist::from_bytes(bytes).map(Self).map_err(Into::into)
     }
 }
 
