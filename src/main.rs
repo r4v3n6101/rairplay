@@ -1,3 +1,4 @@
+use axum::Router;
 use tokio::net::TcpListener;
 use tracing::Level;
 
@@ -12,7 +13,8 @@ async fn main() {
         .init();
 
     let tcp_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
-    let svc = rtsp::AirplayServer::new();
 
-    transport::serve_with_rtsp_remap(tcp_listener, svc).await;
+    let router = Router::new().nest("/rtsp", rtsp::router());
+
+    transport::serve_with_rtsp_remap(tcp_listener, router).await;
 }

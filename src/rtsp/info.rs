@@ -1,11 +1,11 @@
-use axum::response::IntoResponse;
-use hyper::StatusCode;
+use axum::{extract::Request, response::IntoResponse};
+use hyper::{header::CONTENT_TYPE, StatusCode};
 use serde::{Deserialize, Serialize};
 
 use super::plist::BinaryPlist;
 
-const GROUP_UUID: &str = "89581713-3fa2-4d2d-8a0e-b6840cf6b3ae";
-const FEATURES: &str = "0x401FC200,0x300";
+const SRCVERS: &str = "377.25.06";
+const FEATURES: &str = "0x405fc200,0x8300";
 const MAC_ADDR: &str = "9F:D7:AF:1F:D3:CD";
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -15,16 +15,10 @@ pub struct InfoRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InfoResponse {
-    //#[serde(rename = "acl")]
-    //pub access_control_level: u8,
     #[serde(rename = "deviceid")]
     pub device_id: String,
     pub features: String,
     pub flags: String,
-    //#[serde(rename = "gcgl")]
-    //pub group_containing_discoverable_leader: u8,
-    //#[serde(rename = "gid")]
-    //pub group_uuid: String,
     pub manufacturer: String,
     pub model: String,
     pub name: String,
@@ -34,34 +28,46 @@ pub struct InfoResponse {
     pub required_sender_flags: String,
     #[serde(rename = "srcvers")]
     pub source_version: String,
-    // #[serde(rename = "pi")]
-    // pub pairing_uuid: String,
-    // #[serde(rename = "pk")]
-    // pub pubkey: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AdditionalInfoResponse {
+    #[serde(rename = "initialVolume")]
+    initial_volume: f32,
 }
 
 impl Default for InfoResponse {
     fn default() -> Self {
         Self {
-            //access_control_level: 0,
             device_id: MAC_ADDR.into(),
             features: FEATURES.into(),
             flags: "0x4".into(),
-            //group_containing_discoverable_leader: 0,
-            //group_uuid: GROUP_UUID.into(),
             manufacturer: env!("CARGO_PKG_AUTHORS").into(),
             model: env!("CARGO_PKG_NAME").into(),
             name: env!("CARGO_PKG_NAME").into(),
             protocol_version: "1.1".into(),
             required_sender_flags: "0x0".into(),
-            //serial_number: MAC_ADDR.into(),
-            source_version: "366.0".into(),
-            //pairing_uuid: GROUP_UUID.into(),
-            //pubkey: Default::default(),
+            source_version: SRCVERS.into(),
         }
     }
 }
 
-pub async fn handler(BinaryPlist(req): BinaryPlist<InfoRequest>) -> impl IntoResponse {
+pub async fn handler(req: Request) -> impl IntoResponse {
+    match req.headers().get(CONTENT_TYPE) {
+        Some(_) => plist_handler(req).await.into_response(),
+        None => empty_handler(req).await.into_response(),
+    }
+}
+
+async fn plist_handler(req: Request) -> impl IntoResponse {
     (StatusCode::OK, BinaryPlist(InfoResponse::default()))
+}
+
+async fn empty_handler(req: Request) -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        BinaryPlist(AdditionalInfoResponse {
+            initial_volume: -140.0,
+        }),
+    )
 }

@@ -92,11 +92,10 @@ impl Decoder for Rtsp2Http {
                 }
                 Ok(Status::Partial) => return Ok(None),
                 Err(err @ Error::Version) => {
-                    if !non_http {
-                        non_http = true;
-                    } else {
+                    if non_http {
                         return Err(io::Error::new(io::ErrorKind::InvalidData, err));
                     }
+                    non_http = true;
                 }
                 Err(err) => {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, err));
@@ -174,7 +173,7 @@ impl<T: AsRef<[u8]>> Encoder<T> for Rtsp2Http {
 
         // Reason word
         if let Some(reason) = response.reason {
-            dst.put_slice(format!(" {}", reason).as_bytes());
+            dst.put_slice(format!(" {reason}").as_bytes());
         }
         dst.put_slice(CRLF);
 
