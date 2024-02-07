@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     extract::Request,
     handler::Handler,
@@ -10,15 +12,18 @@ use hyper::StatusCode;
 use tower::ServiceBuilder;
 use tower_http::ServiceBuilderExt;
 
+use crate::info::AppInfo;
+
 mod fp_setup;
 mod info;
 mod plist;
 mod record;
 mod setpeers;
 mod setup;
+mod state;
 mod teardown;
 
-pub fn router() -> Router {
+pub fn rtsp_service(app_info: AppInfo, initial_volume: f32) -> Router<()> {
     let layer = ServiceBuilder::new()
         .override_response_header(HeaderName::from_static("upgrade"), |_: &_| {
             Some(HeaderValue::from_static("RTSP"))
@@ -27,7 +32,13 @@ pub fn router() -> Router {
         .trace_for_http();
 
     Router::new()
-        .route("/info", get(info::handler))
+        .route(
+            "/info",
+            get(info::handler).with_state(info::ServiceInfo {
+                app_info: Arc::new(app_info),
+                initial_volume,
+            }),
+        )
         .route("/fp-setup", post(fp_setup::handler))
         .route(
             "/:media_id",

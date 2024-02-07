@@ -16,8 +16,6 @@ const UTF8_TEXT: &str = "text/plain; charset=utf-8";
 
 #[derive(Debug, Error)]
 pub enum PlistRejection {
-    #[error("wrong content type header")]
-    InvalidContentType,
     #[error(transparent)]
     Plist(#[from] plist::Error),
     #[error(transparent)]
@@ -70,17 +68,8 @@ where
     type Rejection = PlistRejection;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        if req
-            .headers()
-            .get(CONTENT_TYPE)
-            .filter(|val| val.as_bytes() == APPLE_BPLIST_MIME.as_bytes())
-            .is_some()
-        {
-            let bytes = Bytes::from_request(req, state).await?;
-            Self::from_bytes(&bytes)
-        } else {
-            Err(PlistRejection::InvalidContentType)
-        }
+        let bytes = Bytes::from_request(req, state).await?;
+        Self::from_bytes(&bytes)
     }
 }
 
