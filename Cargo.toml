@@ -9,6 +9,7 @@ thiserror = "1"
 
 serde = { version = "1", features = ["derive"] }
 bytes = { version = "1", features = ["serde"] }
+bitflags = { version = "2", features = ["serde"] }
 plist = "1"
 
 # Transport
@@ -22,9 +23,11 @@ hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 
 # HTTP/RTSP service
-axum = { version = "0.7", default-features = false }
+axum = { version = "0.7", default-features = false, features = ["tokio"] }
 async-trait = "0.1"
 tracing-subscriber = "0.3"
 tower = { version = "0.4" }
 tower-http = { version = "0.5", features = ["propagate-header", "set-header", "trace", "util"] }
+mac_address = "1"
 dashmap = "5"
+crossbeam-utils = "0.8"

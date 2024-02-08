@@ -57,9 +57,7 @@ pub async fn handler(body: Bytes) -> Response {
             // Seq
             match body.get(6) {
                 Some(1) => match body.get(14) {
-                    Some(mode @ 0..=4) => {
-                        (StatusCode::OK, MESSAGES[*mode as usize].to_vec()).into_response()
-                    }
+                    Some(mode @ 0..=4) => MESSAGES[*mode as usize].into_response(),
                     _ => (StatusCode::BAD_REQUEST, "Unknown mode for M1").into_response(),
                 },
                 Some(3) => {
@@ -68,7 +66,7 @@ pub async fn handler(body: Bytes) -> Response {
                     match body.get(body.len() - 20..) {
                         Some(suffix) => {
                             output[FP_HEADER.len()..].copy_from_slice(suffix);
-                            (StatusCode::OK, output.to_vec()).into_response()
+                            output.into_response()
                         }
                         _ => (StatusCode::BAD_REQUEST, "Insufficient request").into_response(),
                     }

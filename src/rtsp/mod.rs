@@ -1,57 +1,53 @@
-use std::sync::Arc;
-
 use axum::{
     extract::Request,
     handler::Handler,
     http::{HeaderName, HeaderValue},
     response::IntoResponse,
-    routing::{any, get, post},
+    routing::{any, get, options, post},
     Router,
 };
 use hyper::StatusCode;
-use tower::ServiceBuilder;
-use tower_http::ServiceBuilderExt;
+use tower_http::{propagate_header::PropagateHeaderLayer, set_header::SetResponseHeaderLayer};
 
-use crate::info::AppInfo;
+use self::state::Connections;
 
 mod fp_setup;
+mod get_parameter;
 mod info;
-mod plist;
 mod record;
 mod setpeers;
 mod setup;
-mod state;
 mod teardown;
 
-pub fn rtsp_service(app_info: AppInfo, initial_volume: f32) -> Router<()> {
-    let layer = ServiceBuilder::new()
-        .override_response_header(HeaderName::from_static("upgrade"), |_: &_| {
-            Some(HeaderValue::from_static("RTSP"))
-        })
-        .propagate_header(HeaderName::from_static("cseq"))
-        .trace_for_http();
+mod plist;
+mod state;
+
+pub fn route() -> Router<()> {
+    let connections = Connections::default();
 
     Router::new()
-        .route(
-            "/info",
-            get(info::handler).with_state(info::ServiceInfo {
-                app_info: Arc::new(app_info),
-                initial_volume,
-            }),
-        )
+        .route("/", options(()))
+        .route("/info", get(info::handler))
         .route("/fp-setup", post(fp_setup::handler))
         .route(
             "/:media_id",
             any(|req: Request| async move {
                 match req.method().as_str() {
-                    "SETUP" => setup::handler.call(req, ()).await,
-                    "RECORD" => record::handler.call(req, ()).await,
-                    "SETPEERS" => setpeers::handler.call(req, ()).await,
-                    "TEARDOWN" => teardown::handler.call(req, ()).await,
+                    "SETUP" => setup::handler.call(req, connections).await,
+                    "RECORD" => record::handler.call(req, connections).await,
+                    "SETPEERS" => setpeers::handler.call(req, connections).await,
+                    "TEARDOWN" => teardown::handler.call(req, connections).await,
+                    "GET_PARAMETER" => get_parameter::handler.call(req, connections).await,
                     other => (StatusCode::BAD_GATEWAY, format!("Unknown method: {other}"))
                         .into_response(),
                 }
             }),
         )
-        .layer(layer)
+        // CSeq is required for RTSP protocol
+        .layer(PropagateHeaderLayer::new(HeaderName::from_static("cseq")))
+        // Synthetic header to let mapper know that's RTSP, not HTTP
+        .layer(SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("upgrade"),
+            |_: &_| Some(HeaderValue::from_static("RTSP")),
+        ))
 }

@@ -1,5 +1,6 @@
-use std::error::Error;
+use std::{convert::Infallible, error::Error, future::poll_fn, net::SocketAddr, sync::Arc};
 
+use axum::extract::connect_info::Connected;
 use hyper::{
     body::{Body, Incoming},
     server::conn::http1,
@@ -15,34 +16,69 @@ use tokio_util::{
 use tower::Service;
 use tracing::{debug, error};
 
+use crate::advertisment::AdvData;
+
 mod codec;
 mod util;
 
 type BoxStdError = Box<dyn Error + Send + Sync>;
 
-pub async fn serve_with_rtsp_remap<B, S>(tcp_listener: TcpListener, svc: S)
-where
+#[derive(Debug, Clone)]
+pub struct IncomingStream {
+    pub local_addr: Option<SocketAddr>,
+    pub remote_addr: SocketAddr,
+    pub adv_data: Arc<AdvData>,
+}
+
+impl Connected<IncomingStream> for IncomingStream {
+    fn connect_info(target: IncomingStream) -> Self {
+        target
+    }
+}
+
+pub async fn serve_with_rtsp_remap<B, S, M>(
+    tcp_listener: TcpListener,
+    adv_data: Arc<AdvData>,
+    mut make_service: M,
+) where
     B: Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<BoxStdError>,
-
-    S: Clone + Send + 'static,
-    S: Service<Request<Incoming>, Response = Response<B>>,
+    M: Service<IncomingStream, Response = S, Error = Infallible> + Clone + Send + 'static,
+    S: Service<Request<Incoming>, Response = Response<B>> + Clone + Send + 'static,
     S::Future: Send,
     S::Error: Into<BoxStdError>,
 {
     loop {
-        let (socket, remote_addr) = tcp_listener.accept().await.unwrap();
+        let (stream, remote_addr) = match tcp_listener.accept().await {
+            Ok(res) => res,
+            Err(err) => {
+                error!(%err, "couldn't accept connection");
+                continue;
+            }
+        };
         debug!(%remote_addr, "got a new tcp connection");
 
-        let tower_service = svc.clone();
+        poll_fn(|cx| make_service.poll_ready(cx))
+            .await
+            .unwrap_or_else(|err| match err {});
+        let tower_service = make_service
+            .call(IncomingStream {
+                local_addr: stream.local_addr().ok(),
+                remote_addr,
+                adv_data: Arc::clone(&adv_data),
+            })
+            .await
+            .unwrap_or_else(|err| match err {});
+        let hyper_service = service_fn(move |request| tower_service.clone().call(request));
+
+        let (rx, tx) = split(stream);
+        let io = TokioIo::new(util::RW {
+            reader: StreamReader::new(FramedRead::new(rx, codec::Rtsp2Http)),
+            writer: SinkWriter::new(FramedWrite::new(tx, codec::Rtsp2Http)),
+        });
+
         tokio::spawn(async move {
-            let (rx, tx) = split(socket);
-            let io = TokioIo::new(util::RW {
-                reader: StreamReader::new(FramedRead::new(rx, codec::Rtsp2Http)),
-                writer: SinkWriter::new(FramedWrite::new(tx, codec::Rtsp2Http)),
-            });
-            let hyper_service = service_fn(move |request| tower_service.clone().call(request));
             if let Err(err) = http1::Builder::new()
                 .preserve_header_case(true)
                 .title_case_headers(true)
