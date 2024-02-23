@@ -1,7 +1,5 @@
-use axum::response::IntoResponse;
-use hyper::StatusCode;
+use tracing::info;
 
-// TODO : ???
-pub async fn handler() -> impl IntoResponse {
-    StatusCode::OK
+pub async fn handler() {
+    info!("sender wants to start stream");
 }

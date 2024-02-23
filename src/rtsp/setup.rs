@@ -1,18 +1,21 @@
+use std::net::{IpAddr, SocketAddr};
 use std::{
+    future, io,
     net::Ipv4Addr,
     sync::{Arc, Weak},
 };
 
+use axum::handler::HandlerWithoutStateExt;
 use axum::{
     extract::{ConnectInfo, Path, State},
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
 use hyper::StatusCode;
-use plist::Value;
 use serde::{Deserialize, Serialize};
+use tokio::net::{TcpStream, UdpSocket};
 use tokio::{io::AsyncReadExt, net::TcpListener};
-use tracing::{error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::transport::IncomingStream;
 
@@ -20,6 +23,33 @@ use super::{
     plist::BinaryPlist,
     state::{Connection, Connections},
 };
+
+#[derive(Debug, Deserialize)]
+pub struct StreamDesc {
+    #[serde(rename = "type")]
+    ty: u8,
+    #[serde(rename = "audioMode")]
+    audio_mode: String,
+    #[serde(rename = "ct")]
+    compression_type: u8,
+    #[serde(rename = "audioFormat")]
+    audio_format: u32,
+    #[serde(rename = "audioFormatIndex")]
+    audio_format_index: Option<u32>,
+
+    #[serde(rename = "latencyMin")]
+    latency_min: Option<u32>,
+    #[serde(rename = "latencyMax")]
+    latency_max: Option<u32>,
+    #[serde(rename = "spf")]
+    samples_per_frame: u32,
+
+    #[serde(rename = "controlPort")]
+    control_port: Option<u16>,
+
+    #[serde(rename = "clientID")]
+    client_id: Option<String>,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -43,8 +73,7 @@ pub enum SetupRequest {
         name: String,
     },
     DataControl {
-        #[serde(flatten)]
-        val: Value,
+        streams: Vec<StreamDesc>,
     },
 }
 
@@ -57,13 +86,29 @@ struct TimingPeerInfo {
 }
 
 #[derive(Debug, Serialize)]
-struct SetupResponse {
-    #[serde(rename = "eventPort")]
-    event_port: u16,
-    #[serde(rename = "timingPort")]
-    timing_port: u16,
-    #[serde(rename = "timingPeerInfo")]
-    timing_peer_info: TimingPeerInfo,
+struct StreamOut {
+    #[serde(rename = "type")]
+    ty: u8,
+    #[serde(rename = "controlPort")]
+    control_port: u16,
+    #[serde(rename = "dataPort")]
+    data_port: u16,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum SetupResponse {
+    TimingEvent {
+        #[serde(rename = "eventPort")]
+        event_port: u16,
+        #[serde(rename = "timingPort")]
+        timing_port: u16,
+        #[serde(rename = "timingPeerInfo")]
+        timing_peer_info: TimingPeerInfo,
+    },
+    DataControl {
+        streams: Vec<StreamOut>,
+    },
 }
 
 pub async fn handler(
@@ -71,6 +116,7 @@ pub async fn handler(
     State(Connections(connections)): State<Connections>,
     ConnectInfo(IncomingStream {
         local_addr,
+        remote_addr,
         adv_data,
         ..
     }): ConnectInfo<IncomingStream>,
@@ -96,17 +142,17 @@ pub async fn handler(
                     let connection = Arc::default();
                     if connections
                         .insert(media_id, Arc::clone(&connection))
-                        .is_some()
+                        .is_none()
                     {
-                        warn!("replaced old connection");
+                        info!("created new connection state");
                     } else {
-                        info!("created new connection");
+                        warn!("replaced old connection state");
                     }
 
                     tokio::spawn(event_handler(listener, Arc::downgrade(&connection)));
 
                     // TODO : timingPort = 0 only for PTP
-                    return BinaryPlist(SetupResponse {
+                    BinaryPlist(SetupResponse::TimingEvent {
                         event_port,
                         timing_port: 0,
                         timing_peer_info: TimingPeerInfo {
@@ -114,44 +160,109 @@ pub async fn handler(
                             addresses: vec![bind_addr.to_string()],
                         },
                     })
-                    .into_response();
+                    .into_response()
                 }
                 Err(err) => {
                     error!(%err, "failed to open event listener");
-                    return (
+                    (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "event listener not opened",
                     )
-                        .into_response();
+                        .into_response()
                 }
             }
         }
-        SetupRequest::DataControl { val } => {
-            println!("{val:?}");
+        SetupRequest::DataControl { streams } => {
+            let mut streams_out = Vec::with_capacity(streams.len());
+            for stream in &streams {
+                let Some(connection) = connections.get(&media_id) else {
+                    return (StatusCode::NOT_FOUND, "connection not found").into_response();
+                };
+
+                let (data_socket, data_port) = match open_udp(bind_addr, None).await {
+                    Ok(res) => res,
+                    Err(err) => {
+                        error!(%err, "failed to open data channel");
+                        return (StatusCode::INTERNAL_SERVER_ERROR, "data channel not opened")
+                            .into_response();
+                    }
+                };
+                let (control_socket, control_port) = match open_udp(
+                    bind_addr,
+                    stream
+                        .control_port
+                        .map(|port| SocketAddr::new(remote_addr.ip(), port)),
+                )
+                .await
+                {
+                    Ok(res) => res,
+                    Err(err) => {
+                        error!(%err, "failed to open control channel");
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "control channel not opened",
+                        )
+                            .into_response();
+                    }
+                };
+
+                tokio::spawn(data_handler(data_socket, Arc::downgrade(&connection)));
+                tokio::spawn(control_handler(control_socket, Arc::downgrade(&connection)));
+
+                streams_out.push(StreamOut {
+                    ty: stream.ty,
+                    data_port,
+                    control_port,
+                });
+            }
+
+            BinaryPlist(SetupResponse::DataControl {
+                streams: streams_out,
+            })
+            .into_response()
         }
     }
-
-    todo!()
 }
 
-async fn event_handler(event_listener: TcpListener, handle: Weak<Connection>) {
+async fn open_udp(
+    local_addr: IpAddr,
+    remote_addr: Option<SocketAddr>,
+) -> io::Result<(UdpSocket, u16)> {
+    let socket = UdpSocket::bind(SocketAddr::new(local_addr, 0)).await?;
+    if let Some(remote_addr) = remote_addr {
+        socket.connect(remote_addr).await?;
+    }
+    let port = socket.local_addr()?.port();
+
+    Ok((socket, port))
+}
+
+// TODO : this may be TCP
+async fn data_handler(listener: UdpSocket, handle: Weak<Connection>) {
+    future::pending().await
+}
+
+// TODO : this may be TCP
+async fn control_handler(listener: UdpSocket, handle: Weak<Connection>) {
+    future::pending().await
+}
+
+async fn event_handler(listener: TcpListener, handle: Weak<Connection>) {
     loop {
         let Some(connection) = handle.upgrade() else {
             info!("event listener closed");
             break;
         };
 
-        match event_listener.accept().await {
+        match listener.accept().await {
             Ok((mut stream, remote_addr)) => {
-                info!(%remote_addr, "new event stream");
-
                 let mut buf = [0; 8 * 1024];
-                while let Ok(len) = stream.read(&mut buf).await {
-                    trace!(%len, "event stream bytes");
+                while let Ok(len @ 1..) = stream.read(&mut buf).await {
+                    debug!(%len, %remote_addr, "event stream bytes");
                 }
             }
             Err(err) => {
-                error!(%err, "event listener couldn't accept an connection");
+                error!(%err, "event listener couldn't accept a connection");
             }
         }
     }

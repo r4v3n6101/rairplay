@@ -24,21 +24,19 @@ pub async fn handler(
                     peers.clear();
                     peers.extend(addresses.iter().filter_map(
                         |addr| match addr.parse::<IpAddr>() {
-                            Ok(addr) => {
-                                info!(%addr, "new PTP peer");
-                                Some(addr)
-                            }
+                            Ok(addr) => Some(addr),
                             Err(err) => {
                                 warn!(%addr, %err, "invalid address format");
                                 None
                             }
                         },
                     ));
+                    info!(?peers, "updated PTP addresses");
 
                     ().into_response()
                 }
                 ClockSync::NTP { .. } => {
-                    (StatusCode::NOT_ACCEPTABLE, "ntp couldn't set peers").into_response()
+                    (StatusCode::NOT_ACCEPTABLE, "NTP couldn't set peers").into_response()
                 }
             }
         }
