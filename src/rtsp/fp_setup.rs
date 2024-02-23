@@ -1,6 +1,6 @@
-use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 use hyper::StatusCode;
+use tracing::error;
 
 const MESSAGES: [&[u8]; 4] = [
     &[
@@ -44,11 +44,14 @@ const MESSAGES: [&[u8]; 4] = [
 ];
 const FP_HEADER: &[u8] = &[70, 80, 76, 89, 3, 1, 4, 0, 0, 0, 0, 20];
 
-pub async fn handler(body: Bytes) -> Response {
+pub async fn handler(body: Bytes) -> Result<Vec<u8>, StatusCode> {
     // Version
     match body.get(4) {
         Some(3) => {}
-        _ => return (StatusCode::BAD_REQUEST, "Unknown version").into_response(),
+        version => {
+            error!(?version, "invalid version");
+            return Err(StatusCode::BAD_REQUEST);
+        }
     }
 
     // Type
@@ -57,23 +60,35 @@ pub async fn handler(body: Bytes) -> Response {
             // Seq
             match body.get(6) {
                 Some(1) => match body.get(14) {
-                    Some(mode @ 0..=4) => MESSAGES[*mode as usize].into_response(),
-                    _ => (StatusCode::BAD_REQUEST, "Unknown mode for M1").into_response(),
+                    Some(mode @ 0..=4) => Ok(MESSAGES[*mode as usize].to_vec()),
+                    mode => {
+                        error!(?mode, "invalid mode");
+                        Err(StatusCode::BAD_REQUEST)
+                    }
                 },
                 Some(3) => {
-                    let mut output = [0; FP_HEADER.len() + 20];
+                    let mut output = vec![0; FP_HEADER.len() + 20];
                     output[..FP_HEADER.len()].copy_from_slice(FP_HEADER);
                     match body.get(body.len() - 20..) {
                         Some(suffix) => {
                             output[FP_HEADER.len()..].copy_from_slice(suffix);
-                            output.into_response()
+                            Ok(output)
                         }
-                        _ => (StatusCode::BAD_REQUEST, "Insufficient request").into_response(),
+                        _ => {
+                            error!("insufficient request's data");
+                            Err(StatusCode::BAD_REQUEST)
+                        }
                     }
                 }
-                _ => (StatusCode::BAD_REQUEST, "Unknown seq").into_response(),
+                seq => {
+                    error!(?seq, "invalid seq");
+                    Err(StatusCode::BAD_REQUEST)
+                }
             }
         }
-        _ => (StatusCode::BAD_REQUEST, "Unknown message type").into_response(),
+        msg_type => {
+            error!(?msg_type, "invalid version type");
+            Err(StatusCode::BAD_REQUEST)
+        }
     }
 }

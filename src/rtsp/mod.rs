@@ -3,7 +3,7 @@ use axum::{
     handler::Handler,
     http::{HeaderName, HeaderValue},
     response::IntoResponse,
-    routing::{any, get, options, post},
+    routing::{any, get, post},
     Router,
 };
 use hyper::StatusCode;
@@ -28,7 +28,6 @@ pub fn route() -> Router<()> {
     let connections = Connections::default();
 
     Router::new()
-        //.route("/", options(()))
         .route("/info", get(info::handler))
         .route("/fp-setup", post(fp_setup::handler))
         // Custom RTSP methods

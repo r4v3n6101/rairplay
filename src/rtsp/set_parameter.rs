@@ -18,9 +18,7 @@ pub async fn handler(
     // Volume, progress
     // Image
     // DMAP
-    let Some(connection) = connections.get(&media_id) else {
-        return (StatusCode::NOT_FOUND, "connection not found").into_response();
-    };
+    let connection = connections.entry(media_id).or_default().downgrade();
     match headers.get(CONTENT_TYPE).map(HeaderValue::as_bytes) {
         Some(b"text/parameters") => {
             let body = String::from_utf8_lossy(&body);

@@ -11,19 +11,17 @@ pub async fn handler(
     Path(media_id): Path<String>,
     State(Connections(connections)): State<Connections>,
     body: String,
-) -> Response {
-    match connections.get(&media_id) {
-        Some(connection) => match body.as_str() {
-            "volume\r\n" => (
-                [(CONTENT_TYPE, "text/parameters")],
-                format!("volume: {}\r\n", connection.volume.load()),
-            )
-                .into_response(),
-            param => {
-                error!(?param, "unimplemented parameter");
-                (StatusCode::NOT_IMPLEMENTED, "unknown parameter").into_response()
-            }
-        },
-        None => (StatusCode::NOT_FOUND, "connection not found").into_response(),
+) -> Result<Response, StatusCode> {
+    let connection = connections.entry(media_id).or_default().downgrade();
+    match body.as_str() {
+        "volume\r\n" => Ok((
+            [(CONTENT_TYPE, "text/parameters")],
+            format!("volume: {}\r\n", connection.volume.load()),
+        )
+            .into_response()),
+        param => {
+            error!(?param, "unimplemented parameter");
+            Err(StatusCode::NOT_IMPLEMENTED)
+        }
     }
 }

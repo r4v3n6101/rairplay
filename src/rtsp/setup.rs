@@ -1,21 +1,16 @@
-use std::net::{IpAddr, SocketAddr};
 use std::{
     future, io,
-    net::Ipv4Addr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::{Arc, Weak},
 };
 
-use axum::handler::HandlerWithoutStateExt;
-use axum::{
-    extract::{ConnectInfo, Path, State},
-    response::{IntoResponse, Response},
-};
+use axum::extract::{ConnectInfo, Path, State};
 use bytes::Bytes;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
-use tokio::net::{TcpStream, UdpSocket};
+use tokio::net::UdpSocket;
 use tokio::{io::AsyncReadExt, net::TcpListener};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::transport::IncomingStream;
 
@@ -78,7 +73,7 @@ pub enum SetupRequest {
 }
 
 #[derive(Debug, Serialize)]
-struct TimingPeerInfo {
+pub struct TimingPeerInfo {
     #[serde(rename = "Addresses")]
     addresses: Vec<String>,
     #[serde(rename = "ID")]
@@ -86,7 +81,7 @@ struct TimingPeerInfo {
 }
 
 #[derive(Debug, Serialize)]
-struct StreamOut {
+pub struct StreamOut {
     #[serde(rename = "type")]
     ty: u8,
     #[serde(rename = "controlPort")]
@@ -97,7 +92,7 @@ struct StreamOut {
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
-enum SetupResponse {
+pub enum SetupResponse {
     TimingEvent {
         #[serde(rename = "eventPort")]
         event_port: u16,
@@ -121,7 +116,7 @@ pub async fn handler(
         ..
     }): ConnectInfo<IncomingStream>,
     BinaryPlist(req): BinaryPlist<SetupRequest>,
-) -> Response {
+) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     let bind_addr = local_addr.map_or_else(|| Ipv4Addr::new(0, 0, 0, 0).into(), |addr| addr.ip());
     match req {
         SetupRequest::InfoEvent { .. } => {
@@ -134,8 +129,7 @@ pub async fn handler(
                         }
                         Err(err) => {
                             error!(%err, "failed to get address of event listener");
-                            return (StatusCode::INTERNAL_SERVER_ERROR, "unknown event port")
-                                .into_response();
+                            return Err(StatusCode::INTERNAL_SERVER_ERROR);
                         }
                     };
 
@@ -152,41 +146,34 @@ pub async fn handler(
                     tokio::spawn(event_handler(listener, Arc::downgrade(&connection)));
 
                     // TODO : timingPort = 0 only for PTP
-                    BinaryPlist(SetupResponse::TimingEvent {
+                    Ok(BinaryPlist(SetupResponse::TimingEvent {
                         event_port,
                         timing_port: 0,
                         timing_peer_info: TimingPeerInfo {
                             id: adv_data.mac_addr.to_string(),
                             addresses: vec![bind_addr.to_string()],
                         },
-                    })
-                    .into_response()
+                    }))
                 }
                 Err(err) => {
                     error!(%err, "failed to open event listener");
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "event listener not opened",
-                    )
-                        .into_response()
+                    Err(StatusCode::INTERNAL_SERVER_ERROR)
                 }
             }
         }
         SetupRequest::DataControl { streams } => {
+            let connection = connections.entry(media_id).or_default().downgrade();
+
             let mut streams_out = Vec::with_capacity(streams.len());
             for stream in &streams {
-                let Some(connection) = connections.get(&media_id) else {
-                    return (StatusCode::NOT_FOUND, "connection not found").into_response();
-                };
-
                 let (data_socket, data_port) = match open_udp(bind_addr, None).await {
                     Ok(res) => res,
                     Err(err) => {
                         error!(%err, "failed to open data channel");
-                        return (StatusCode::INTERNAL_SERVER_ERROR, "data channel not opened")
-                            .into_response();
+                        return Err(StatusCode::INTERNAL_SERVER_ERROR);
                     }
                 };
+
                 let (control_socket, control_port) = match open_udp(
                     bind_addr,
                     stream
@@ -198,11 +185,7 @@ pub async fn handler(
                     Ok(res) => res,
                     Err(err) => {
                         error!(%err, "failed to open control channel");
-                        return (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            "control channel not opened",
-                        )
-                            .into_response();
+                        return Err(StatusCode::INTERNAL_SERVER_ERROR);
                     }
                 };
 
@@ -216,10 +199,9 @@ pub async fn handler(
                 });
             }
 
-            BinaryPlist(SetupResponse::DataControl {
+            Ok(BinaryPlist(SetupResponse::DataControl {
                 streams: streams_out,
-            })
-            .into_response()
+            }))
         }
     }
 }
