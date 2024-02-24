@@ -32,6 +32,22 @@ impl Decoder for Rtsp2Http {
             let mut request = Request::new(&mut headers);
             match request.parse(src) {
                 Ok(Status::Complete(len)) => {
+                    let content_len = request
+                        .headers
+                        .iter()
+                        .find_map(|header| {
+                            if header.name.eq_ignore_ascii_case("content-length") {
+                                std::str::from_utf8(header.value).ok()?.parse().ok()
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or(src.len() - len);
+                    if content_len > src.len() - len {
+                        src.reserve(content_len - (src.len() - len));
+                        return Ok(None);
+                    }
+
                     let path = request.path.unwrap();
 
                     // Should be enough to fulfill HTTP request and new header
@@ -75,7 +91,6 @@ impl Decoder for Rtsp2Http {
                     }
                     output.put_slice(CRLF);
 
-                    // TODO : use Content-Length
                     // Body (i.e. remaining bytes after head of request)
                     output.put_slice(&src[len..]);
 
@@ -106,12 +121,12 @@ impl Decoder for Rtsp2Http {
                 let Some(pos) = src
                     .windows(RTSP_VERSION_CRLF.len())
                     .position(|bytes| bytes == RTSP_VERSION_CRLF)
-                else {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "neither HTTP nor RTSP/1.0",
-                    ));
-                };
+                    else {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "neither HTTP nor RTSP/1.0",
+                        ));
+                    };
 
                 // Replacing version with HTTP and trying to parse again
                 src[pos..pos + RTSP_VERSION_CRLF.len()].copy_from_slice(HTTP_VERSION_CRLF);
