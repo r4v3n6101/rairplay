@@ -27,7 +27,30 @@ impl Decoder for Rtsp2Http {
         }
 
         let mut non_http = false;
+        let mut need_more = false;
         loop {
+            if non_http {
+                if let Some(pos) = src
+                    .windows(RTSP_VERSION_CRLF.len())
+                    .position(|bytes| bytes == RTSP_VERSION_CRLF)
+                {
+                    // Replacing version with HTTP and trying to parse again
+                    src[pos..pos + RTSP_VERSION_CRLF.len()].copy_from_slice(HTTP_VERSION_CRLF);
+                    trace!("replaced version at {pos} position");
+                } else if let Some(pos) = src
+                    .windows(HTTP_VERSION_CRLF.len())
+                    .position(|bytes| bytes == HTTP_VERSION_CRLF)
+                {
+                    // Replace back rtsp, for another call of decode
+                    src[pos..pos + HTTP_VERSION_CRLF.len()].copy_from_slice(RTSP_VERSION_CRLF);
+                    trace!("replaced back version at {pos} position");
+                }
+            }
+
+            if need_more {
+                return Ok(None);
+            }
+
             let mut headers = [EMPTY_HEADER; MAX_HEADERS];
             let mut request = Request::new(&mut headers);
             match request.parse(src) {
@@ -45,7 +68,8 @@ impl Decoder for Rtsp2Http {
                         .unwrap_or(src.len() - len);
                     if content_len > src.len() - len {
                         src.reserve(content_len - (src.len() - len));
-                        return Ok(None);
+                        need_more = true;
+                        continue;
                     }
 
                     let path = request.path.unwrap();
@@ -105,7 +129,9 @@ impl Decoder for Rtsp2Http {
 
                     return Ok(Some(output.freeze()));
                 }
-                Ok(Status::Partial) => return Ok(None),
+                Ok(Status::Partial) => {
+                    need_more = true;
+                }
                 Err(err @ Error::Version) => {
                     if non_http {
                         return Err(io::Error::new(io::ErrorKind::InvalidData, err));
@@ -115,22 +141,6 @@ impl Decoder for Rtsp2Http {
                 Err(err) => {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, err));
                 }
-            }
-
-            if non_http {
-                let Some(pos) = src
-                    .windows(RTSP_VERSION_CRLF.len())
-                    .position(|bytes| bytes == RTSP_VERSION_CRLF)
-                    else {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "neither HTTP nor RTSP/1.0",
-                        ));
-                    };
-
-                // Replacing version with HTTP and trying to parse again
-                src[pos..pos + RTSP_VERSION_CRLF.len()].copy_from_slice(HTTP_VERSION_CRLF);
-                trace!("replaced version at {pos} position");
             }
         }
     }
