@@ -1,6 +1,5 @@
 use axum::{extract::ConnectInfo, response::IntoResponse};
 use serde::Serialize;
-use tracing::info;
 
 use crate::transport::IncomingStream;
 
@@ -35,7 +34,7 @@ pub async fn handler(
         model: adv_data.model.clone(),
         name: adv_data.name.clone(),
     };
-    info!(?response, ?adv_data, "built info from advertisment");
+    tracing::info!(?response, ?adv_data, "built info from advertisment");
 
     BinaryPlist(response)
 }

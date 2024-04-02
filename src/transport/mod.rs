@@ -14,7 +14,6 @@ use tokio_util::{
     io::{SinkWriter, StreamReader},
 };
 use tower::Service;
-use tracing::{debug, error};
 
 use crate::advertisment::AdvData;
 
@@ -53,11 +52,11 @@ pub async fn serve_with_rtsp_remap<B, S, M>(
         let (stream, remote_addr) = match tcp_listener.accept().await {
             Ok(res) => res,
             Err(err) => {
-                error!(%err, "couldn't accept connection");
+                tracing::error!(%err, "couldn't accept connection");
                 continue;
             }
         };
-        debug!(%remote_addr, "got a new tcp connection");
+        tracing::debug!(%remote_addr, "got a new tcp connection");
 
         poll_fn(|cx| make_service.poll_ready(cx))
             .await
@@ -85,7 +84,7 @@ pub async fn serve_with_rtsp_remap<B, S, M>(
                 .serve_connection(io, hyper_service)
                 .await
             {
-                error!(%err, %remote_addr, "failed to serve connection");
+                tracing::error!(%err, %remote_addr, "failed to serve connection");
             }
         });
     }

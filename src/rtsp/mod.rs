@@ -2,30 +2,24 @@ use axum::{
     extract::Request,
     handler::Handler,
     http::{HeaderName, HeaderValue},
-    response::IntoResponse,
     routing::{any, get, post},
     Router,
 };
-use hyper::StatusCode;
 use tower_http::{propagate_header::PropagateHeaderLayer, set_header::SetResponseHeaderLayer};
 
-use self::state::Connections;
+use crate::rtsp::state::SharedState;
 
 mod fp_setup;
+mod generic;
 mod get_parameter;
 mod info;
-mod record;
-mod set_parameter;
-mod setpeers;
 mod setup;
-mod teardown;
-mod unknown;
 
 mod plist;
 mod state;
 
 pub fn route() -> Router<()> {
-    let connections = Connections::default();
+    let state = SharedState::default();
 
     Router::new()
         .route("/info", get(info::handler))
@@ -34,21 +28,19 @@ pub fn route() -> Router<()> {
         .route(
             "/:media_id",
             any(|req: Request| async move {
+                // TODO : impl empty handlers
                 match req.method().as_str() {
-                    "SETUP" => setup::handler.call(req, connections).await,
-                    "RECORD" => record::handler.call(req, connections).await,
-                    "SETPEERS" => setpeers::handler.call(req, connections).await,
-                    "TEARDOWN" => teardown::handler.call(req, connections).await,
-                    "GET_PARAMETER" => get_parameter::handler.call(req, connections).await,
-                    "SET_PARAMETER" => set_parameter::handler.call(req, connections).await,
-                    other => (StatusCode::BAD_GATEWAY, format!("Unknown method: {other}"))
-                        .into_response(),
+                    "SETUP" => setup::handler.call(req, state).await,
+                    "GET_PARAMETER" => get_parameter::handler.call(req, state).await,
+                    method => {
+                        tracing::error!(?method, "unknown method");
+                        generic::trace_body.call(req, ()).await
+                    }
                 }
             }),
         )
+        .fallback(generic::trace_body)
         // Unknown handlers, just trace response
-        .route("/feedback", post(unknown::trace_body))
-        .route("/command", post(unknown::trace_body))
         // CSeq is required for RTSP protocol
         .layer(PropagateHeaderLayer::new(HeaderName::from_static("cseq")))
         // Synthetic header to let mapper know that's RTSP, not HTTP

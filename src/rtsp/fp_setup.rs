@@ -1,6 +1,5 @@
 use bytes::Bytes;
 use hyper::StatusCode;
-use tracing::error;
 
 const MESSAGES: [&[u8]; 4] = [
     &[
@@ -49,7 +48,7 @@ pub async fn handler(body: Bytes) -> Result<Vec<u8>, StatusCode> {
     match body.get(4) {
         Some(3) => {}
         version => {
-            error!(?version, "invalid version");
+            tracing::error!(?version, "invalid version");
             return Err(StatusCode::BAD_REQUEST);
         }
     }
@@ -62,7 +61,7 @@ pub async fn handler(body: Bytes) -> Result<Vec<u8>, StatusCode> {
                 Some(1) => match body.get(14) {
                     Some(mode @ 0..=4) => Ok(MESSAGES[*mode as usize].to_vec()),
                     mode => {
-                        error!(?mode, "invalid mode");
+                        tracing::error!(?mode, "invalid mode");
                         Err(StatusCode::BAD_REQUEST)
                     }
                 },
@@ -75,19 +74,19 @@ pub async fn handler(body: Bytes) -> Result<Vec<u8>, StatusCode> {
                             Ok(output)
                         }
                         _ => {
-                            error!("insufficient request's data");
+                            tracing::error!("insufficient request's data");
                             Err(StatusCode::BAD_REQUEST)
                         }
                     }
                 }
                 seq => {
-                    error!(?seq, "invalid seq");
+                    tracing::error!(?seq, "invalid seq");
                     Err(StatusCode::BAD_REQUEST)
                 }
             }
         }
         msg_type => {
-            error!(?msg_type, "invalid version type");
+            tracing::error!(?msg_type, "invalid version type");
             Err(StatusCode::BAD_REQUEST)
         }
     }
