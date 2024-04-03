@@ -1,7 +1,6 @@
 use std::{
     future, io,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::{Arc, Weak},
 };
 
 use axum::extract::{ConnectInfo, State};
@@ -12,6 +11,7 @@ use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, UdpSocket},
 };
+use tokio_util::sync::CancellationToken;
 
 use crate::transport::IncomingStream;
 
@@ -112,7 +112,7 @@ pub struct StreamResponse {
     #[serde(rename = "dataPort")]
     data_port: u16,
     #[serde(rename = "audioBufferSize")]
-    buffer_size: u32,
+    auido_buffer_size: u32,
 }
 
 pub async fn handler(
@@ -171,17 +171,18 @@ pub async fn handler(
                     }
                 },
 
-                event_data: Arc::new(()),
+                cancellation_token: CancellationToken::new(),
             };
 
             // TODO : timing?
             tokio::spawn(event_handler(
                 event_listener,
-                Arc::downgrade(&sender_info.event_data),
+                sender_info.cancellation_token.child_token(),
             ));
 
             let response = BinaryPlist(SetupResponse::TimingEvent {
                 event_port,
+
                 timing_port: match sender_info.timing_proto {
                     TimingProtocol::Ptp => 0,
                     TimingProtocol::Ntp => unimplemented!("NTP not supported"),
@@ -201,6 +202,17 @@ pub async fn handler(
         }
 
         SetupRequest::DataControl { streams } => {
+            let Some(streams_token) = state
+                .sender_info
+                .read()
+                .unwrap()
+                .as_ref()
+                .map(|s| s.cancellation_token.child_token())
+            else {
+                tracing::error!("uninitialized sender info");
+                return Err(StatusCode::BAD_REQUEST);
+            };
+
             let mut streams_out = Vec::with_capacity(streams.len());
             for stream_in in streams {
                 // TODO : may be tcp or udp
@@ -230,6 +242,7 @@ pub async fn handler(
                 let stream: Stream = Stream {
                     id: rand::random(),
                     client_id: stream_in.client_id,
+                    cancellation_token: streams_token.child_token(),
 
                     ty: match stream_in.ty {
                         96 => StreamType::AudioRealTime,
@@ -246,15 +259,15 @@ pub async fn handler(
                         latency_min: stream_in.latency_min,
                         latency_max: stream_in.latency_max,
                     },
-
-                    data: Arc::new(()),
-                    control_data: Arc::new(()),
                 };
 
-                tokio::spawn(data_handler(data_socket, Arc::downgrade(&stream.data)));
+                tokio::spawn(data_handler(
+                    data_socket,
+                    stream.cancellation_token.child_token(),
+                ));
                 tokio::spawn(control_handler(
                     control_socket,
-                    Arc::downgrade(&stream.control_data),
+                    stream.cancellation_token.child_token(),
                 ));
 
                 streams_out.push(StreamResponse {
@@ -263,7 +276,7 @@ pub async fn handler(
                     control_port,
                     data_port,
 
-                    buffer_size: match stream.metadata {
+                    auido_buffer_size: match stream.metadata {
                         StreamMetadata::Audio {
                             audio_buffer_size, ..
                         } => audio_buffer_size,
@@ -300,31 +313,46 @@ async fn open_udp(
 }
 
 // TODO : this may be UDP
-async fn data_handler(listener: TcpListener, data: Weak<()>) {
-    future::pending().await
+async fn data_handler(listener: TcpListener, token: CancellationToken) {
+    tokio::select! {
+        _ = token.cancelled() => {
+        }
+
+        _ = future::pending() => {
+        }
+    }
 }
 
-async fn control_handler(socket: UdpSocket, control_data: Weak<()>) {
-    future::pending().await
+async fn control_handler(socket: UdpSocket, token: CancellationToken) {
+    tokio::select! {
+        _ = token.cancelled() => {
+        }
+
+        _ = future::pending() => {
+        }
+    }
 }
 
-async fn event_handler(listener: TcpListener, event_data: Weak<()>) {
+async fn event_handler(listener: TcpListener, token: CancellationToken) {
     loop {
-        let Some(event_data) = event_data.upgrade() else {
-            tracing::info!("event listener closed");
-            break;
-        };
+        tokio::select! {
+            _ = token.cancelled() => {
+                break;
+            }
 
-        match listener.accept().await {
-            Ok((mut stream, remote_addr)) => {
-                let mut buf = [0; 8 * 1024];
-                while let Ok(len @ 1..) = stream.read(&mut buf).await {
-                    tracing::debug!(%len, %remote_addr, "event stream bytes");
+            _ = async {
+                match listener.accept().await {
+                    Ok((mut stream, remote_addr)) => {
+                        let mut buf = [0; 16 * 1024];
+                        while let Ok(len @ 1..) = stream.read(&mut buf).await {
+                            tracing::debug!(%len, %remote_addr, "event stream bytes");
+                        }
+                    }
+                    Err(err) => {
+                        tracing::error!(%err, "event listener couldn't accept a connection");
+                    }
                 }
-            }
-            Err(err) => {
-                tracing::error!(%err, "event listener couldn't accept a connection");
-            }
+            } => {}
         }
     }
 }
