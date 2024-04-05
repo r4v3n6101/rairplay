@@ -4,14 +4,13 @@ use std::{
 };
 
 use axum::extract::{ConnectInfo, State};
-use bytes::Bytes;
+use futures::future::abortable;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, UdpSocket},
 };
-use tokio_util::sync::CancellationToken;
 
 use crate::transport::IncomingStream;
 
@@ -26,12 +25,6 @@ pub enum SetupRequest {
     InfoEvent {
         #[serde(rename = "timingProtocol")]
         timing_protocol: String,
-        #[serde(rename = "et")]
-        encryption_ty: u8,
-        #[serde(rename = "ekey")]
-        encryption_key: Bytes,
-        #[serde(rename = "eiv")]
-        encryption_iv: Bytes,
         #[serde(rename = "deviceID")]
         device_id: String,
         #[serde(rename = "macAddress")]
@@ -145,6 +138,7 @@ pub async fn handler(
                     return Err(StatusCode::INTERNAL_SERVER_ERROR);
                 }
             };
+            let (event_task, event_handle) = abortable(event_handler(event_listener));
 
             let sender_info: SenderInfo = SenderInfo {
                 device_id,
@@ -153,6 +147,7 @@ pub async fn handler(
                 os_name,
                 os_version,
                 os_build_version,
+                event_handle,
 
                 mac_address: match mac_addr.parse() {
                     Ok(res) => res,
@@ -170,15 +165,10 @@ pub async fn handler(
                         return Err(StatusCode::BAD_REQUEST);
                     }
                 },
-
-                cancellation_token: CancellationToken::new(),
             };
 
             // TODO : timing?
-            tokio::spawn(event_handler(
-                event_listener,
-                sender_info.cancellation_token.child_token(),
-            ));
+            tokio::spawn(event_task);
 
             let response = BinaryPlist(SetupResponse::TimingEvent {
                 event_port,
@@ -202,17 +192,6 @@ pub async fn handler(
         }
 
         SetupRequest::DataControl { streams } => {
-            let Some(streams_token) = state
-                .sender_info
-                .read()
-                .unwrap()
-                .as_ref()
-                .map(|s| s.cancellation_token.child_token())
-            else {
-                tracing::error!("uninitialized sender info");
-                return Err(StatusCode::BAD_REQUEST);
-            };
-
             let mut streams_out = Vec::with_capacity(streams.len());
             for stream_in in streams {
                 // TODO : may be tcp or udp
@@ -223,7 +202,7 @@ pub async fn handler(
                         return Err(StatusCode::INTERNAL_SERVER_ERROR);
                     }
                 };
-
+                let (data_task, data_handle) = abortable(data_handler(data_socket));
                 let (control_socket, control_port) = match open_udp(
                     bind_addr,
                     stream_in
@@ -238,11 +217,14 @@ pub async fn handler(
                         return Err(StatusCode::INTERNAL_SERVER_ERROR);
                     }
                 };
+                let (control_task, control_handle) = abortable(control_handler(control_socket));
 
                 let stream: Stream = Stream {
+                    data_handle,
+                    control_handle,
+
                     id: rand::random(),
                     client_id: stream_in.client_id,
-                    cancellation_token: streams_token.child_token(),
 
                     ty: match stream_in.ty {
                         96 => StreamType::AudioRealTime,
@@ -261,14 +243,8 @@ pub async fn handler(
                     },
                 };
 
-                tokio::spawn(data_handler(
-                    data_socket,
-                    stream.cancellation_token.child_token(),
-                ));
-                tokio::spawn(control_handler(
-                    control_socket,
-                    stream.cancellation_token.child_token(),
-                ));
+                tokio::spawn(data_task);
+                tokio::spawn(control_task);
 
                 streams_out.push(StreamResponse {
                     stream_id: stream.id,
@@ -313,46 +289,26 @@ async fn open_udp(
 }
 
 // TODO : this may be UDP
-async fn data_handler(listener: TcpListener, token: CancellationToken) {
-    tokio::select! {
-        _ = token.cancelled() => {
-        }
-
-        _ = future::pending() => {
-        }
-    }
+async fn data_handler(listener: TcpListener) {
+    future::pending().await
 }
 
-async fn control_handler(socket: UdpSocket, token: CancellationToken) {
-    tokio::select! {
-        _ = token.cancelled() => {
-        }
-
-        _ = future::pending() => {
-        }
-    }
+async fn control_handler(socket: UdpSocket) {
+    future::pending().await
 }
 
-async fn event_handler(listener: TcpListener, token: CancellationToken) {
+async fn event_handler(listener: TcpListener) {
     loop {
-        tokio::select! {
-            _ = token.cancelled() => {
-                break;
-            }
-
-            _ = async {
-                match listener.accept().await {
-                    Ok((mut stream, remote_addr)) => {
-                        let mut buf = [0; 16 * 1024];
-                        while let Ok(len @ 1..) = stream.read(&mut buf).await {
-                            tracing::debug!(%len, %remote_addr, "event stream bytes");
-                        }
-                    }
-                    Err(err) => {
-                        tracing::error!(%err, "event listener couldn't accept a connection");
-                    }
+        match listener.accept().await {
+            Ok((mut stream, remote_addr)) => {
+                let mut buf = [0; 16 * 1024];
+                while let Ok(len @ 1..) = stream.read(&mut buf).await {
+                    tracing::debug!(%len, %remote_addr, "event stream bytes");
                 }
-            } => {}
+            }
+            Err(err) => {
+                tracing::error!(%err, "event listener couldn't accept a connection");
+            }
         }
     }
 }

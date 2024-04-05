@@ -15,7 +15,7 @@ use tokio_util::{
 };
 use tower::Service;
 
-use crate::advertisment::AdvData;
+use crate::adv::AdvData;
 
 mod codec;
 mod util;

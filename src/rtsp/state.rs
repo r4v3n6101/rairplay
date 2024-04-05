@@ -1,8 +1,8 @@
 use std::sync::{Arc, RwLock};
 
 use crossbeam_utils::atomic::AtomicCell;
+use futures::stream::AbortHandle;
 use mac_address::MacAddress;
-use tokio_util::sync::{CancellationToken, DropGuard};
 
 #[derive(Debug, Default, Clone)]
 pub struct SharedState(pub Arc<State>);
@@ -29,12 +29,12 @@ pub struct SenderInfo {
 
     pub timing_proto: TimingProtocol,
 
-    pub cancellation_token: CancellationToken,
+    pub event_handle: AbortHandle,
 }
 
 impl Drop for SenderInfo {
     fn drop(&mut self) {
-        self.cancellation_token.cancel();
+        self.event_handle.abort()
     }
 }
 
@@ -51,12 +51,14 @@ pub struct Stream {
     pub client_id: Option<String>,
     pub metadata: StreamMetadata,
 
-    pub cancellation_token: CancellationToken,
+    pub data_handle: AbortHandle,
+    pub control_handle: AbortHandle,
 }
 
 impl Drop for Stream {
     fn drop(&mut self) {
-        self.cancellation_token.cancel()
+        self.data_handle.abort();
+        self.control_handle.abort();
     }
 }
 
