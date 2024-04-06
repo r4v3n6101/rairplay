@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     extract::Request,
     handler::Handler,
@@ -7,7 +9,7 @@ use axum::{
 };
 use tower_http::{propagate_header::PropagateHeaderLayer, set_header::SetResponseHeaderLayer};
 
-use crate::rtsp::state::SharedState;
+use crate::{adv::AdvData, rtsp::state::SharedState};
 
 mod fp_setup;
 mod generic;
@@ -15,15 +17,20 @@ mod get_parameter;
 mod info;
 mod setup;
 
+mod dto;
 mod plist;
 mod state;
 
-pub fn route() -> Router<()> {
-    let state = SharedState::default();
+pub fn route(adv_data: Arc<AdvData>) -> Router<()> {
+    let state = SharedState {
+        state: Arc::default(),
+        adv_data,
+    };
 
     Router::new()
         .route("/info", get(info::handler))
         .route("/fp-setup", post(fp_setup::handler))
+        .with_state(state.clone())
         // Custom RTSP methods
         .route(
             "/:media_id",
@@ -33,7 +40,7 @@ pub fn route() -> Router<()> {
                     "SETUP" => setup::handler.call(req, state).await,
                     "GET_PARAMETER" => get_parameter::handler.call(req, state).await,
                     method => {
-                        tracing::error!(?method, "unknown method");
+                        tracing::error!(?method, path = ?req.uri(), "unknown method");
                         generic::trace_body.call(req, ()).await
                     }
                 }

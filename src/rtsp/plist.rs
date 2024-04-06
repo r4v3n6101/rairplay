@@ -24,10 +24,10 @@ pub enum PlistRejection {
 
 impl IntoResponse for PlistRejection {
     fn into_response(self) -> Response {
+        tracing::error!(err = %self, "plist error");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             [(CONTENT_TYPE, HeaderValue::from_static(UTF8_TEXT))],
-            self.to_string(),
         )
             .into_response()
     }

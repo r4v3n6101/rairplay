@@ -10,6 +10,7 @@ futures = "0.3"
 rand = "0.8"
 
 serde = { version = "1", features = ["derive"] }
+serde_repr = "0.1"
 bytes = { version = "1", features = ["serde"] }
 bitflags = { version = "2", features = ["serde"] }
 plist = "1"
@@ -31,5 +32,5 @@ tracing-subscriber = "0.3"
 
 tower = { version = "0.4" }
 tower-http = { version = "0.5", features = ["propagate-header", "set-header", "trace", "util"] }
-mac_address = "1"
+mac_address = { version = "1", features = ["serde"] }
 crossbeam-utils = "0.8"

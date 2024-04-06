@@ -8,7 +8,6 @@ use tracing::Level;
 use transport::{serve_with_rtsp_remap, IncomingStream};
 
 mod adv;
-mod clock;
 mod feats;
 mod rtsp;
 mod transport;
@@ -26,11 +25,10 @@ async fn main() {
     adv_data.features.validate();
 
     let router = Router::new()
-        .nest("/rtsp", rtsp::route())
+        .nest("/rtsp", rtsp::route(Arc::clone(&adv_data)))
         .layer(TraceLayer::new_for_http());
     serve_with_rtsp_remap(
         tcp_listener,
-        adv_data,
         router.into_make_service_with_connect_info::<IncomingStream>(),
     )
     .await;

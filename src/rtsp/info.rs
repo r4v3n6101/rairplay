@@ -1,9 +1,7 @@
-use axum::{extract::ConnectInfo, response::IntoResponse};
+use axum::{extract::State, response::IntoResponse};
 use serde::Serialize;
 
-use crate::transport::IncomingStream;
-
-use super::plist::BinaryPlist;
+use super::{plist::BinaryPlist, state::SharedState};
 
 const PROTOVERS: &str = "1.1";
 const SRCVERS: &str = "377.25.06";
@@ -21,9 +19,7 @@ struct MainResponse {
     source_version: String,
 }
 
-pub async fn handler(
-    ConnectInfo(IncomingStream { adv_data, .. }): ConnectInfo<IncomingStream>,
-) -> impl IntoResponse {
+pub async fn handler(State(SharedState { adv_data, .. }): State<SharedState>) -> impl IntoResponse {
     let response = MainResponse {
         device_id: adv_data.mac_addr.to_string(),
         features: adv_data.features.bits(),

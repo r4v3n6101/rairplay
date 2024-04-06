@@ -7,7 +7,7 @@ use hyper::{header::CONTENT_TYPE, StatusCode};
 use super::state::SharedState;
 
 pub async fn handler(
-    State(SharedState(state)): State<SharedState>,
+    State(SharedState { state, .. }): State<SharedState>,
     body: String,
 ) -> Result<Response, StatusCode> {
     match body.as_str() {

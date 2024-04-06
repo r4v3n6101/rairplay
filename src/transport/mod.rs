@@ -1,4 +1,9 @@
-use std::{convert::Infallible, error::Error, future::poll_fn, net::SocketAddr, sync::Arc};
+use std::{
+    convert::Infallible,
+    error::Error,
+    future::poll_fn,
+    net::{IpAddr, SocketAddr},
+};
 
 use axum::extract::connect_info::Connected;
 use hyper::{
@@ -15,8 +20,6 @@ use tokio_util::{
 };
 use tower::Service;
 
-use crate::adv::AdvData;
-
 mod codec;
 mod util;
 
@@ -24,9 +27,8 @@ type BoxStdError = Box<dyn Error + Send + Sync>;
 
 #[derive(Debug, Clone)]
 pub struct IncomingStream {
-    pub local_addr: Option<SocketAddr>,
+    pub local_addr: IpAddr,
     pub remote_addr: SocketAddr,
-    pub adv_data: Arc<AdvData>,
 }
 
 impl Connected<IncomingStream> for IncomingStream {
@@ -35,11 +37,8 @@ impl Connected<IncomingStream> for IncomingStream {
     }
 }
 
-pub async fn serve_with_rtsp_remap<B, S, M>(
-    tcp_listener: TcpListener,
-    adv_data: Arc<AdvData>,
-    mut make_service: M,
-) where
+pub async fn serve_with_rtsp_remap<B, S, M>(tcp_listener: TcpListener, mut make_service: M)
+where
     B: Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<BoxStdError>,
@@ -56,6 +55,13 @@ pub async fn serve_with_rtsp_remap<B, S, M>(
                 continue;
             }
         };
+        let local_addr = match stream.local_addr() {
+            Ok(res) => res.ip(),
+            Err(err) => {
+                tracing::error!(%err, "failed to get local addr of connection");
+                return;
+            }
+        };
         tracing::debug!(%remote_addr, "got a new tcp connection");
 
         poll_fn(|cx| make_service.poll_ready(cx))
@@ -63,9 +69,8 @@ pub async fn serve_with_rtsp_remap<B, S, M>(
             .unwrap_or_else(|err| match err {});
         let tower_service = make_service
             .call(IncomingStream {
-                local_addr: stream.local_addr().ok(),
+                local_addr,
                 remote_addr,
-                adv_data: Arc::clone(&adv_data),
             })
             .await
             .unwrap_or_else(|err| match err {});

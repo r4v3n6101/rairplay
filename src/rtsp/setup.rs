@@ -1,6 +1,6 @@
 use std::{
     future, io,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, SocketAddr},
 };
 
 use axum::extract::{ConnectInfo, State};
@@ -15,65 +15,22 @@ use tokio::{
 use crate::transport::IncomingStream;
 
 use super::{
+    dto::{SenderInfo, StreamDescriptor, StreamInfo, TimingPeerInfo},
     plist::BinaryPlist,
-    state::{SenderInfo, SharedState, Stream, StreamMetadata, StreamType, TimingProtocol},
+    state::{SenderHandle, SharedState, StreamHandle},
 };
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum SetupRequest {
-    InfoEvent {
-        #[serde(rename = "timingProtocol")]
-        timing_protocol: String,
-        #[serde(rename = "deviceID")]
-        device_id: String,
-        #[serde(rename = "macAddress")]
-        mac_addr: String,
-        #[serde(rename = "osName")]
-        os_name: Option<String>,
-        #[serde(rename = "osVersion")]
-        os_version: Option<String>,
-        #[serde(rename = "osBuildVersion")]
-        os_build_version: Option<String>,
-        model: String,
-        name: String,
-    },
-    DataControl {
-        streams: Vec<StreamRequest>,
-    },
-}
-
-#[derive(Debug, Deserialize)]
-pub struct StreamRequest {
-    #[serde(rename = "type")]
-    ty: u8,
-    #[serde(rename = "audioMode")]
-    audio_mode: String,
-    #[serde(rename = "ct")]
-    compression_type: u8,
-    #[serde(rename = "audioFormat")]
-    audio_format: u32,
-    #[serde(rename = "audioFormatIndex")]
-    audio_format_index: Option<u32>,
-
-    #[serde(rename = "latencyMin")]
-    latency_min: Option<u32>,
-    #[serde(rename = "latencyMax")]
-    latency_max: Option<u32>,
-    #[serde(rename = "spf")]
-    samples_per_frame: u32,
-
-    #[serde(rename = "controlPort")]
-    control_port: Option<u16>,
-
-    #[serde(rename = "clientID")]
-    client_id: Option<String>,
+    SenderInfo(SenderInfo),
+    Streams { streams: Vec<StreamInfo> },
 }
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum SetupResponse {
-    TimingEvent {
+    Initial {
         #[serde(rename = "eventPort")]
         event_port: u16,
         #[serde(rename = "timingPort")]
@@ -81,57 +38,24 @@ pub enum SetupResponse {
         #[serde(rename = "timingPeerInfo")]
         timing_peer_info: Option<TimingPeerInfo>,
     },
-    DataControl {
-        streams: Vec<StreamResponse>,
+    Streams {
+        streams: Vec<StreamDescriptor>,
     },
 }
 
-#[derive(Debug, Serialize)]
-pub struct TimingPeerInfo {
-    #[serde(rename = "Addresses")]
-    addresses: Vec<String>,
-    #[serde(rename = "ID")]
-    id: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct StreamResponse {
-    #[serde(rename = "streamID")]
-    stream_id: u32,
-    #[serde(rename = "type")]
-    ty: u8,
-    #[serde(rename = "controlPort")]
-    control_port: u16,
-    #[serde(rename = "dataPort")]
-    data_port: u16,
-    #[serde(rename = "audioBufferSize")]
-    auido_buffer_size: u32,
-}
-
 pub async fn handler(
-    State(SharedState(state)): State<SharedState>,
+    State(SharedState {
+        state, adv_data, ..
+    }): State<SharedState>,
     ConnectInfo(IncomingStream {
         local_addr,
         remote_addr,
-        adv_data,
-        ..
     }): ConnectInfo<IncomingStream>,
     BinaryPlist(req): BinaryPlist<SetupRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
-    let bind_addr = local_addr.map_or_else(|| Ipv4Addr::new(0, 0, 0, 0).into(), |addr| addr.ip());
     match req {
-        SetupRequest::InfoEvent {
-            device_id,
-            mac_addr,
-            os_name,
-            os_version,
-            os_build_version,
-            model,
-            name,
-            timing_protocol,
-            ..
-        } => {
-            let (event_listener, event_port) = match open_tcp(bind_addr).await {
+        SetupRequest::SenderInfo(info) => {
+            let (event_listener, event_port) = match open_tcp(local_addr).await {
                 Ok(res) => res,
                 Err(err) => {
                     tracing::error!(%err, "failed to open event channel");
@@ -140,62 +64,30 @@ pub async fn handler(
             };
             let (event_task, event_handle) = abortable(event_handler(event_listener));
 
-            let sender_info: SenderInfo = SenderInfo {
-                device_id,
-                name,
-                model,
-                os_name,
-                os_version,
-                os_build_version,
-                event_handle,
-
-                mac_address: match mac_addr.parse() {
-                    Ok(res) => res,
-                    Err(err) => {
-                        tracing::error!(%err, "invalid mac address format");
-                        return Err(StatusCode::BAD_REQUEST);
-                    }
-                },
-
-                timing_proto: match timing_protocol.as_str() {
-                    "PTP" | "ptp" => TimingProtocol::Ptp,
-                    "NTP" | "ntp" => TimingProtocol::Ntp,
-                    _ => {
-                        tracing::error!(?timing_protocol, "invalid timing protocol");
-                        return Err(StatusCode::BAD_REQUEST);
-                    }
-                },
-            };
-
+            let sender = SenderHandle { info, event_handle };
             // TODO : timing?
             tokio::spawn(event_task);
+            tracing::info!(%event_port, "events handler spawned");
 
-            let response = BinaryPlist(SetupResponse::TimingEvent {
+            // TODO : deal with timing
+            let response = BinaryPlist(SetupResponse::Initial {
                 event_port,
-
-                timing_port: match sender_info.timing_proto {
-                    TimingProtocol::Ptp => 0,
-                    TimingProtocol::Ntp => unimplemented!("NTP not supported"),
-                },
-
-                timing_peer_info: match sender_info.timing_proto {
-                    TimingProtocol::Ptp => Some(TimingPeerInfo {
-                        id: adv_data.mac_addr.to_string(),
-                        addresses: vec![bind_addr.to_string()],
-                    }),
-                    TimingProtocol::Ntp => None,
-                },
+                timing_port: 0,
+                timing_peer_info: Some(TimingPeerInfo {
+                    id: adv_data.mac_addr.to_string(),
+                    addresses: vec![local_addr],
+                }),
             });
-            *state.sender_info.write().unwrap() = Some(sender_info);
+            *state.sender.write().unwrap() = Some(sender);
 
             Ok(response)
         }
 
-        SetupRequest::DataControl { streams } => {
+        SetupRequest::Streams { streams } => {
             let mut streams_out = Vec::with_capacity(streams.len());
-            for stream_in in streams {
+            for info in streams {
                 // TODO : may be tcp or udp
-                let (data_socket, data_port) = match open_tcp(bind_addr /*, None*/).await {
+                let (data_socket, local_data_port) = match open_tcp(local_addr /*, None*/).await {
                     Ok(res) => res,
                     Err(err) => {
                         tracing::error!(%err, "failed to open data channel");
@@ -203,10 +95,9 @@ pub async fn handler(
                     }
                 };
                 let (data_task, data_handle) = abortable(data_handler(data_socket));
-                let (control_socket, control_port) = match open_udp(
-                    bind_addr,
-                    stream_in
-                        .control_port
+                let (control_socket, local_control_port) = match open_udp(
+                    local_addr,
+                    info.remote_control_port
                         .map(|port| SocketAddr::new(remote_addr.ip(), port)),
                 )
                 .await
@@ -219,49 +110,30 @@ pub async fn handler(
                 };
                 let (control_task, control_handle) = abortable(control_handler(control_socket));
 
-                let stream: Stream = Stream {
+                let descriptor = StreamDescriptor {
+                    id: rand::random(),
+
+                    ty: info.ty,
+                    metadata: info.metadata.clone(),
+
+                    local_control_port,
+                    local_data_port,
+                };
+                let handle = StreamHandle {
+                    info,
+                    descriptor,
                     data_handle,
                     control_handle,
-
-                    id: rand::random(),
-                    client_id: stream_in.client_id,
-
-                    ty: match stream_in.ty {
-                        96 => StreamType::AudioRealTime,
-                        103 => StreamType::AudioBuffered,
-                        stream_type => {
-                            tracing::error!(%stream_type, "unsupported stream type");
-                            return Err(StatusCode::BAD_REQUEST);
-                        }
-                    },
-
-                    metadata: StreamMetadata::Audio {
-                        // TODO : what's that?
-                        audio_buffer_size: stream_in.samples_per_frame,
-                        latency_min: stream_in.latency_min,
-                        latency_max: stream_in.latency_max,
-                    },
                 };
-
                 tokio::spawn(data_task);
                 tokio::spawn(control_task);
+                tracing::info!(?handle, "new stream created");
 
-                streams_out.push(StreamResponse {
-                    stream_id: stream.id,
-                    ty: stream_in.ty,
-                    control_port,
-                    data_port,
-
-                    auido_buffer_size: match stream.metadata {
-                        StreamMetadata::Audio {
-                            audio_buffer_size, ..
-                        } => audio_buffer_size,
-                    },
-                });
-                state.streams.write().unwrap().push(stream);
+                streams_out.push(handle.descriptor.clone());
+                state.streams.write().unwrap().push(handle);
             }
 
-            Ok(BinaryPlist(SetupResponse::DataControl {
+            Ok(BinaryPlist(SetupResponse::Streams {
                 streams: streams_out,
             }))
         }
