@@ -12,11 +12,10 @@ use tokio::{
     net::{TcpListener, UdpSocket},
 };
 
-use crate::transport::IncomingStream;
+use crate::{plist::BinaryPlist, transport::IncomingStream};
 
 use super::{
     dto::{SenderInfo, StreamDescriptor, StreamInfo, TimingPeerInfo},
-    plist::BinaryPlist,
     state::{SenderHandle, SharedState, StreamHandle},
 };
 
@@ -44,9 +43,7 @@ pub enum SetupResponse {
 }
 
 pub async fn handler(
-    State(SharedState {
-        state, adv_data, ..
-    }): State<SharedState>,
+    State(SharedState { state, adv, .. }): State<SharedState>,
     ConnectInfo(IncomingStream {
         local_addr,
         remote_addr,
@@ -74,7 +71,7 @@ pub async fn handler(
                 event_port,
                 timing_port: 0,
                 timing_peer_info: Some(TimingPeerInfo {
-                    id: adv_data.mac_addr.to_string(),
+                    id: adv.mac_addr.to_string(),
                     addresses: vec![local_addr],
                 }),
             });

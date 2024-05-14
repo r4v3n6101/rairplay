@@ -9,7 +9,7 @@ use axum::{
 };
 use tower_http::{propagate_header::PropagateHeaderLayer, set_header::SetResponseHeaderLayer};
 
-use crate::{adv::AdvData, rtsp::state::SharedState};
+use crate::{adv::Advertisment, rtsp::state::SharedState};
 
 mod fp_setup;
 mod generic;
@@ -18,13 +18,12 @@ mod info;
 mod setup;
 
 mod dto;
-mod plist;
 mod state;
 
-pub fn route(adv_data: Arc<AdvData>) -> Router<()> {
+pub fn route(adv: Arc<Advertisment>) -> Router<()> {
     let state = SharedState {
         state: Arc::default(),
-        adv_data,
+        adv,
     };
 
     Router::new()

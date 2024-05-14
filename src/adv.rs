@@ -5,7 +5,7 @@ use mac_address::{get_mac_address, MacAddress};
 use crate::feats::Features;
 
 #[derive(Debug, Clone)]
-pub struct AdvData {
+pub struct Advertisment {
     pub mac_addr: MacAddress,
     pub features: Features,
     pub manufacturer: String,
@@ -15,7 +15,7 @@ pub struct AdvData {
     pub pin: Option<PinCode>,
 }
 
-impl Default for AdvData {
+impl Default for Advertisment {
     fn default() -> Self {
         let mac_addr = match get_mac_address() {
             Ok(Some(addr)) => addr,

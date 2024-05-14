@@ -12,7 +12,6 @@ use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
 const APPLE_BPLIST_MIME: &str = "application/x-apple-binary-plist";
-const UTF8_TEXT: &str = "text/plain; charset=utf-8";
 
 #[derive(Debug, Error)]
 pub enum PlistRejection {
@@ -25,11 +24,7 @@ pub enum PlistRejection {
 impl IntoResponse for PlistRejection {
     fn into_response(self) -> Response {
         tracing::error!(err = %self, "plist error");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            [(CONTENT_TYPE, HeaderValue::from_static(UTF8_TEXT))],
-        )
-            .into_response()
+        StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
 }
 

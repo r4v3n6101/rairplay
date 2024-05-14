@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use adv::AdvData;
+use adv::Advertisment;
 use axum::Router;
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
@@ -8,6 +8,7 @@ use tracing::Level;
 use transport::{serve_with_rtsp_remap, IncomingStream};
 
 mod adv;
+mod plist;
 mod feats;
 mod rtsp;
 mod transport;
@@ -21,11 +22,11 @@ async fn main() {
 
     let tcp_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
 
-    let adv_data = Arc::new(AdvData::default());
-    adv_data.features.validate();
+    let adv = Arc::new(Advertisment::default());
+    adv.features.validate();
 
     let router = Router::new()
-        .nest("/rtsp", rtsp::route(Arc::clone(&adv_data)))
+        .nest("/rtsp", rtsp::route(Arc::clone(&adv)))
         .layer(TraceLayer::new_for_http());
     serve_with_rtsp_remap(
         tcp_listener,

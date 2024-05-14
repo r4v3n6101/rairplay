@@ -3,14 +3,14 @@ use std::sync::{Arc, RwLock};
 use crossbeam_utils::atomic::AtomicCell;
 use futures::stream::AbortHandle;
 
-use crate::adv::AdvData;
+use crate::adv::Advertisment;
 
 use super::dto::{SenderInfo, StreamDescriptor, StreamInfo};
 
 #[derive(Debug, Clone)]
 pub struct SharedState {
     pub state: Arc<State>,
-    pub adv_data: Arc<AdvData>,
+    pub adv: Arc<Advertisment>,
 }
 
 #[derive(Debug, Default)]
