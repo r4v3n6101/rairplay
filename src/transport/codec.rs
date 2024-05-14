@@ -4,7 +4,6 @@ use bytes::{BufMut, Bytes, BytesMut};
 use httparse::{Error, Request, Response, Status, EMPTY_HEADER};
 use hyper::Uri;
 use tokio_util::codec::{Decoder, Encoder};
-use tracing::trace;
 
 const MAX_HEADERS: usize = 32;
 
@@ -36,14 +35,14 @@ impl Decoder for Rtsp2Http {
                 {
                     // Replacing version with HTTP and trying to parse again
                     src[pos..pos + RTSP_VERSION_CRLF.len()].copy_from_slice(HTTP_VERSION_CRLF);
-                    trace!("replaced version at {pos} position");
+                    tracing::trace!("replaced version at {pos} position");
                 } else if let Some(pos) = src
                     .windows(HTTP_VERSION_CRLF.len())
                     .position(|bytes| bytes == HTTP_VERSION_CRLF)
                 {
                     // Replace back rtsp, for another call of decode
                     src[pos..pos + HTTP_VERSION_CRLF.len()].copy_from_slice(RTSP_VERSION_CRLF);
-                    trace!("replaced back version at {pos} position");
+                    tracing::trace!("replaced back version at {pos} position");
                 }
             }
 
@@ -118,7 +117,7 @@ impl Decoder for Rtsp2Http {
                     // Body (i.e. remaining bytes after head of request)
                     output.put_slice(&src[len..]);
 
-                    trace!(
+                    tracing::trace!(
                         "built new request, size {}, original size is {}",
                         output.len(),
                         src.len()
@@ -222,7 +221,7 @@ impl<T: AsRef<[u8]>> Encoder<T> for Rtsp2Http {
         // Body
         dst.put_slice(&item[len..]);
 
-        trace!(
+        tracing::trace!(
             "built new response, size is {}, original size is {}",
             dst.len(),
             item.len()
