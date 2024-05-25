@@ -36,6 +36,17 @@ where
     T: DeserializeOwned,
 {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, PlistRejection> {
+        if tracing::event_enabled!(tracing::Level::TRACE) {
+            match plist::from_bytes::<plist::Value>(bytes) {
+                Ok(plist_value) => {
+                    tracing::trace!(?plist_value, "deserialized plist value");
+                }
+                Err(err) => {
+                    tracing::trace!(%err, "failed to represent deserialized plist value");
+                }
+            }
+        }
+
         plist::from_bytes(bytes).map(Self).map_err(Into::into)
     }
 }
@@ -73,6 +84,17 @@ where
     T: Serialize,
 {
     fn into_response(self) -> Response {
+        if tracing::event_enabled!(tracing::Level::TRACE) {
+            match plist::to_value(&self.0) {
+                Ok(plist_value) => {
+                    tracing::trace!(?plist_value, "serialized plist value");
+                }
+                Err(err) => {
+                    tracing::trace!(%err, "failed to represent serialized plist value");
+                }
+            }
+        }
+
         let mut buf = BytesMut::with_capacity(1024).writer();
         match plist::to_writer_binary(&mut buf, &self.0) {
             Ok(()) => (

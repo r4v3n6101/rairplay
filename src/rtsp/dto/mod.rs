@@ -50,8 +50,13 @@ pub struct StreamInfo {
     pub client_id: Option<String>,
     #[serde(rename = "controlPort")]
     pub remote_control_port: Option<u16>,
-    #[serde(flatten)]
-    pub metadata: StreamMetadata,
+
+    // Vec instead of Bytes, because we don't want cheap cloning of secrets
+    // Instead we take it and pass into place where it's needed
+    #[serde(rename = "shk")]
+    pub shared_key: Option<Vec<u8>>,
+    #[serde(rename = "shiv")]
+    pub shared_iv: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize_repr, Serialize_repr)]
@@ -65,19 +70,6 @@ pub enum StreamType {
     // RemoteControl (130)
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum StreamMetadata {
-    Audio {
-        #[serde(rename = "audioBufferSize")]
-        audio_buffer_size: Option<u32>,
-        #[serde(rename = "latencyMin")]
-        latency_min: Option<u32>,
-        #[serde(rename = "latencyMax")]
-        latency_max: Option<u32>,
-    },
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct StreamDescriptor {
     #[serde(rename = "streamID")]
@@ -88,7 +80,7 @@ pub struct StreamDescriptor {
     pub local_control_port: u16,
     #[serde(rename = "dataPort")]
     pub local_data_port: u16,
-    // TODO : may be removed in the future, so cloning here is ok
-    #[serde(flatten)]
-    pub metadata: StreamMetadata,
+    // TODO : it may be unnecessary field for other stream types (like video)
+    #[serde(rename = "audioBufferSize")]
+    pub audio_buffer_size: u32,
 }

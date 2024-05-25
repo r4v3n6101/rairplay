@@ -1,11 +1,13 @@
 use std::{
-    future, io,
+    io,
     net::{IpAddr, SocketAddr},
 };
 
 use axum::extract::{ConnectInfo, State};
+use bytes::BytesMut;
 use futures::future::abortable;
 use hyper::StatusCode;
+use ring::aead;
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::AsyncReadExt,
@@ -16,6 +18,7 @@ use crate::{plist::BinaryPlist, transport::IncomingStream};
 
 use super::{
     dto::{SenderInfo, StreamDescriptor, StreamInfo, TimingPeerInfo},
+    rtp::BufferedRtpPacket,
     state::{SenderHandle, SharedState, StreamHandle},
 };
 
@@ -82,7 +85,7 @@ pub async fn handler(
 
         SetupRequest::Streams { streams } => {
             let mut streams_out = Vec::with_capacity(streams.len());
-            for info in streams {
+            for mut info in streams {
                 // TODO : may be tcp or udp
                 let (data_socket, local_data_port) = match open_tcp(local_addr /*, None*/).await {
                     Ok(res) => res,
@@ -91,7 +94,8 @@ pub async fn handler(
                         return Err(StatusCode::INTERNAL_SERVER_ERROR);
                     }
                 };
-                let (data_task, data_handle) = abortable(data_handler(data_socket));
+                let (data_task, data_handle) =
+                    abortable(tcp_tracing(data_socket, info.shared_key.take().unwrap()));
                 let (control_socket, local_control_port) = match open_udp(
                     local_addr,
                     info.remote_control_port
@@ -105,13 +109,13 @@ pub async fn handler(
                         return Err(StatusCode::INTERNAL_SERVER_ERROR);
                     }
                 };
-                let (control_task, control_handle) = abortable(control_handler(control_socket));
+                let (control_task, control_handle) = abortable(udp_tracing(control_socket));
 
                 let descriptor = StreamDescriptor {
-                    id: rand::random(),
+                    audio_buffer_size: 8388608,
 
+                    id: rand::random(),
                     ty: info.ty,
-                    metadata: info.metadata.clone(),
 
                     local_control_port,
                     local_data_port,
@@ -158,12 +162,53 @@ async fn open_udp(
 }
 
 // TODO : this may be UDP
-async fn data_handler(listener: TcpListener) {
-    future::pending().await
+async fn tcp_tracing(listener: TcpListener, shk: Vec<u8>) {
+    let unbound_key = aead::UnboundKey::new(&aead::CHACHA20_POLY1305, &shk).unwrap();
+    let shared_key = aead::LessSafeKey::new(unbound_key);
+    match listener.accept().await {
+        Ok((mut stream, remote_addr)) => {
+            while let Ok(pkt_size) = stream.read_u16().await {
+                // Decrease size itself
+                let pkt_size = (pkt_size - 2) as usize;
+
+                let mut pkt = BytesMut::zeroed(pkt_size);
+                match stream.read_exact(&mut pkt).await {
+                    Ok(_) => {
+                        let mut buf_rtp = BufferedRtpPacket::new(pkt);
+                        match shared_key.open_in_place_separate_tag(
+                            aead::Nonce::assume_unique_for_key(
+                                buf_rtp.padded_nonce::<{ aead::NONCE_LEN }>(),
+                            ),
+                            aead::Aad::from(buf_rtp.aad()),
+                            aead::Tag::from(buf_rtp.tag()),
+                            buf_rtp.rtp_mut().payload_mut(),
+                            0..,
+                        ) {
+                            Ok(clear_data) => {
+                                tracing::trace!(len = clear_data.len(), "unencrypted payload");
+                            }
+                            Err(err) => {
+                                tracing::warn!(%err, "deciphering failed");
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        tracing::warn!(%err, "failed to read data packets");
+                    }
+                }
+            }
+        }
+        Err(err) => {
+            tracing::error!(%err, "data listener couldn't accept a connection");
+        }
+    }
 }
 
-async fn control_handler(socket: UdpSocket) {
-    future::pending().await
+async fn udp_tracing(socket: UdpSocket) {
+    let mut buf = [0; 16 * 1024];
+    while let Ok(len @ 1..) = socket.recv(&mut buf).await {
+        tracing::debug!(%len, "control socket bytes");
+    }
 }
 
 async fn event_handler(listener: TcpListener) {
