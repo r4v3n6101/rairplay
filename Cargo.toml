@@ -1,6 +1,6 @@
 [package]
 name = "rairplay"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
@@ -35,3 +35,4 @@ tower-http = { version = "0.5", features = ["propagate-header", "set-header", "t
 mac_address = { version = "1", features = ["serde"] }
 crossbeam-utils = "0.8"
 ring = "0.17.8"
+symphonia = { version = "0.5.4", features = ["alac", "aac"] }

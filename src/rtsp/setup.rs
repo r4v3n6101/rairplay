@@ -1,5 +1,6 @@
 use std::{
-    io,
+    fs::File,
+    io::{self, Write},
     net::{IpAddr, SocketAddr},
 };
 
@@ -9,6 +10,16 @@ use futures::future::abortable;
 use hyper::StatusCode;
 use ring::aead;
 use serde::{Deserialize, Serialize};
+use symphonia::{
+    core::{
+        audio::{Channels, Layout, RawSampleBuffer},
+        codecs::{
+            CodecParameters, CodecRegistry, CodecType, Decoder, DecoderOptions, CODEC_TYPE_AAC,
+        },
+        formats::Packet,
+    },
+    default::codecs::AacDecoder,
+};
 use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, UdpSocket},
@@ -162,9 +173,20 @@ async fn open_udp(
 }
 
 // TODO : this may be UDP
-async fn tcp_tracing(listener: TcpListener, shk: Vec<u8>) {
+async fn tcp_tracing(listener: TcpListener, shk: BytesMut) {
     let unbound_key = aead::UnboundKey::new(&aead::CHACHA20_POLY1305, &shk).unwrap();
     let shared_key = aead::LessSafeKey::new(unbound_key);
+
+    let mut codec = AacDecoder::try_new(
+        &CodecParameters::new()
+            .for_codec(CODEC_TYPE_AAC)
+            .with_sample_rate(44100)
+            .with_channel_layout(Layout::Stereo),
+        &DecoderOptions::default(),
+    )
+    .unwrap();
+
+    let mut file = File::create("raw.pcm").unwrap();
     match listener.accept().await {
         Ok((mut stream, remote_addr)) => {
             while let Ok(pkt_size) = stream.read_u16().await {
@@ -186,6 +208,27 @@ async fn tcp_tracing(listener: TcpListener, shk: Vec<u8>) {
                         ) {
                             Ok(clear_data) => {
                                 tracing::trace!(len = clear_data.len(), "unencrypted payload");
+
+                                let packet = Packet::new_from_slice(0, 0, 0, clear_data);
+                                match codec.decode(&packet) {
+                                    Ok(audio_buf) => {
+                                        tracing::info!(
+                                            frames = audio_buf.frames(),
+                                            "frames decoded"
+                                        );
+
+                                        let mut sample_buf = RawSampleBuffer::<i16>::new(
+                                            audio_buf.capacity() as u64,
+                                            *audio_buf.spec(),
+                                        );
+                                        sample_buf.copy_interleaved_ref(audio_buf);
+
+                                        file.write(sample_buf.as_bytes()).unwrap();
+                                    }
+                                    Err(err) => {
+                                        tracing::error!(%err, "(((");
+                                    }
+                                }
                             }
                             Err(err) => {
                                 tracing::warn!(%err, "deciphering failed");
