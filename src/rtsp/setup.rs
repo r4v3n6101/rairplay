@@ -1,6 +1,5 @@
 use std::{
-    fs::File,
-    io::{self, Write},
+    io::{self},
     net::{IpAddr, SocketAddr},
 };
 
@@ -8,18 +7,7 @@ use axum::extract::{ConnectInfo, State};
 use bytes::BytesMut;
 use futures::future::abortable;
 use hyper::StatusCode;
-use ring::aead;
 use serde::{Deserialize, Serialize};
-use symphonia::{
-    core::{
-        audio::{Channels, Layout, RawSampleBuffer},
-        codecs::{
-            CodecParameters, CodecRegistry, CodecType, Decoder, DecoderOptions, CODEC_TYPE_AAC,
-        },
-        formats::Packet,
-    },
-    default::codecs::AacDecoder,
-};
 use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, UdpSocket},
@@ -29,7 +17,7 @@ use crate::{plist::BinaryPlist, transport::IncomingStream};
 
 use super::{
     dto::{SenderInfo, StreamDescriptor, StreamInfo, TimingPeerInfo},
-    rtp::BufferedRtpPacket,
+    rtp::packet::RtpPacket,
     state::{SenderHandle, SharedState, StreamHandle},
 };
 
@@ -174,68 +162,22 @@ async fn open_udp(
 
 // TODO : this may be UDP
 async fn tcp_tracing(listener: TcpListener, shk: BytesMut) {
-    let unbound_key = aead::UnboundKey::new(&aead::CHACHA20_POLY1305, &shk).unwrap();
-    let shared_key = aead::LessSafeKey::new(unbound_key);
-
-    let mut codec = AacDecoder::try_new(
-        &CodecParameters::new()
-            .for_codec(CODEC_TYPE_AAC)
-            .with_sample_rate(44100)
-            .with_channel_layout(Layout::Stereo),
-        &DecoderOptions::default(),
-    )
-    .unwrap();
-
-    let mut file = File::create("raw.pcm").unwrap();
     match listener.accept().await {
         Ok((mut stream, remote_addr)) => {
             while let Ok(pkt_size) = stream.read_u16().await {
                 // Decrease size itself
-                let pkt_size = (pkt_size - 2) as usize;
+                let pkt_size = pkt_size.saturating_sub(2) as usize;
 
                 let mut pkt = BytesMut::zeroed(pkt_size);
                 match stream.read_exact(&mut pkt).await {
-                    Ok(_) => {
-                        let mut buf_rtp = BufferedRtpPacket::new(pkt);
-                        match shared_key.open_in_place_separate_tag(
-                            aead::Nonce::assume_unique_for_key(
-                                buf_rtp.padded_nonce::<{ aead::NONCE_LEN }>(),
-                            ),
-                            aead::Aad::from(buf_rtp.aad()),
-                            aead::Tag::from(buf_rtp.tag()),
-                            buf_rtp.rtp_mut().payload_mut(),
-                            0..,
-                        ) {
-                            Ok(clear_data) => {
-                                tracing::trace!(len = clear_data.len(), "unencrypted payload");
-
-                                let packet = Packet::new_from_slice(0, 0, 0, clear_data);
-                                match codec.decode(&packet) {
-                                    Ok(audio_buf) => {
-                                        tracing::info!(
-                                            frames = audio_buf.frames(),
-                                            "frames decoded"
-                                        );
-
-                                        let mut sample_buf = RawSampleBuffer::<i16>::new(
-                                            audio_buf.capacity() as u64,
-                                            *audio_buf.spec(),
-                                        );
-                                        sample_buf.copy_interleaved_ref(audio_buf);
-
-                                        file.write(sample_buf.as_bytes()).unwrap();
-                                    }
-                                    Err(err) => {
-                                        tracing::error!(%err, "(((");
-                                    }
-                                }
-                            }
-                            Err(err) => {
-                                tracing::warn!(%err, "deciphering failed");
-                            }
+                    Ok(_) => match RtpPacket::decode(pkt) {
+                        Some(rtp_pkt) => {}
+                        None => {
+                            tracing::warn!("skip invalid packet");
                         }
-                    }
+                    },
                     Err(err) => {
+                        // TODO : warn with trace span
                         tracing::warn!(%err, "failed to read data packets");
                     }
                 }

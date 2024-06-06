@@ -1,6 +1,6 @@
 use std::net::IpAddr;
 
-use bytes::{Bytes, BytesMut};
+use bytes::BytesMut;
 use mac_address::MacAddress;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -60,7 +60,7 @@ pub struct StreamInfo {
     pub shared_iv: Option<BytesMut>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum StreamType {
