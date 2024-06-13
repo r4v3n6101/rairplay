@@ -1,9 +1,7 @@
 use axum::{extract::State, response::IntoResponse};
 use serde::Serialize;
 
-use crate::plist::BinaryPlist;
-
-use super::state::SharedState;
+use crate::{plist::BinaryPlist, rtsp::state::SharedState};
 
 const PROTOVERS: &str = "1.1";
 const SRCVERS: &str = "377.25.06";

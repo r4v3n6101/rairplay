@@ -1,9 +1,10 @@
 use axum::extract::State;
 use serde::Deserialize;
 
-use crate::plist::BinaryPlist;
-
-use super::{dto::StreamType, state::SharedState};
+use crate::{
+    plist::BinaryPlist,
+    rtsp::{dto::StreamType, state::SharedState},
+};
 
 #[derive(Debug, Deserialize)]
 struct StreamId {

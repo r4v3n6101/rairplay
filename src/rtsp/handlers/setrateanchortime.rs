@@ -4,9 +4,9 @@ use crate::plist::BinaryPlist;
 
 #[derive(Debug, Deserialize)]
 pub struct SetRateAnchorTimeRequest {
-    pub rate: f32,
+    rate: f32,
     #[serde(rename = "rtpTime")]
-    pub rtp_time: Option<u64>,
+    anchor_rtp_timestamp: Option<u64>,
 }
 
 pub async fn handler(request: BinaryPlist<SetRateAnchorTimeRequest>) {

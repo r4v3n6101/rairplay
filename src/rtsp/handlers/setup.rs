@@ -13,12 +13,14 @@ use tokio::{
     net::{TcpListener, UdpSocket},
 };
 
-use crate::{plist::BinaryPlist, transport::IncomingStream};
-
-use super::{
-    dto::{SenderInfo, StreamDescriptor, StreamInfo, TimingPeerInfo},
-    rtp::packet::RtpPacket,
-    state::{SenderHandle, SharedState, StreamHandle},
+use crate::{
+    plist::BinaryPlist,
+    rtsp::{
+        dto::{SenderInfo, StreamDescriptor, StreamInfo, TimingPeerInfo},
+        rtp::packet::RtpPacket,
+        state::{SenderHandle, SharedState, StreamHandle},
+    },
+    transport::IncomingStream,
 };
 
 #[derive(Debug, Deserialize)]
@@ -111,7 +113,7 @@ pub async fn handler(
                 let (control_task, control_handle) = abortable(udp_tracing(control_socket));
 
                 let descriptor = StreamDescriptor {
-                    audio_buffer_size: 8388608,
+                    audio_buffer_size: 44100 * 1024,
 
                     id: rand::random(),
                     ty: info.ty,
@@ -171,7 +173,9 @@ async fn tcp_tracing(listener: TcpListener, shk: BytesMut) {
                 let mut pkt = BytesMut::zeroed(pkt_size);
                 match stream.read_exact(&mut pkt).await {
                     Ok(_) => match RtpPacket::decode(pkt) {
-                        Some(rtp_pkt) => {}
+                        Some(rtp_pkt) => {
+                            tracing::debug!(ts=?rtp_pkt.timestamp(), seqnum=?rtp_pkt.seqnum());
+                        }
                         None => {
                             tracing::warn!("skip invalid packet");
                         }

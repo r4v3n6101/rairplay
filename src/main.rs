@@ -8,15 +8,15 @@ use tracing::Level;
 use transport::{serve_with_rtsp_remap, IncomingStream};
 
 mod adv;
-mod plist;
 mod feats;
+mod plist;
 mod rtsp;
 mod transport;
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
-        .with_max_level(Level::TRACE)
+        .with_max_level(Level::DEBUG)
         .pretty()
         .init();
 
