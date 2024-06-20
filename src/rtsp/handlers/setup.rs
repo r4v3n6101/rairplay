@@ -1,6 +1,7 @@
 use std::{
-    io::{self},
+    io,
     net::{IpAddr, SocketAddr},
+    time::Duration,
 };
 
 use axum::extract::{ConnectInfo, State};
@@ -11,9 +12,14 @@ use serde::{Deserialize, Serialize};
 use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, UdpSocket},
+    time::sleep,
 };
 
 use crate::{
+    ntp::{
+        client::NtpClient,
+        proto::{NtpPacket, NtpTimestamp},
+    },
     plist::BinaryPlist,
     rtsp::{
         dto::{SenderInfo, StreamDescriptor, StreamInfo, TimingPeerInfo},
@@ -70,18 +76,9 @@ pub async fn handler(
             tokio::spawn(event_task);
             tracing::info!(%event_port, "events handler spawned");
 
-            // TODO : deal with timing
-            let response = BinaryPlist(SetupResponse::Initial {
-                event_port,
-                timing_port: 0,
-                timing_peer_info: Some(TimingPeerInfo {
-                    id: adv.mac_addr.to_string(),
-                    addresses: vec![local_addr],
-                }),
-            });
             *state.sender.write().unwrap() = Some(sender);
 
-            Ok(response)
+            Err(StatusCode::OK)
         }
 
         SetupRequest::Streams { streams } => {

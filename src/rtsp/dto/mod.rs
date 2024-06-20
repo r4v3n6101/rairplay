@@ -23,6 +23,8 @@ pub struct SenderInfo {
     pub timing_proto: TimingProtocol,
     #[serde(rename = "timingPeerInfo")]
     pub timing_info: Option<TimingPeerInfo>,
+    #[serde(rename = "timingPort")]
+    pub timing_port: Option<u16>,
     #[serde(rename = "timingPeerList")]
     pub timing_peers: Option<Vec<TimingPeerInfo>>,
 }

@@ -14,7 +14,7 @@ pub async fn handler(
     match body.as_str() {
         "volume\r\n" => Ok((
             [(CONTENT_TYPE, "text/parameters")],
-            format!("volume: {}\r\n", state.volume.load()),
+            "volume: 0.0\r\n",
         )
             .into_response()),
         param => {
