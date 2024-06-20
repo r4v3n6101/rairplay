@@ -1,5 +1,6 @@
 use std::net::IpAddr;
 
+use bytes::BytesMut;
 use mac_address::MacAddress;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -22,6 +23,8 @@ pub struct SenderInfo {
     pub timing_proto: TimingProtocol,
     #[serde(rename = "timingPeerInfo")]
     pub timing_info: Option<TimingPeerInfo>,
+    #[serde(rename = "timingPort")]
+    pub timing_port: Option<u16>,
     #[serde(rename = "timingPeerList")]
     pub timing_peers: Option<Vec<TimingPeerInfo>>,
 }
@@ -51,15 +54,15 @@ pub struct StreamInfo {
     #[serde(rename = "controlPort")]
     pub remote_control_port: Option<u16>,
 
-    // Vec instead of Bytes, because we don't want cheap cloning of secrets
-    // Instead we take it and pass into place where it's needed
+    // BytesMut semantically equals to owning
+    // So we can only move out key and no other access to it
     #[serde(rename = "shk")]
-    pub shared_key: Option<Vec<u8>>,
+    pub shared_key: Option<BytesMut>,
     #[serde(rename = "shiv")]
-    pub shared_iv: Option<Vec<u8>>,
+    pub shared_iv: Option<BytesMut>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum StreamType {

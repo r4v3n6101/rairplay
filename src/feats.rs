@@ -275,6 +275,6 @@ impl Default for Features {
             | Self::AudioUnencrypted
             | Self::UnifiedAdvertisingInfo
             | Self::BufferedAudio
-            | Self::PTPClock
+            | Self::NTPClock
     }
 }

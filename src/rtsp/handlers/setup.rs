@@ -1,25 +1,32 @@
 use std::{
     io,
     net::{IpAddr, SocketAddr},
+    time::Duration,
 };
 
 use axum::extract::{ConnectInfo, State};
 use bytes::BytesMut;
 use futures::future::abortable;
 use hyper::StatusCode;
-use ring::aead;
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, UdpSocket},
+    time::sleep,
 };
 
-use crate::{plist::BinaryPlist, transport::IncomingStream};
-
-use super::{
-    dto::{SenderInfo, StreamDescriptor, StreamInfo, TimingPeerInfo},
-    rtp::BufferedRtpPacket,
-    state::{SenderHandle, SharedState, StreamHandle},
+use crate::{
+    ntp::{
+        client::NtpClient,
+        proto::{NtpPacket, NtpTimestamp},
+    },
+    plist::BinaryPlist,
+    rtsp::{
+        dto::{SenderInfo, StreamDescriptor, StreamInfo, TimingPeerInfo},
+        rtp::packet::RtpPacket,
+        state::{SenderHandle, SharedState, StreamHandle},
+    },
+    transport::IncomingStream,
 };
 
 #[derive(Debug, Deserialize)]
@@ -69,18 +76,9 @@ pub async fn handler(
             tokio::spawn(event_task);
             tracing::info!(%event_port, "events handler spawned");
 
-            // TODO : deal with timing
-            let response = BinaryPlist(SetupResponse::Initial {
-                event_port,
-                timing_port: 0,
-                timing_peer_info: Some(TimingPeerInfo {
-                    id: adv.mac_addr.to_string(),
-                    addresses: vec![local_addr],
-                }),
-            });
             *state.sender.write().unwrap() = Some(sender);
 
-            Ok(response)
+            Err(StatusCode::OK)
         }
 
         SetupRequest::Streams { streams } => {
@@ -112,7 +110,7 @@ pub async fn handler(
                 let (control_task, control_handle) = abortable(udp_tracing(control_socket));
 
                 let descriptor = StreamDescriptor {
-                    audio_buffer_size: 8388608,
+                    audio_buffer_size: 44100 * 1024,
 
                     id: rand::random(),
                     ty: info.ty,
@@ -162,37 +160,25 @@ async fn open_udp(
 }
 
 // TODO : this may be UDP
-async fn tcp_tracing(listener: TcpListener, shk: Vec<u8>) {
-    let unbound_key = aead::UnboundKey::new(&aead::CHACHA20_POLY1305, &shk).unwrap();
-    let shared_key = aead::LessSafeKey::new(unbound_key);
+async fn tcp_tracing(listener: TcpListener, shk: BytesMut) {
     match listener.accept().await {
         Ok((mut stream, remote_addr)) => {
             while let Ok(pkt_size) = stream.read_u16().await {
                 // Decrease size itself
-                let pkt_size = (pkt_size - 2) as usize;
+                let pkt_size = pkt_size.saturating_sub(2) as usize;
 
                 let mut pkt = BytesMut::zeroed(pkt_size);
                 match stream.read_exact(&mut pkt).await {
-                    Ok(_) => {
-                        let mut buf_rtp = BufferedRtpPacket::new(pkt);
-                        match shared_key.open_in_place_separate_tag(
-                            aead::Nonce::assume_unique_for_key(
-                                buf_rtp.padded_nonce::<{ aead::NONCE_LEN }>(),
-                            ),
-                            aead::Aad::from(buf_rtp.aad()),
-                            aead::Tag::from(buf_rtp.tag()),
-                            buf_rtp.rtp_mut().payload_mut(),
-                            0..,
-                        ) {
-                            Ok(clear_data) => {
-                                tracing::trace!(len = clear_data.len(), "unencrypted payload");
-                            }
-                            Err(err) => {
-                                tracing::warn!(%err, "deciphering failed");
-                            }
+                    Ok(_) => match RtpPacket::decode(pkt) {
+                        Some(rtp_pkt) => {
+                            tracing::debug!(ts=?rtp_pkt.timestamp(), seqnum=?rtp_pkt.seqnum());
                         }
-                    }
+                        None => {
+                            tracing::warn!("skip invalid packet");
+                        }
+                    },
                     Err(err) => {
+                        // TODO : warn with trace span
                         tracing::warn!(%err, "failed to read data packets");
                     }
                 }

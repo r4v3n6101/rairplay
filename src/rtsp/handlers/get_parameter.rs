@@ -4,8 +4,9 @@ use axum::{
 };
 use hyper::{header::CONTENT_TYPE, StatusCode};
 
-use super::state::SharedState;
+use crate::rtsp::state::SharedState;
 
+// TODO
 pub async fn handler(
     State(SharedState { state, .. }): State<SharedState>,
     body: String,
@@ -13,7 +14,7 @@ pub async fn handler(
     match body.as_str() {
         "volume\r\n" => Ok((
             [(CONTENT_TYPE, "text/parameters")],
-            format!("volume: {}\r\n", state.volume.load()),
+            "volume: 0.0\r\n",
         )
             .into_response()),
         param => {

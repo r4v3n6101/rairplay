@@ -2,14 +2,20 @@ use std::sync::Arc;
 
 use adv::Advertisment;
 use axum::Router;
+use feats::Features;
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 use tracing::Level;
 use transport::{serve_with_rtsp_remap, IncomingStream};
 
+mod channels;
+mod clock;
+mod service;
+
+// TODO : move out modules from old layout
 mod adv;
-mod plist;
 mod feats;
+mod plist;
 mod rtsp;
 mod transport;
 
@@ -22,7 +28,15 @@ async fn main() {
 
     let tcp_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
 
-    let adv = Arc::new(Advertisment::default());
+    let features = Features::default()
+        | Features::ScreenMirroring
+        | Features::ScreenRotate
+        | Features::Video
+        | Features::Photo
+        | Features::VideoHTTPLiveStreaming;
+    let mut adv = Advertisment::default();
+    adv.features = features;
+    let adv = Arc::new(adv);
     adv.features.validate();
 
     let router = Router::new()
