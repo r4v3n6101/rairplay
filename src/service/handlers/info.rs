@@ -1,7 +1,7 @@
-use axum::{extract::State, response::IntoResponse};
+use axum::response::IntoResponse;
 use serde::Serialize;
 
-use crate::{plist::BinaryPlist, rtsp::state::SharedState};
+use crate::{adv::Advertisment, plist::BinaryPlist};
 
 const PROTOVERS: &str = "1.1";
 const SRCVERS: &str = "377.25.06";
@@ -31,10 +31,13 @@ struct MainResponse {
     source_version: String,
     #[serde(rename = "keepAliveSendStatsAsBody")]
     keep_alive_send_stats_as_body: bool,
+    #[serde(rename = "forceAirPlay2NTP")]
+    force_ntp: bool,
     displays: Vec<Display>,
 }
 
-pub async fn handler(State(SharedState { adv, .. }): State<SharedState>) -> impl IntoResponse {
+pub async fn handler() -> impl IntoResponse {
+    let adv = Advertisment::default();
     let response = MainResponse {
         device_id: adv.mac_addr.to_string(),
         features: adv.features.bits(),
@@ -46,6 +49,7 @@ pub async fn handler(State(SharedState { adv, .. }): State<SharedState>) -> impl
         name: adv.name.clone(),
 
         keep_alive_send_stats_as_body: true,
+        force_ntp: true,
         displays: vec![Display {
             width: 1920,
             height: 1080,

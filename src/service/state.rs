@@ -1,6 +1,5 @@
 use std::sync::{Arc, RwLock};
 
-use crossbeam_utils::atomic::AtomicCell;
 use futures::stream::AbortHandle;
 
 use crate::adv::Advertisment;
@@ -17,10 +16,6 @@ pub struct SharedState {
 pub struct State {
     pub sender: RwLock<Option<SenderHandle>>,
     pub streams: RwLock<Vec<StreamHandle>>,
-
-    pub volume: AtomicCell<f32>,
-    pub playback_rate: AtomicCell<f32>,
-    pub progress: AtomicCell<(u32, u32, u32)>,
 }
 
 #[derive(Debug)]

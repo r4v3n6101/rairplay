@@ -69,212 +69,30 @@ bitflags! {
     }
 }
 
-impl Features {
-    #[tracing::instrument]
-    pub fn validate(&self) {
-        self.iter_names()
-            .for_each(|(name, feat): (&str, Features)| match feat {
-                Features::Video => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::Photo => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::VideoFairPlay => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::VideoVolumeCtrl => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::VideoHTTPLiveStreaming => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::Slideshow => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::Unknown6 => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::ScreenMirroring => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::ScreenRotate => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::AirPlayAudio => {
-                    tracing::info!(feature = name, "working");
-                }
-                Features::Unknown10 => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::AudioRedundant => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::FPSAPv2p5_AES_GCM => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::MFiHardware => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::MFiSoft_FairPlay => {
-                    tracing::warn!(feature = name, "working with limitations");
-                }
-                Features::AudioMetaCovers => {
-                    tracing::info!(feature = name, "working");
-                }
-                Features::AudioMetaProgress => {
-                    tracing::info!(feature = name, "working");
-                }
-                Features::AudioMetaTxtDAAP => {
-                    tracing::info!(feature = name, "working");
-                }
-                Features::ReceiveAudioPCM => {
-                    tracing::info!(feature = name, "working");
-                }
-                Features::ReceiveAudioALAC => {
-                    tracing::info!(feature = name, "working");
-                }
-                Features::ReceiveAudioAAC_LC => {
-                    tracing::info!(feature = name, "working");
-                }
-                Features::Unknown21 => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::AudioUnencrypted => {
-                    tracing::info!(feature = name, "working");
-                }
-                Features::RSA_Auth => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::Unknown24 => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::iTunes4WEncryption => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::Audio_AES_Mfi => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::LegacyPairing => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::Unknown28 => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::plistMetaData => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::UnifiedAdvertisingInfo => {
-                    tracing::info!(feature = name, "working");
-                }
-                Features::CarPlay => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::AirPlayVideoPlayQueue => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::AirPlayFromCloud => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::TLS_PSK => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::Unknown36 => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::CarPlayControl => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::ControlChannelEncrypt => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::Unknown39 => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::BufferedAudio => {
-                    tracing::info!(feature = name, "working");
-                }
-                Features::PTPClock => {
-                    tracing::warn!(feature = name, "working with limitations");
-                }
-                Features::ScreenMultiCodec => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::SystemPairing => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::APValeriaScreenSend => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::NTPClock => {
-                    tracing::warn!(feature = name, "working with limitations");
-                }
-                Features::HomeKitPairing => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::PeerManagement => {
-                    tracing::info!(feature = name, "working");
-                }
-                Features::TransientPairing => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::AirPlayVideoV2 => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::NowPlayingInfo => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::MfiPairSetup => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::PeersExtendedMessage => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::Unknown53 => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::SupportsAPSync => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::SupportsWoL1 => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::SupportsWoL2 => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::Unknown57 => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::HangdogRemote => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::AudioStreamConnectionSetup => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::AudioMediaDataControl => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::RFC2198Redundant => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                Features::Unknown62 => {
-                    tracing::error!(feature = name, "not implemented");
-                }
-                _ => {}
-            });
-    }
-}
-
 impl Default for Features {
     fn default() -> Self {
-        Self::AirPlayAudio
-            | Self::MFiSoft_FairPlay
+        Self::Video
+            | Self::Photo
+            | Self::VideoHTTPLiveStreaming
+            | Self::Unknown6
+            | Self::ScreenMirroring
+            | Self::AirPlayAudio
+
+            // TODO : | Self::AudioRedundant
+            | Self::AudioMetaCovers
+            | Self::AudioMetaTxtDAAP
+            | Self::AudioMetaProgress
             | Self::ReceiveAudioPCM
             | Self::ReceiveAudioALAC
             | Self::ReceiveAudioAAC_LC
+
+            | Self::MFiSoft_FairPlay
             | Self::AudioUnencrypted
+
             | Self::UnifiedAdvertisingInfo
+
             | Self::BufferedAudio
             | Self::NTPClock
+        // TODO : | Self::PTPClock
     }
 }
