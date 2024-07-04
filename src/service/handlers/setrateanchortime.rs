@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::plist::BinaryPlist;
+use crate::service::plist::BinaryPlist;
 
 #[derive(Debug, Deserialize)]
 pub struct SetRateAnchorTimeRequest {

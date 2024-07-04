@@ -10,8 +10,10 @@ use serde::{Deserialize, Serialize};
 use tokio::net::{TcpListener, UdpSocket};
 
 use crate::{
-    plist::BinaryPlist,
-    service::dto::{SenderInfo, StreamDescriptor, StreamInfo, TimingPeerInfo},
+    service::{
+        dto::{SenderInfo, StreamDescriptor, StreamInfo, TimingPeerInfo},
+        plist::BinaryPlist,
+    },
     transport::IncomingStream,
 };
 

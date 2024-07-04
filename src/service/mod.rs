@@ -9,6 +9,7 @@ use tower_http::{propagate_header::PropagateHeaderLayer, set_header::SetResponse
 
 mod dto;
 mod handlers;
+mod plist;
 
 pub fn route() -> Router<()> {
     Router::new()

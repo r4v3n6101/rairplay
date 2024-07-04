@@ -11,7 +11,6 @@ mod service;
 // TODO : re-organize
 mod adv;
 mod feats;
-mod plist;
 mod transport;
 
 #[tokio::main]
