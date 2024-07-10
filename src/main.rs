@@ -2,7 +2,6 @@ use axum::Router;
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 use tracing::Level;
-use transport::{serve_with_rtsp_remap, IncomingStream};
 
 mod channels;
 mod clock;
@@ -11,7 +10,6 @@ mod service;
 // TODO : re-organize
 mod adv;
 mod feats;
-mod transport;
 
 #[tokio::main]
 async fn main() {
