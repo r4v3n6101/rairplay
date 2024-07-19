@@ -1,11 +1,9 @@
-use axum::Router;
-use tokio::net::TcpListener;
-use tower_http::trace::TraceLayer;
 use tracing::Level;
 
 mod channels;
 mod clock;
 mod service;
+mod discovery;
 
 // TODO : re-organize
 mod adv;
@@ -18,14 +16,5 @@ async fn main() {
         .pretty()
         .init();
 
-    let tcp_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
-
-    let router = Router::new()
-        .nest("/rtsp", service::route())
-        .layer(TraceLayer::new_for_http());
-    serve_with_rtsp_remap(
-        tcp_listener,
-        router.into_make_service_with_connect_info::<IncomingStream>(),
-    )
-    .await;
+    service::start_rtsp_service().await;
 }

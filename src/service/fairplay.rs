@@ -1,5 +1,4 @@
-use bytes::Bytes;
-use hyper::StatusCode;
+use thiserror::Error;
 
 const MESSAGES: [&[u8]; 4] = [
     &[
@@ -43,51 +42,54 @@ const MESSAGES: [&[u8]; 4] = [
 ];
 const FP_HEADER: &[u8] = &[70, 80, 76, 89, 3, 1, 4, 0, 0, 0, 0, 20];
 
-pub async fn handler(body: Bytes) -> Result<Vec<u8>, StatusCode> {
-    // Version
-    match body.get(4) {
+#[derive(Debug, Error)]
+pub enum DecodingError {
+    #[error("insufficient data")]
+    InsufficientData,
+    #[error("invalid version: {0}")]
+    InvalidVersion(u8),
+    #[error("invalid msg type: {0}")]
+    InvalidMsgType(u8),
+    #[error("invalid mode: {0}")]
+    InvalidMode(u8),
+    #[error("invalid seq: {0}")]
+    InvalidSeq(u8),
+}
+
+pub fn decode_buf(buf: impl AsRef<[u8]>) -> Result<Vec<u8>, DecodingError> {
+    let buf = buf.as_ref();
+
+    match buf.get(4) {
         Some(3) => {}
-        version => {
+        Some(version) => {
             tracing::error!(?version, "invalid version");
-            return Err(StatusCode::BAD_REQUEST);
+            return Err(DecodingError::InvalidVersion(*version));
         }
+        None => return Err(DecodingError::InsufficientData),
     }
 
-    // Type
-    match body.get(5) {
-        Some(1) => {
-            // Seq
-            match body.get(6) {
-                Some(1) => match body.get(14) {
-                    Some(mode @ 0..=4) => Ok(MESSAGES[*mode as usize].to_vec()),
-                    mode => {
-                        tracing::error!(?mode, "invalid mode");
-                        Err(StatusCode::BAD_REQUEST)
+    match buf.get(5) {
+        Some(1) => match buf.get(6) {
+            Some(1) => match buf.get(14) {
+                Some(mode @ 0..=4) => Ok(MESSAGES[*mode as usize].to_vec()),
+                Some(mode) => Err(DecodingError::InvalidMode(*mode)),
+                None => Err(DecodingError::InsufficientData),
+            },
+            Some(3) => {
+                let mut output = vec![0; FP_HEADER.len() + 20];
+                output[..FP_HEADER.len()].copy_from_slice(FP_HEADER);
+                match buf.get(buf.len() - 20..) {
+                    Some(suffix) => {
+                        output[FP_HEADER.len()..].copy_from_slice(suffix);
+                        Ok(output)
                     }
-                },
-                Some(3) => {
-                    let mut output = vec![0; FP_HEADER.len() + 20];
-                    output[..FP_HEADER.len()].copy_from_slice(FP_HEADER);
-                    match body.get(body.len() - 20..) {
-                        Some(suffix) => {
-                            output[FP_HEADER.len()..].copy_from_slice(suffix);
-                            Ok(output)
-                        }
-                        _ => {
-                            tracing::error!("insufficient request's data");
-                            Err(StatusCode::BAD_REQUEST)
-                        }
-                    }
-                }
-                seq => {
-                    tracing::error!(?seq, "invalid seq");
-                    Err(StatusCode::BAD_REQUEST)
+                    None => Err(DecodingError::InsufficientData),
                 }
             }
-        }
-        msg_type => {
-            tracing::error!(?msg_type, "invalid version type");
-            Err(StatusCode::BAD_REQUEST)
-        }
+            Some(seq) => Err(DecodingError::InvalidSeq(*seq)),
+            None => Err(DecodingError::InsufficientData),
+        },
+        Some(msg_type) => Err(DecodingError::InvalidMsgType(*msg_type)),
+        None => Err(DecodingError::InsufficientData),
     }
 }

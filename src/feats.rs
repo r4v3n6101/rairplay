@@ -93,6 +93,6 @@ impl Default for Features {
 
             | Self::BufferedAudio
             | Self::NTPClock
-        // TODO : | Self::PTPClock
+            | Self::PTPClock
     }
 }

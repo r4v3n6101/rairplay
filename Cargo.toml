@@ -36,3 +36,4 @@ mac_address = { version = "1", features = ["serde"] }
 crossbeam-utils = "0.8"
 ring = "0.17.8"
 dashmap = "5.5.3"
+mdns-sd = "0.11.1"

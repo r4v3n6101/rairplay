@@ -5,14 +5,19 @@ use axum::{
     routing::{any, get, post},
     Router,
 };
-use tower_http::{propagate_header::PropagateHeaderLayer, set_header::SetResponseHeaderLayer};
+use tokio::net::TcpListener;
+use tower_http::{
+    propagate_header::PropagateHeaderLayer, set_header::SetResponseHeaderLayer, trace::TraceLayer,
+};
 
+mod dto;
+mod fairplay;
 mod handlers;
-mod transport;
 mod plist;
 mod state;
+mod transport;
 
-pub fn route() -> Router<()> {
+fn route() -> Router<()> {
     Router::new()
         // Heartbeat
         .route("/feedback", post(()))
@@ -33,20 +38,20 @@ pub fn route() -> Router<()> {
                     "GET_PARAMETER" => handlers::get_parameter.call(req, ()).await,
                     // Set parameters such as artwork, volume, position
                     //"SET_PARAMETER" => set_parameter::handler.call(req, state).await,
-                    "SETRATEANCHORTIME" => handlers::setrateanchortime.call(req, ()).await,
+                    "SETRATEANCHORTIME" => handlers::set_rate_anchor_time.call(req, ()).await,
                     // Remove stream handle and closes all its channels
                     // "TEARDOWN" => handlers::teardown.call(req, ()).await,
                     // Flush remained data, called before teardown
-                    "FLUSHBUFFERED" => handlers::flushbuffered.call(req, ()).await,
+                    "FLUSHBUFFERED" => handlers::flush_buffered.call(req, ()).await,
                     method => {
                         tracing::error!(?method, path = ?req.uri(), "unknown method");
-                        handlers::trace_body.call(req, ()).await
+                        handlers::generic.call(req, ()).await
                     }
                 }
             }),
         )
         // Unknown handlers, just trace response
-        .fallback(handlers::trace_body)
+        .fallback(handlers::generic)
         // CSeq is required for RTSP protocol
         .layer(PropagateHeaderLayer::new(HeaderName::from_static("cseq")))
         // Synthetic header to let mapper know that's RTSP, not HTTP
@@ -54,4 +59,17 @@ pub fn route() -> Router<()> {
             HeaderName::from_static("upgrade"),
             |_: &_| Some(HeaderValue::from_static("RTSP")),
         ))
+}
+
+pub async fn start_rtsp_service() {
+    let tcp_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
+
+    let router = Router::new()
+        .nest("/rtsp", route())
+        .layer(TraceLayer::new_for_http());
+    transport::serve_with_rtsp_remap(
+        tcp_listener,
+        router.into_make_service_with_connect_info::<transport::IncomingStream>(),
+    )
+    .await;
 }
