@@ -1,3 +1,3 @@
 /target
-Cargo.lock
-raw.pcm
+.DS_Store
+**/.DS_Store
