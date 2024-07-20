@@ -27,7 +27,7 @@
           nativeBuildInputs = [ pkgs.libiconv ];
         };
       in {
-        defaultPackage = myRustBuild;
+        packages.default = myRustBuild;
         devShell = pkgs.mkShell {
           buildInputs =
             [ (rustVersion.override { extensions = [ "rust-src" ]; }) ];
