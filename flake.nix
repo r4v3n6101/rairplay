@@ -29,8 +29,11 @@
       in {
         packages.default = myRustBuild;
         devShell = pkgs.mkShell {
-          buildInputs =
-            [ (rustVersion.override { extensions = [ "rust-src" ]; }) ];
+          buildInputs = [
+            (rustVersion.override {
+              extensions = [ "rust-src" "rust-analyzer" ];
+            })
+          ];
         };
       });
 }
