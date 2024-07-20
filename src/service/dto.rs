@@ -11,7 +11,6 @@ pub struct InfoResponse {
     pub model: String,
     pub name: String,
 
-    // TODO : this naming is temporarily, I'll change it if not working
     #[serde(rename = "protocolVersion")]
     pub protocol_version: String,
     #[serde(rename = "sourceVersion")]
@@ -78,18 +77,18 @@ pub struct StreamDescriptor {
 #[derive(Debug, Deserialize)]
 pub struct FlushBufferedRequest {
     #[serde(rename = "flushUntilSeq")]
-    flush_until_seqnum: Option<u32>,
+    pub flush_until_seqnum: Option<u32>,
     #[serde(rename = "flushUntilTS")]
-    flush_until_timestamp: Option<u32>,
+    pub flush_until_timestamp: Option<u32>,
     #[serde(rename = "flushFromSeq")]
-    flush_from_seqnum: Option<u32>,
+    pub flush_from_seqnum: Option<u32>,
     #[serde(rename = "flushFromTS")]
-    flush_from_timestamp: Option<u32>,
+    pub flush_from_timestamp: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct SetRateAnchorTimeRequest {
-    rate: f32,
+    pub rate: f32,
     #[serde(rename = "rtpTime")]
-    anchor_rtp_timestamp: Option<u64>,
+    pub anchor_rtp_timestamp: Option<u64>,
 }

@@ -18,7 +18,7 @@ pub async fn generic(bytes: Option<Bytes>) {
 
 pub async fn info() -> impl IntoResponse {
     const PROTOVERS: &str = "1.1";
-    const SRCVERS: &str = "377.25.06";
+    const SRCVERS: &str = "770.8.1";
 
     let adv = Advertisment::default();
     let response = InfoResponse {
