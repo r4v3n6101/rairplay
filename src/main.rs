@@ -2,8 +2,8 @@ use tracing::Level;
 
 mod channels;
 mod clock;
-mod service;
 mod discovery;
+mod service;
 
 // TODO : re-organize
 mod adv;
@@ -16,5 +16,6 @@ async fn main() {
         .pretty()
         .init();
 
+    discovery::mdns_broadcast();
     service::start_rtsp_service().await;
 }
