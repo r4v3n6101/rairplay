@@ -6,7 +6,8 @@ use crate::adv::Advertisment;
 
 use super::{
     dto::{
-        FlushBufferedRequest, InfoResponse, SetRateAnchorTimeRequest, SetupRequest, SetupResponse,
+        Display, FlushBufferedRequest, InfoResponse, SetRateAnchorTimeRequest, SetupRequest,
+        SetupResponse,
     },
     fairplay,
     plist::BinaryPlist,
@@ -32,6 +33,14 @@ pub async fn info() -> impl IntoResponse {
         manufacturer: adv.manufacturer.clone(),
         model: adv.model.clone(),
         name: adv.name.clone(),
+
+        displays: vec![Display {
+            width: 1920,
+            height: 1080,
+            uuid: "duck-you".to_string(),
+            max_fps: 60,
+            features: 2,
+        }],
     };
     tracing::info!(?response, ?adv, "built info from advertisment");
 
@@ -69,8 +78,8 @@ pub async fn setup(
     BinaryPlist(req): BinaryPlist<SetupRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     match req {
-        SetupRequest::SenderInfo { content } => {
-            tracing::info!(?content, "setup sender's info");
+        freq @ SetupRequest::SenderInfo { .. } => {
+            tracing::info!(?freq, "setup sender's info");
             Err(StatusCode::OK)
         }
 

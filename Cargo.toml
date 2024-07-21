@@ -33,3 +33,6 @@ tower-http = { version = "0.5", features = ["propagate-header", "set-header", "t
 mac_address = { version = "1", features = ["serde"] }
 ring = "0.17.8"
 mdns-sd = "0.11.1"
+
+[patch.crates-io]
+serde = { git = "https://github.com/Astavie/serde.git", branch = "integer-tags-for-enums" }
