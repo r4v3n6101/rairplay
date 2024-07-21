@@ -1,16 +1,22 @@
-use axum::response::{IntoResponse, Response};
+use std::net::SocketAddr;
+
+use axum::{
+    extract::ConnectInfo,
+    response::{IntoResponse, Response},
+};
 use bytes::Bytes;
 use hyper::{header::CONTENT_TYPE, StatusCode};
 
-use crate::adv::Advertisment;
+use crate::{adv::Advertisment, channels};
 
 use super::{
     dto::{
         Display, FlushBufferedRequest, InfoResponse, SetRateAnchorTimeRequest, SetupRequest,
-        SetupResponse,
+        SetupResponse, StreamDescriptor, StreamRequest, 
     },
     fairplay,
     plist::BinaryPlist,
+    transport::IncomingStream,
 };
 
 pub async fn generic(bytes: Option<Bytes>) {
@@ -25,7 +31,6 @@ pub async fn info() -> impl IntoResponse {
     let response = InfoResponse {
         device_id: adv.mac_addr.to_string(),
         mac_addr: adv.mac_addr.to_string(),
-        initial_volume: Some(0.0),
         features: adv.features.bits(),
         protocol_version: PROTOVERS.to_string(),
         source_version: SRCVERS.to_string(),
@@ -33,6 +38,8 @@ pub async fn info() -> impl IntoResponse {
         manufacturer: adv.manufacturer.clone(),
         model: adv.model.clone(),
         name: adv.name.clone(),
+
+        initial_volume: Some(0.0),
 
         displays: vec![Display {
             width: 1920,
@@ -42,7 +49,7 @@ pub async fn info() -> impl IntoResponse {
             features: 2,
         }],
     };
-    tracing::info!(?response, ?adv, "built info from advertisment");
+    tracing::warn!(val=?(plist::to_value(&response)), "look at me!");
 
     BinaryPlist(response)
 }
@@ -74,18 +81,88 @@ pub async fn flush_buffered(obj: BinaryPlist<FlushBufferedRequest>) {
     tracing::debug!(?obj, "FLUSHBUFFERED");
 }
 
+// TODO : stop leaking channels, instead of that store them in axum's state
 pub async fn setup(
+    ConnectInfo(IncomingStream { local_addr, .. }): ConnectInfo<IncomingStream>,
     BinaryPlist(req): BinaryPlist<SetupRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     match req {
         freq @ SetupRequest::SenderInfo { .. } => {
             tracing::info!(?freq, "setup sender's info");
-            Err(StatusCode::OK)
+
+            // TODO : this must be handled better
+            let event_channel = channels::event::spawn_tracing(SocketAddr::new(local_addr, 0))
+                .await
+                .unwrap();
+            let event_port = event_channel.local_addr().port();
+            std::mem::forget(event_channel);
+
+            Ok(BinaryPlist(SetupResponse::General {
+                event_port,
+                timing_port: 0,
+            }))
         }
 
-        SetupRequest::Streams { streams } => {
-            tracing::info!(?streams, "setup streams");
-            Ok(BinaryPlist(SetupResponse::Streams { streams: vec![] }))
+        SetupRequest::Streams { requests } => {
+            tracing::warn!(val=?requests, "look at me!");
+
+            let mut descriptors = Vec::with_capacity(requests.len());
+            let mut handles = Vec::with_capacity(requests.len());
+            for stream in requests {
+                let descriptor = match stream {
+                    StreamRequest::AudioRealtime { .. } => {
+                        let data_channel =
+                            channels::audio::spawn_realtime(SocketAddr::new(local_addr, 0))
+                                .await
+                                .unwrap();
+                        let control_channel =
+                            channels::audio::spawn_control(SocketAddr::new(local_addr, 0))
+                                .await
+                                .unwrap();
+
+                        let data_port = data_channel.local_addr().port();
+                        let control_port = control_channel.local_addr().port();
+                        handles.push(data_channel);
+                        handles.push(control_channel);
+                        StreamDescriptor::AudioRealtime {
+                            id: 0,
+                            local_data_port: data_port,
+                            local_control_port: control_port,
+                            audio_buffer_size: 8192 * 1024,
+                        }
+                    }
+                    StreamRequest::AudioBuffered { .. } => {
+                        let data_channel =
+                            channels::audio::spawn_buffered(SocketAddr::new(local_addr, 0))
+                                .await
+                                .unwrap();
+
+                        let data_port = data_channel.local_addr().port();
+
+                        handles.push(data_channel);
+                        StreamDescriptor::AudioBuffered {
+                            id: 1,
+                            local_data_port: data_port,
+                            audio_buffer_size: 8192 * 1024,
+                        }
+                    }
+                    StreamRequest::Video { .. } => {
+                        tracing::warn!("video is not yet ready");
+
+                        StreamDescriptor::Video {
+                            id: 10,
+                            local_data_port: 5555,
+                        }
+                    }
+                };
+                descriptors.push(descriptor);
+            }
+
+            // TODO : store in state, not just drop to avoid closing channels
+            handles.leak();
+
+            tracing::warn!(val=?(plist::to_value(&descriptors)), "look at me!");
+            Ok(BinaryPlist(SetupResponse::Streams { descriptors }))
         }
     }
 }

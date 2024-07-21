@@ -1,3 +1,5 @@
+use std::net::IpAddr;
+
 use bytes::Bytes;
 use mac_address::MacAddress;
 use serde::{Deserialize, Serialize};
@@ -60,7 +62,9 @@ pub enum SetupRequest {
         content: plist::Value,
     },
     Streams {
-        streams: Vec<StreamInfo>,
+        // TODO : better naming for this
+        #[serde(rename = "streams")]
+        requests: Vec<StreamRequest>,
     },
 }
 
@@ -83,7 +87,7 @@ pub enum TimingProtocol {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
-pub enum StreamInfo {
+pub enum StreamRequest {
     #[serde(rename = 96)]
     AudioRealtime {
         #[serde(rename = "ct")]
@@ -122,17 +126,18 @@ pub enum StreamInfo {
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum SetupResponse {
-    // TODO : is this actually needed?
-    Initial {
+    General {
         #[serde(rename = "eventPort")]
         event_port: u16,
+
+        // TODO : this may be moved to NTP branch, because it's always zero for PTP and PTP
+        // sometimes requires (or not) timingPeerInfo
         #[serde(rename = "timingPort")]
         timing_port: u16,
-        #[serde(rename = "timingPeerInfo")]
-        timing_peer_info: Option<()>,
     },
     Streams {
-        streams: Vec<StreamDescriptor>,
+        #[serde(rename = "streams")]
+        descriptors: Vec<StreamDescriptor>,
     },
 }
 
@@ -146,7 +151,9 @@ pub enum StreamDescriptor {
         #[serde(rename = "dataPort")]
         local_data_port: u16,
         #[serde(rename = "controlPort")]
-        local_control_port: Option<u16>,
+        local_control_port: u16,
+
+        // TODO : not sure it's needed there
         #[serde(rename = "audioBufferSize")]
         audio_buffer_size: u32,
     },
