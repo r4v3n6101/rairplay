@@ -4,7 +4,7 @@ use tokio::task::AbortHandle;
 
 pub mod audio;
 pub mod event;
-// TODO : pub mod video;
+pub mod video;
 
 pub struct Handle {
     /// Used for cancelling task with processing data

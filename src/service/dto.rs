@@ -112,6 +112,8 @@ pub enum StreamRequest {
         samples_per_frame: Option<u32>,
         #[serde(rename = "shk")]
         shared_key: Option<Bytes>,
+        #[serde(rename = "shiv")]
+        shared_iv: Option<Bytes>,
 
         #[serde(flatten)]
         content: plist::Value,
@@ -152,10 +154,9 @@ pub enum StreamDescriptor {
         local_data_port: u16,
         #[serde(rename = "controlPort")]
         local_control_port: u16,
-
         // TODO : not sure it's needed there
-        #[serde(rename = "audioBufferSize")]
-        audio_buffer_size: u32,
+        //#[serde(rename = "audioBufferSize")]
+        //audio_buffer_size: u32,
     },
     #[serde(rename = 103)]
     AudioBuffered {

@@ -12,7 +12,7 @@ use crate::{adv::Advertisment, channels};
 use super::{
     dto::{
         Display, FlushBufferedRequest, InfoResponse, SetRateAnchorTimeRequest, SetupRequest,
-        SetupResponse, StreamDescriptor, StreamRequest, 
+        SetupResponse, StreamDescriptor, StreamRequest,
     },
     fairplay,
     plist::BinaryPlist,
@@ -49,7 +49,6 @@ pub async fn info() -> impl IntoResponse {
             features: 2,
         }],
     };
-    tracing::warn!(val=?(plist::to_value(&response)), "look at me!");
 
     BinaryPlist(response)
 }
@@ -104,8 +103,6 @@ pub async fn setup(
         }
 
         SetupRequest::Streams { requests } => {
-            tracing::warn!(val=?requests, "look at me!");
-
             let mut descriptors = Vec::with_capacity(requests.len());
             let mut handles = Vec::with_capacity(requests.len());
             for stream in requests {
@@ -128,7 +125,6 @@ pub async fn setup(
                             id: 0,
                             local_data_port: data_port,
                             local_control_port: control_port,
-                            audio_buffer_size: 8192 * 1024,
                         }
                     }
                     StreamRequest::AudioBuffered { .. } => {
@@ -147,7 +143,9 @@ pub async fn setup(
                         }
                     }
                     StreamRequest::Video { .. } => {
-                        tracing::warn!("video is not yet ready");
+                        let data_channel = channels::video::spawn(SocketAddr::new(local_addr, 0))
+                            .await
+                            .unwrap();
 
                         StreamDescriptor::Video {
                             id: 10,
@@ -161,7 +159,6 @@ pub async fn setup(
             // TODO : store in state, not just drop to avoid closing channels
             handles.leak();
 
-            tracing::warn!(val=?(plist::to_value(&descriptors)), "look at me!");
             Ok(BinaryPlist(SetupResponse::Streams { descriptors }))
         }
     }
