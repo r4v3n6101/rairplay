@@ -19,7 +19,6 @@ pin-project-lite = "0.2"
 # TODO : remove full, it's for developing
 tokio = { version = "1.35", features = ["net", "io-util", "full"] }
 tokio-util = { version = "0.7", features = ["codec", "io"] }
-# TODO : append client somewhen I need reverse conenctions
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 
@@ -34,5 +33,6 @@ mac_address = { version = "1", features = ["serde"] }
 ring = "0.17.8"
 mdns-sd = "0.11.1"
 
+# TODO : temporarily, because of unsupported int enum tags
 [patch.crates-io]
 serde = { git = "https://github.com/Astavie/serde.git", branch = "integer-tags-for-enums" }
