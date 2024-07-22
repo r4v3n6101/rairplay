@@ -127,11 +127,13 @@ pub async fn setup(
                             local_control_port: control_port,
                         }
                     }
-                    StreamRequest::AudioBuffered { .. } => {
-                        let data_channel =
-                            channels::audio::spawn_buffered(SocketAddr::new(local_addr, 0))
-                                .await
-                                .unwrap();
+                    StreamRequest::AudioBuffered { shared_key, .. } => {
+                        let data_channel = channels::audio::spawn_buffered(
+                            SocketAddr::new(local_addr, 0),
+                            &shared_key.unwrap(),
+                        )
+                        .await
+                        .unwrap();
 
                         let data_port = data_channel.local_addr().port();
 

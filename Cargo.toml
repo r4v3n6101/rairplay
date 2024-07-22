@@ -33,6 +33,9 @@ mac_address = { version = "1", features = ["serde"] }
 ring = "0.17.8"
 mdns-sd = "0.11.1"
 
+
+symphonia = { version = "*", features = ["aac"] }
+
 # TODO : temporarily, because of unsupported int enum tags
 [patch.crates-io]
 serde = { git = "https://github.com/Astavie/serde.git", branch = "integer-tags-for-enums" }

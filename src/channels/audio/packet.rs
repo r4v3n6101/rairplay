@@ -36,23 +36,28 @@ impl fmt::Debug for RtpPacket {
 }
 
 impl RtpPacket {
-    pub fn decode(mut pkt: BytesMut) -> Option<Self> {
-        if pkt.len() < RTP_HEADER_LEN + RTP_TRAILER_LEN {
-            return None;
-        }
-
-        let mut header = [0; RTP_HEADER_LEN];
-        header.copy_from_slice(&pkt[0..RTP_HEADER_LEN]);
-        let mut trailer = [0; RTP_TRAILER_LEN];
-        trailer.copy_from_slice(&pkt[pkt.len() - RTP_TRAILER_LEN..]);
-        let mut payload = pkt.split_off(RTP_HEADER_LEN);
-        payload.truncate(payload.len() - RTP_TRAILER_LEN);
-
-        Some(Self {
-            payload,
+    pub fn new(
+        header: [u8; RTP_HEADER_LEN],
+        trailer: [u8; RTP_TRAILER_LEN],
+        payload: BytesMut,
+    ) -> Self {
+        Self {
             header,
             trailer,
-        })
+            payload,
+        }
+    }
+
+    pub const fn header_len() -> usize {
+        RTP_HEADER_LEN
+    }
+
+    pub const fn trailer_len() -> usize {
+        RTP_TRAILER_LEN
+    }
+
+    pub const fn base_len() -> usize {
+        RTP_HEADER_LEN + RTP_TRAILER_LEN
     }
 
     pub fn version(&self) -> u8 {
