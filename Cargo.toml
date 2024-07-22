@@ -1,16 +1,14 @@
 [package]
 name = "rairplay"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
 tracing = "0.1"
 thiserror = "1"
-futures = "0.3"
-rand = "0.8"
 
+# Parsing
 serde = { version = "1", features = ["derive"] }
-serde_repr = "0.1"
 bytes = { version = "1", features = ["serde"] }
 bitflags = { version = "2", features = ["serde"] }
 plist = "1"
@@ -21,7 +19,6 @@ pin-project-lite = "0.2"
 # TODO : remove full, it's for developing
 tokio = { version = "1.35", features = ["net", "io-util", "full"] }
 tokio-util = { version = "0.7", features = ["codec", "io"] }
-# TODO : append client somewhen I need reverse conenctions
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 
@@ -33,5 +30,12 @@ tracing-subscriber = "0.3"
 tower = { version = "0.4" }
 tower-http = { version = "0.5", features = ["propagate-header", "set-header", "trace", "util"] }
 mac_address = { version = "1", features = ["serde"] }
-crossbeam-utils = "0.8"
 ring = "0.17.8"
+mdns-sd = "0.11.1"
+
+
+symphonia = { version = "*", features = ["aac"] }
+
+# TODO : temporarily, because of unsupported int enum tags
+[patch.crates-io]
+serde = { git = "https://github.com/Astavie/serde.git", branch = "integer-tags-for-enums" }
