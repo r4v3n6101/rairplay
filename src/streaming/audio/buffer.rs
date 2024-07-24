@@ -30,32 +30,18 @@ impl AudioBuffer {
                 let guessed_cap =
                     avg_payload_len * (self.rtp_buf.capacity().saturating_sub(rtp_buf_len));
 
-                tracing::info!(
-                    "trying to reserve {} bytes, requsted: {}",
-                    guessed_cap,
-                    requested_len
-                );
                 self.audio_buf.reserve(guessed_cap.max(requested_len));
             } else {
-                tracing::info!("just reserve {} bytes", requested_len);
                 self.audio_buf.reserve(requested_len);
             }
         }
 
-        if self.audio_buf.len() < requested_len {
-            self.audio_buf.resize(requested_len, 0);
-        }
-
+        self.audio_buf.resize(requested_len, 0);
         self.audio_buf.split_to(requested_len)
     }
 
     pub fn push_packet(&mut self, pkt: RtpPacket) {
         self.rtp_buf.push(pkt);
-        tracing::info!(
-            "pushed {}/{} rtps",
-            self.rtp_buf.len(),
-            self.rtp_buf.capacity()
-        );
         if self.rtp_buf.len() == self.rtp_buf.capacity() {
             let rtp_buf_cap = self.rtp_buf.capacity();
             // TODO : get out this buffer
