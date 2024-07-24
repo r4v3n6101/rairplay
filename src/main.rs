@@ -1,9 +1,9 @@
 use tracing::Level;
 
-mod channels;
 mod clock;
 mod discovery;
 mod service;
+mod streaming;
 
 // TODO : re-organize
 mod adv;

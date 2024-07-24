@@ -7,7 +7,7 @@ use axum::{
 use bytes::Bytes;
 use hyper::{header::CONTENT_TYPE, StatusCode};
 
-use crate::{adv::Advertisment, channels};
+use crate::{adv::Advertisment, streaming};
 
 use super::{
     dto::{
@@ -90,7 +90,7 @@ pub async fn setup(
             tracing::info!(?freq, "setup sender's info");
 
             // TODO : this must be handled better
-            let event_channel = channels::event::spawn_tracing(SocketAddr::new(local_addr, 0))
+            let event_channel = streaming::event::spawn_tracing(SocketAddr::new(local_addr, 0))
                 .await
                 .unwrap();
             let event_port = event_channel.local_addr().port();
@@ -108,8 +108,8 @@ pub async fn setup(
             for stream in requests {
                 let descriptor = match stream {
                     StreamRequest::AudioBuffered { .. } => {
-                        let data_channel = channels::audio::buffered::spawn_processor(
-                            SocketAddr::new(local_addr, 0),
+                        let data_channel = streaming::audio::buffered::spawn_processor(
+                            SocketAddr::new(local_addr, 9991),
                         )
                         .await
                         .unwrap();
