@@ -5,7 +5,7 @@ use bytes::BytesMut;
 use super::packet::RtpPacket;
 
 pub struct AudioBuffer {
-    rtp_buf: Vec<RtpPacket>,
+    pkts: Vec<RtpPacket>,
     audio_buf: BytesMut,
 }
 
@@ -13,22 +13,22 @@ impl AudioBuffer {
     pub fn new() -> Self {
         // TODO : calculate rtp_buf size and guessed audio buf size
         Self {
-            rtp_buf: Vec::with_capacity(100),
+            pkts: Vec::with_capacity(100),
             audio_buf: BytesMut::new(),
         }
     }
 
     pub fn allocate_buf(&mut self, requested_len: usize) -> BytesMut {
         if self.audio_buf.capacity() < requested_len {
-            if let rtp_buf_len @ 1.. = self.rtp_buf.len() {
+            if let pkts_len @ 1.. = self.pkts.len() {
                 let avg_payload_len = self
-                    .rtp_buf
+                    .pkts
                     .iter()
                     .map(|pkt| pkt.payload().len())
                     .sum::<usize>()
-                    / rtp_buf_len;
+                    / pkts_len;
                 let guessed_cap =
-                    avg_payload_len * (self.rtp_buf.capacity().saturating_sub(rtp_buf_len));
+                    avg_payload_len * (self.pkts.capacity().saturating_sub(pkts_len));
 
                 self.audio_buf.reserve(guessed_cap.max(requested_len));
             } else {
@@ -41,11 +41,11 @@ impl AudioBuffer {
     }
 
     pub fn push_packet(&mut self, pkt: RtpPacket) {
-        self.rtp_buf.push(pkt);
-        if self.rtp_buf.len() == self.rtp_buf.capacity() {
-            let rtp_buf_cap = self.rtp_buf.capacity();
+        self.pkts.push(pkt);
+        if self.pkts.len() == self.pkts.capacity() {
+            let pkts_cap = self.pkts.capacity();
             // TODO : get out this buffer
-            let buf = mem::replace(&mut self.rtp_buf, Vec::with_capacity(rtp_buf_cap));
+            let buf = mem::replace(&mut self.pkts, Vec::with_capacity(pkts_cap));
             self.audio_buf = BytesMut::new();
         }
     }
