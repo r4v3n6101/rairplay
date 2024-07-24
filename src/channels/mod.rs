@@ -6,6 +6,7 @@ pub mod audio;
 pub mod event;
 pub mod video;
 
+// TODO : get rid of it
 pub struct Handle {
     /// Used for cancelling task with processing data
     pub(self) handle: AbortHandle,

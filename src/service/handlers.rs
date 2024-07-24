@@ -107,30 +107,9 @@ pub async fn setup(
             let mut handles = Vec::with_capacity(requests.len());
             for stream in requests {
                 let descriptor = match stream {
-                    StreamRequest::AudioRealtime { .. } => {
-                        let data_channel =
-                            channels::audio::spawn_realtime(SocketAddr::new(local_addr, 0))
-                                .await
-                                .unwrap();
-                        let control_channel =
-                            channels::audio::spawn_control(SocketAddr::new(local_addr, 0))
-                                .await
-                                .unwrap();
-
-                        let data_port = data_channel.local_addr().port();
-                        let control_port = control_channel.local_addr().port();
-                        handles.push(data_channel);
-                        handles.push(control_channel);
-                        StreamDescriptor::AudioRealtime {
-                            id: 0,
-                            local_data_port: data_port,
-                            local_control_port: control_port,
-                        }
-                    }
-                    StreamRequest::AudioBuffered { shared_key, .. } => {
-                        let data_channel = channels::audio::spawn_buffered(
+                    StreamRequest::AudioBuffered { .. } => {
+                        let data_channel = channels::audio::buffered::spawn_processor(
                             SocketAddr::new(local_addr, 0),
-                            &shared_key.unwrap(),
                         )
                         .await
                         .unwrap();
@@ -144,15 +123,11 @@ pub async fn setup(
                             audio_buffer_size: 8192 * 1024,
                         }
                     }
+                    StreamRequest::AudioRealtime { .. } => {
+                        todo!("realtime streams are unsupported");
+                    }
                     StreamRequest::Video { .. } => {
-                        let data_channel = channels::video::spawn(SocketAddr::new(local_addr, 0))
-                            .await
-                            .unwrap();
-
-                        StreamDescriptor::Video {
-                            id: 10,
-                            local_data_port: 5555,
-                        }
+                        todo!("video streams are unsupported");
                     }
                 };
                 descriptors.push(descriptor);
