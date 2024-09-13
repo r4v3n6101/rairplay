@@ -104,7 +104,6 @@ pub async fn setup(
 
         SetupRequest::Streams { requests } => {
             let mut descriptors = Vec::with_capacity(requests.len());
-            let mut handles = Vec::with_capacity(requests.len());
             for stream in requests {
                 let descriptor = match stream {
                     StreamRequest::AudioBuffered { .. } => {
@@ -123,18 +122,18 @@ pub async fn setup(
                             audio_buffer_size: 8192 * 1024,
                         }
                     }
-                    StreamRequest::AudioRealtime { .. } => {
-                        todo!("realtime streams are unsupported");
-                    }
-                    StreamRequest::Video { .. } => {
-                        todo!("video streams are unsupported");
-                    }
+                    StreamRequest::AudioRealtime { .. } => StreamDescriptor::AudioRealtime {
+                        id: 1,
+                        local_data_port: 10123,
+                        local_control_port: 10124,
+                    },
+                    StreamRequest::Video { .. } => StreamDescriptor::Video {
+                        id: 2,
+                        local_data_port: 10125,
+                    },
                 };
                 descriptors.push(descriptor);
             }
-
-            // TODO : store in state, not just drop to avoid closing channels
-            handles.leak();
 
             Ok(BinaryPlist(SetupResponse::Streams { descriptors }))
         }
