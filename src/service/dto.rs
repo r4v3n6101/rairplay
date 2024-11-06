@@ -1,5 +1,3 @@
-use std::net::IpAddr;
-
 use bytes::Bytes;
 use mac_address::MacAddress;
 use serde::{Deserialize, Serialize};

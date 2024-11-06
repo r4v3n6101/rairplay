@@ -27,8 +27,7 @@ impl AudioBuffer {
                     .map(|pkt| pkt.payload().len())
                     .sum::<usize>()
                     / pkts_len;
-                let guessed_cap =
-                    avg_payload_len * (self.pkts.capacity().saturating_sub(pkts_len));
+                let guessed_cap = avg_payload_len * (self.pkts.capacity().saturating_sub(pkts_len));
 
                 self.audio_buf.reserve(guessed_cap.max(requested_len));
             } else {
