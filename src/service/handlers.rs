@@ -104,37 +104,27 @@ pub async fn setup(
 
         SetupRequest::Streams { requests } => {
             let mut descriptors = Vec::with_capacity(requests.len());
-            let mut handles = Vec::with_capacity(requests.len());
             for stream in requests {
                 let descriptor = match stream {
                     StreamRequest::AudioBuffered { .. } => {
-                        let data_channel = streaming::audio::buffered::spawn_processor(
-                            SocketAddr::new(local_addr, 9991),
-                        )
-                        .await
-                        .unwrap();
-
-                        let data_port = data_channel.local_addr().port();
-
-                        handles.push(data_channel);
                         StreamDescriptor::AudioBuffered {
                             id: 1,
-                            local_data_port: data_port,
+                            local_data_port: 10122,
                             audio_buffer_size: 8192 * 1024,
                         }
                     }
-                    StreamRequest::AudioRealtime { .. } => {
-                        todo!("realtime streams are unsupported");
-                    }
-                    StreamRequest::Video { .. } => {
-                        todo!("video streams are unsupported");
-                    }
+                    StreamRequest::AudioRealtime { .. } => StreamDescriptor::AudioRealtime {
+                        id: 1,
+                        local_data_port: 10123,
+                        local_control_port: 10124,
+                    },
+                    StreamRequest::Video { .. } => StreamDescriptor::Video {
+                        id: 2,
+                        local_data_port: 10125,
+                    },
                 };
                 descriptors.push(descriptor);
             }
-
-            // TODO : store in state, not just drop to avoid closing channels
-            handles.leak();
 
             Ok(BinaryPlist(SetupResponse::Streams { descriptors }))
         }
