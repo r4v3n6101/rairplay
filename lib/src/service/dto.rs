@@ -2,7 +2,7 @@ use bytes::Bytes;
 use mac_address::MacAddress;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct InfoResponse {
     #[serde(rename = "deviceid")]
     pub device_id: String,
@@ -23,7 +23,7 @@ pub struct InfoResponse {
     pub displays: Vec<Display>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct Display {
     #[serde(rename = "widthPixels")]
     pub width: u32,
@@ -123,7 +123,7 @@ pub enum StreamRequest {
     },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 #[serde(untagged)]
 pub enum SetupResponse {
     General {
@@ -141,7 +141,7 @@ pub enum SetupResponse {
     },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 #[serde(tag = "type")]
 pub enum StreamDescriptor {
     #[serde(rename = 96)]
