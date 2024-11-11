@@ -1,13 +1,7 @@
+use tokio::net::TcpListener;
 use tracing::Level;
 
-mod clock;
 mod discovery;
-mod service;
-mod streaming;
-
-// TODO : re-organize
-mod adv;
-mod feats;
 
 #[tokio::main]
 async fn main() {
@@ -16,6 +10,7 @@ async fn main() {
         .pretty()
         .init();
 
+    let svc_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
     discovery::mdns_broadcast();
-    service::start_rtsp_service().await;
+    rairplay::service::IdkRouter::new(svc_listener).await;
 }

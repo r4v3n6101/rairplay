@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use axum::{
     extract::ConnectInfo,
     response::{IntoResponse, Response},
@@ -7,17 +5,18 @@ use axum::{
 use bytes::Bytes;
 use hyper::{header::CONTENT_TYPE, StatusCode};
 
-use crate::{adv::Advertisment, streaming};
+use crate::adv::Advertisment;
 
 use super::{
     dto::{
         Display, FlushBufferedRequest, InfoResponse, SetRateAnchorTimeRequest, SetupRequest,
         SetupResponse, StreamDescriptor, StreamRequest,
     },
-    fairplay,
     plist::BinaryPlist,
     transport::IncomingStream,
 };
+
+mod fairplay;
 
 pub async fn generic(bytes: Option<Bytes>) {
     tracing::trace!(?bytes, "generic handler");
@@ -82,22 +81,15 @@ pub async fn flush_buffered(obj: BinaryPlist<FlushBufferedRequest>) {
 
 // TODO : stop leaking channels, instead of that store them in axum's state
 pub async fn setup(
-    ConnectInfo(IncomingStream { local_addr, .. }): ConnectInfo<IncomingStream>,
+    ConnectInfo(IncomingStream { .. }): ConnectInfo<IncomingStream>,
     BinaryPlist(req): BinaryPlist<SetupRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     match req {
         freq @ SetupRequest::SenderInfo { .. } => {
             tracing::info!(?freq, "setup sender's info");
 
-            // TODO : this must be handled better
-            let event_channel = streaming::event::spawn_tracing(SocketAddr::new(local_addr, 0))
-                .await
-                .unwrap();
-            let event_port = event_channel.local_addr().port();
-            std::mem::forget(event_channel);
-
             Ok(BinaryPlist(SetupResponse::General {
-                event_port,
+                event_port: 123,
                 timing_port: 0,
             }))
         }
@@ -106,13 +98,11 @@ pub async fn setup(
             let mut descriptors = Vec::with_capacity(requests.len());
             for stream in requests {
                 let descriptor = match stream {
-                    StreamRequest::AudioBuffered { .. } => {
-                        StreamDescriptor::AudioBuffered {
-                            id: 1,
-                            local_data_port: 10122,
-                            audio_buffer_size: 8192 * 1024,
-                        }
-                    }
+                    StreamRequest::AudioBuffered { .. } => StreamDescriptor::AudioBuffered {
+                        id: 1,
+                        local_data_port: 10122,
+                        audio_buffer_size: 8192 * 1024,
+                    },
                     StreamRequest::AudioRealtime { .. } => StreamDescriptor::AudioRealtime {
                         id: 1,
                         local_data_port: 10123,

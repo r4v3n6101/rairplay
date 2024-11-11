@@ -9,4 +9,6 @@ pub struct SharedState {
 }
 
 #[derive(Debug)]
-pub struct State {}
+pub struct State {
+    // TODO : event channel info
+}

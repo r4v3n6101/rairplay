@@ -1,0 +1,26 @@
+[package]
+name = "rairplay"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tracing = "0.1"
+thiserror = "1"
+mac_address = { version = "1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+bytes = { version = "1", features = ["serde"] }
+bitflags = { version = "2", features = ["serde"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["propagate-header", "set-header"] }
+hyper = { version = "1", features = ["server", "http1"] }
+tokio = { version = "1.40", features = ["net", "io-util"] }
+# TODO : remove feature
+axum = { version = "0.7", default-features = false, features = ["tokio"] }
+plist = "1"
+async-trait = "0.1"
+# Used for transport
+httparse = "1"
+pin-project-lite = "0.2"
+hyper-util = { version = "0.1", features = ["tokio"] }
+tokio-util = { version = "0.7", features = ["codec", "io"] }
+ring = "0.17"
