@@ -9,9 +9,7 @@ use tokio::{
     net::{TcpListener, TcpStream, UdpSocket},
 };
 
-use crate::channels::audio::packet::RtpPacket;
-
-use super::buffer::AudioBuffer;
+use super::{buffer::AudioBuffer, packet::RtpPacket};
 
 struct Inner {
     udp_socket: UdpSocket,
