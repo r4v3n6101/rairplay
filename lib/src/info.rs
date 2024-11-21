@@ -1,4 +1,16 @@
-use bitflags::bitflags;
+use bitflags::*;
+use mac_address::MacAddress;
+
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub mac_addr: MacAddress,
+    pub features: Features,
+    pub manufacturer: String,
+    pub model: String,
+    pub name: String,
+    pub fw_version: String,
+    pub initial_volume: Option<f32>,
+}
 
 bitflags! {
     #[repr(transparent)]
@@ -69,6 +81,8 @@ bitflags! {
     }
 }
 
+/// Default features that supported by the current version of the crate.
+/// Modify it if you make any changes into the code.
 impl Default for Features {
     fn default() -> Self {
         Self::Video
@@ -79,18 +93,24 @@ impl Default for Features {
             | Self::AirPlayAudio
 
             // TODO : | Self::AudioRedundant
+
+            // Seems like not mandatory
             | Self::AudioMetaCovers
             | Self::AudioMetaTxtDAAP
             | Self::AudioMetaProgress
+
             | Self::ReceiveAudioPCM
             | Self::ReceiveAudioALAC
             | Self::ReceiveAudioAAC_LC
 
+            // A glitch whether /fp-setup is called, but the audio/video data is clear
             | Self::MFiSoft_FairPlay
             | Self::AudioUnencrypted
 
+            // Seems like needed for a GET /info call
             | Self::UnifiedAdvertisingInfo
 
+            // Enable AirPlay2, using buffered audio (e.g. Apple Music)
             | Self::BufferedAudio
             | Self::NTPClock
             | Self::PTPClock

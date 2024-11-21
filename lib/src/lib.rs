@@ -1,7 +1,5 @@
-pub mod adv;
-pub mod feats;
+pub mod info;
 pub mod rtsp;
-// TODO : hidden and called here, in lib.rs
-mod transport;
-
-// TODO : clock and homekit services
+pub mod streaming;
+// TODO : hidden and called here, in lib.rs?
+pub mod transport;
