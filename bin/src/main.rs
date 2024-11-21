@@ -1,6 +1,5 @@
 use std::net::SocketAddr;
 
-use axum::Router;
 use rairplay::{info::Config, rtsp, transport};
 use tokio::net::TcpListener;
 use tracing::Level;
@@ -28,9 +27,7 @@ async fn main() {
     discovery::mdns_broadcast();
     transport::serve_with_rtsp_remap(
         svc_listener,
-        Router::new()
-            .nest("/rtsp", rtsp::svc_router(cfg.clone()))
-            .into_make_service_with_connect_info::<SocketAddr>(),
+        rtsp::svc_router(cfg.clone()).into_make_service_with_connect_info::<SocketAddr>(),
     )
     .await;
 }

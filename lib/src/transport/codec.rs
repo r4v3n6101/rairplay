@@ -7,7 +7,6 @@ use tokio_util::codec::{Decoder, Encoder};
 
 const MAX_HEADERS: usize = 32;
 
-const RTSP_PATH_PREFIX: &[u8] = b"/rtsp";
 const RTSP_VERSION: &[u8] = b"RTSP/1.0";
 const RTSP_VERSION_CRLF: &[u8] = b"RTSP/1.0\r\n";
 const HTTP_VERSION: &[u8] = b"HTTP/1.1";
@@ -84,7 +83,6 @@ impl Decoder for Rtsp2Http {
                     // URI path
                     match (path.parse::<Uri>(), non_http) {
                         (Ok(rtsp_uri), true) => {
-                            output.put_slice(RTSP_PATH_PREFIX);
                             if rtsp_uri.path() != "*" {
                                 output.put_slice(rtsp_uri.path().as_bytes());
                             }

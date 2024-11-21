@@ -2,36 +2,6 @@
 resolver = "2"
 members = ["lib", "bin"]
 
-#[dependencies]
-#tracing = "0.1"
-#thiserror = "1"
-#
-## Parsing
-#serde = { version = "1", features = ["derive"] }
-#bytes = { version = "1", features = ["serde"] }
-#bitflags = { version = "2", features = ["serde"] }
-#plist = "1"
-#
-## Transport
-#httparse = "1"
-#pin-project-lite = "0.2"
-## TODO : remove full, it's for developing
-#tokio = { version = "1.40", features = ["net", "io-util", "full"] }
-#tokio-util = { version = "0.7", features = ["codec", "io"] }
-#hyper = { version = "1", features = ["server", "http1"] }
-#hyper-util = { version = "0.1", features = ["tokio"] }
-#
-## HTTP/RTSP service
-#axum = { version = "0.7", default-features = false, features = ["tokio"] }
-#async-trait = "0.1"
-#tracing-subscriber = "0.3"
-#
-#tower = { version = "0.4" }
-#tower-http = { version = "0.5", features = ["propagate-header", "set-header", "trace", "util"] }
-#mac_address = { version = "1", features = ["serde"] }
-#ring = "0.17.8"
-#mdns-sd = "0.11.1"
-
 # TODO : temporarily, because of unsupported int enum tags
 [patch.crates-io]
 serde = { git = "https://github.com/Astavie/serde.git", branch = "integer-tags-for-enums" }
