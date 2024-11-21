@@ -44,7 +44,7 @@ pub enum SetupRequest {
         #[serde(rename = "deviceID")]
         device_id: String,
         #[serde(rename = "macAddress")]
-        mac_addr: MacAddr6,
+        mac_addr: String,
 
         #[serde(rename = "osName")]
         os_name: Option<String>,

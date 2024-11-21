@@ -30,6 +30,13 @@ where
     S::Error: Into<BoxStdError>,
 {
     loop {
+        let local_addr = match tcp_listener.local_addr() {
+            Ok(addr) => addr,
+            Err(err) => {
+                tracing::error!(%err, "couldn't get binding address");
+                return;
+            }
+        };
         let (stream, remote_addr) = match tcp_listener.accept().await {
             Ok(res) => res,
             Err(err) => {
@@ -40,7 +47,7 @@ where
         tracing::info!(%remote_addr, "got a new tcp connection");
 
         let Ok(_) = poll_fn(|cx| make_service.poll_ready(cx)).await;
-        let Ok(tower_service) = make_service.call(remote_addr).await;
+        let Ok(tower_service) = make_service.call(local_addr).await;
         let hyper_service = service_fn(move |request| tower_service.clone().call(request));
 
         let (rx, tx) = split(stream);

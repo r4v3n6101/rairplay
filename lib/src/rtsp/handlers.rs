@@ -57,15 +57,13 @@ pub async fn info(State(state): State<SharedState>) -> impl IntoResponse {
 pub async fn fp_setup(body: Bytes) -> impl IntoResponse {
     fairplay::decode_buf(body).map_err(|err| {
         tracing::error!(%err, "failed to decode fairplay");
-        err.to_string()
+        StatusCode::INTERNAL_SERVER_ERROR
     })
 }
 
-pub async fn get_parameter(body: String) -> Result<Response, StatusCode> {
+pub async fn get_parameter(body: String) -> impl IntoResponse {
     match body.as_str() {
-        "volume\r\n" => {
-            Ok(([(CONTENT_TYPE, "text/parameters")], "volume: 0.0\r\n").into_response())
-        }
+        "volume\r\n" => Ok(([(CONTENT_TYPE, "text/parameters")], "volume: 0.0\r\n")),
         param => {
             tracing::error!(?param, "unimplemented parameter");
             Err(StatusCode::NOT_IMPLEMENTED)
@@ -76,16 +74,18 @@ pub async fn get_parameter(body: String) -> Result<Response, StatusCode> {
 // TODO : stop leaking channels, instead of that store them in axum's state
 pub async fn setup(
     State(state): State<SharedState>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    ConnectInfo(local_addr): ConnectInfo<SocketAddr>,
     BinaryPlist(req): BinaryPlist<SetupRequest>,
-) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
+) -> impl IntoResponse {
     match req {
         SetupRequest::SenderInfo { .. } => {
             let mut lock = state.event_channel.lock().await;
             let event_channel = match &mut *lock {
                 Some(chan) => chan,
                 event_channel @ None => {
-                    match streaming::event::Channel::create(SocketAddr::new(addr.ip(), 0)).await {
+                    match streaming::event::Channel::create(SocketAddr::new(local_addr.ip(), 0))
+                        .await
+                    {
                         Ok(chan) => event_channel.insert(chan),
                         Err(err) => {
                             tracing::error!(%err, "failed creating event listener");

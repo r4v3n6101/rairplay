@@ -13,7 +13,7 @@ pub struct Channel {
 
 impl Channel {
     pub async fn create(bind_addr: impl ToSocketAddrs) -> io::Result<Self> {
-        const BUF_SIZE: usize = 16 * 1024;
+        const BUF_SIZE: usize = 16 * 2024;
 
         let listener = TcpListener::bind(bind_addr).await?;
         let listener_addr = listener.local_addr()?;
