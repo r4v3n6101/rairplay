@@ -1,9 +1,10 @@
 use bitflags::*;
-use mac_address::MacAddress;
+
+pub use macaddr::MacAddr6;
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub mac_addr: MacAddress,
+    pub mac_addr: MacAddr6,
     pub features: Features,
     pub manufacturer: String,
     pub model: String,

@@ -1,13 +1,13 @@
 use bytes::Bytes;
-use mac_address::MacAddress;
+use macaddr::MacAddr6;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 pub struct InfoResponse {
     #[serde(rename = "deviceid")]
-    pub device_id: String,
+    pub device_id: MacAddr6,
     #[serde(rename = "macAddress")]
-    pub mac_addr: String,
+    pub mac_addr: MacAddr6,
     pub features: u64,
     pub manufacturer: String,
     pub model: String,
@@ -44,7 +44,7 @@ pub enum SetupRequest {
         #[serde(rename = "deviceID")]
         device_id: String,
         #[serde(rename = "macAddress")]
-        mac_addr: MacAddress,
+        mac_addr: MacAddr6,
 
         #[serde(rename = "osName")]
         os_name: Option<String>,

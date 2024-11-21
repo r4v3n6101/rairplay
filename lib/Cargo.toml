@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 tracing = "0.1"
 thiserror = "1"
-mac_address = { version = "1", features = ["serde"] }
+macaddr = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 bytes = { version = "1", features = ["serde"] }
 bitflags = { version = "2", features = ["serde"] }

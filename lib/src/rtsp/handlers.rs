@@ -29,8 +29,8 @@ pub async fn info(State(state): State<SharedState>) -> impl IntoResponse {
     const SRCVERS: &str = "770.8.1";
 
     let response = InfoResponse {
-        device_id: state.cfg.mac_addr.to_string(),
-        mac_addr: state.cfg.mac_addr.to_string(),
+        device_id: state.cfg.mac_addr,
+        mac_addr: state.cfg.mac_addr,
         features: state.cfg.features.bits(),
         protocol_version: PROTOVERS.to_string(),
         source_version: SRCVERS.to_string(),
