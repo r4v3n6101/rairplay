@@ -1,11 +1,5 @@
-use std::{
-    convert::Infallible,
-    error::Error,
-    future::poll_fn,
-    net::{IpAddr, SocketAddr},
-};
+use std::{convert::Infallible, error::Error, future::poll_fn, net::SocketAddr};
 
-use axum::extract::connect_info::Connected;
 use hyper::{
     body::{Body, Incoming},
     server::conn::http1,
@@ -25,29 +19,24 @@ mod util;
 
 type BoxStdError = Box<dyn Error + Send + Sync>;
 
-#[derive(Debug, Clone)]
-pub struct IncomingStream {
-    pub local_addr: IpAddr,
-    pub remote_addr: SocketAddr,
-}
-
-impl Connected<IncomingStream> for IncomingStream {
-    fn connect_info(target: IncomingStream) -> Self {
-        target
-    }
-}
-
 pub async fn serve_with_rtsp_remap<B, S, M>(tcp_listener: TcpListener, mut make_service: M)
 where
     B: Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<BoxStdError>,
-    M: Service<IncomingStream, Response = S, Error = Infallible> + Clone + Send + 'static,
+    M: Service<SocketAddr, Response = S, Error = Infallible> + Clone + Send + 'static,
     S: Service<Request<Incoming>, Response = Response<B>> + Clone + Send + 'static,
     S::Future: Send,
     S::Error: Into<BoxStdError>,
 {
     loop {
+        let local_addr = match tcp_listener.local_addr() {
+            Ok(addr) => addr,
+            Err(err) => {
+                tracing::error!(%err, "couldn't get binding address");
+                return;
+            }
+        };
         let (stream, remote_addr) = match tcp_listener.accept().await {
             Ok(res) => res,
             Err(err) => {
@@ -55,25 +44,10 @@ where
                 continue;
             }
         };
-        let local_addr = match stream.local_addr() {
-            Ok(res) => res.ip(),
-            Err(err) => {
-                tracing::error!(%err, "failed to get local addr of connection");
-                return;
-            }
-        };
-        tracing::debug!(%remote_addr, "got a new tcp connection");
+        tracing::info!(%remote_addr, "got a new tcp connection");
 
-        poll_fn(|cx| make_service.poll_ready(cx))
-            .await
-            .unwrap_or_else(|err| match err {});
-        let tower_service = make_service
-            .call(IncomingStream {
-                local_addr,
-                remote_addr,
-            })
-            .await
-            .unwrap_or_else(|err| match err {});
+        let _ = poll_fn(|cx| make_service.poll_ready(cx)).await;
+        let Ok(tower_service) = make_service.call(local_addr).await;
         let hyper_service = service_fn(move |request| tower_service.clone().call(request));
 
         let (rx, tx) = split(stream);

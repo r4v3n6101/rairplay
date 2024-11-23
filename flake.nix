@@ -26,8 +26,10 @@
           cargoLock.lockFile = ./Cargo.lock;
           nativeBuildInputs = [ pkgs.libiconv ];
         };
-      in {
+      in
+      {
         packages.default = myRustBuild;
+        formatter = pkgs.nixpkgs-fmt;
         devShell = pkgs.mkShell {
           buildInputs = [
             (rustVersion.override {

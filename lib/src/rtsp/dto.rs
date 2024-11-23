@@ -1,15 +1,13 @@
-use std::net::IpAddr;
-
 use bytes::Bytes;
-use mac_address::MacAddress;
+use macaddr::MacAddr6;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct InfoResponse {
     #[serde(rename = "deviceid")]
-    pub device_id: String,
+    pub device_id: MacAddr6,
     #[serde(rename = "macAddress")]
-    pub mac_addr: String,
+    pub mac_addr: MacAddr6,
     pub features: u64,
     pub manufacturer: String,
     pub model: String,
@@ -25,7 +23,7 @@ pub struct InfoResponse {
     pub displays: Vec<Display>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct Display {
     #[serde(rename = "widthPixels")]
     pub width: u32,
@@ -37,7 +35,7 @@ pub struct Display {
     pub features: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(untagged)]
 pub enum SetupRequest {
     SenderInfo {
@@ -46,7 +44,7 @@ pub enum SetupRequest {
         #[serde(rename = "deviceID")]
         device_id: String,
         #[serde(rename = "macAddress")]
-        mac_addr: MacAddress,
+        mac_addr: String,
 
         #[serde(rename = "osName")]
         os_name: Option<String>,
@@ -68,7 +66,7 @@ pub enum SetupRequest {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(tag = "timingProtocol")]
 pub enum TimingProtocol {
     #[serde(rename = "PTP")]
@@ -85,7 +83,7 @@ pub enum TimingProtocol {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(tag = "type")]
 pub enum StreamRequest {
     #[serde(rename = 96)]
@@ -125,7 +123,7 @@ pub enum StreamRequest {
     },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 #[serde(untagged)]
 pub enum SetupResponse {
     General {
@@ -143,7 +141,7 @@ pub enum SetupResponse {
     },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 #[serde(tag = "type")]
 pub enum StreamDescriptor {
     #[serde(rename = 96)]
@@ -176,7 +174,7 @@ pub enum StreamDescriptor {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct FlushBufferedRequest {
     #[serde(rename = "flushUntilSeq")]
     pub flush_until_seqnum: Option<u32>,
@@ -188,7 +186,7 @@ pub struct FlushBufferedRequest {
     pub flush_from_timestamp: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct SetRateAnchorTimeRequest {
     pub rate: f32,
     #[serde(rename = "rtpTime")]

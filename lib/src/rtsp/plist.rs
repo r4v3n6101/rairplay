@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use bytes::{BufMut, Bytes, BytesMut};
-use hyper::{header::CONTENT_TYPE, StatusCode};
+use http::{header::CONTENT_TYPE, status::StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
@@ -23,7 +23,7 @@ pub enum PlistRejection {
 
 impl IntoResponse for PlistRejection {
     fn into_response(self) -> Response {
-        (StatusCode::INTERNAL_SERVER_ERROR, self).into_response()
+        (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
     }
 }
 

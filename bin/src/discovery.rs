@@ -19,7 +19,7 @@ pub fn mdns_broadcast() {
     ];
 
     let service_info = ServiceInfo::new(
-        &service_type,
+        service_type,
         instance_name,
         &service_hostname,
         my_addrs,
