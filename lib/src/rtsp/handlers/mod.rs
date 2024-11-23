@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use axum::{
     extract::{ConnectInfo, State},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
 };
 use bytes::Bytes;
 use hyper::{header::CONTENT_TYPE, StatusCode};
@@ -10,10 +10,7 @@ use hyper::{header::CONTENT_TYPE, StatusCode};
 use crate::streaming;
 
 use super::{
-    dto::{
-        Display, FlushBufferedRequest, InfoResponse, SetRateAnchorTimeRequest, SetupRequest,
-        SetupResponse, StreamDescriptor, StreamRequest,
-    },
+    dto::{Display, InfoResponse, SetupRequest, SetupResponse, StreamDescriptor, StreamRequest},
     plist::BinaryPlist,
     state::SharedState,
 };
@@ -96,7 +93,7 @@ pub async fn setup(
             };
 
             Ok(BinaryPlist(SetupResponse::General {
-                event_port: event_channel.listener_addr().port(),
+                event_port: event_channel.local_addr().port(),
                 timing_port: 0,
             }))
         }
@@ -105,11 +102,28 @@ pub async fn setup(
             let mut descriptors = Vec::with_capacity(requests.len());
             for stream in requests {
                 let descriptor = match stream {
-                    StreamRequest::AudioBuffered { .. } => StreamDescriptor::AudioBuffered {
-                        id: 1,
-                        local_data_port: 10122,
-                        audio_buffer_size: 8192 * 1024,
-                    },
+                    StreamRequest::AudioBuffered { .. } => {
+                        // TODO : pass it into config
+                        const AUDIO_BUF_SIZE: usize = 8 * 1024 * 1024; // 8mb
+
+                        match streaming::audio::buffered::Channel::create(
+                            SocketAddr::new(local_addr.ip(), 0),
+                            AUDIO_BUF_SIZE,
+                        )
+                        .await
+                        {
+                            Ok(chan) => StreamDescriptor::AudioBuffered {
+                                // TODO : id system to get new id's
+                                id: 1,
+                                local_data_port: chan.local_addr().port(),
+                                audio_buffer_size: chan.audio_buf_size() as u32,
+                            },
+                            Err(err) => {
+                                tracing::error!(%err, "buffered audio listener not created");
+                                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                            }
+                        }
+                    }
                     StreamRequest::AudioRealtime { .. } => StreamDescriptor::AudioRealtime {
                         id: 1,
                         local_data_port: 10123,

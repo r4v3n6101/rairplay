@@ -1,82 +1,60 @@
-use std::{
-    io,
-    net::{IpAddr, SocketAddr},
-    sync::Arc,
-};
+use std::{io, net::SocketAddr};
 
 use tokio::{
     io::AsyncReadExt,
-    net::{TcpListener, TcpStream, UdpSocket},
+    net::{TcpListener, TcpStream, ToSocketAddrs},
 };
 
-use super::{buffer::AudioBuffer, packet::RtpPacket};
+use super::{super::buffer::ByteBuffer, packet::RtpPacket};
 
-struct Inner {
-    udp_socket: UdpSocket,
-    tcp_listener: TcpListener,
-
-    udp_addr: SocketAddr,
-    tcp_addr: SocketAddr,
+pub struct Channel {
+    local_addr: SocketAddr,
+    audio_buf_size: usize,
+    // TODO : channel for controlling
 }
 
-#[derive(Clone)]
-pub struct StreamHandler {
-    inner: Arc<Inner>,
-}
+impl Channel {
+    pub async fn create(bind_addr: impl ToSocketAddrs, audio_buf_size: usize) -> io::Result<Self> {
+        let listener = TcpListener::bind(bind_addr).await?;
+        let local_addr = listener.local_addr()?;
 
-impl StreamHandler {
-    pub async fn create(bind_addr: IpAddr, udp_port: u16, tcp_port: u16) -> io::Result<Self> {
-        let udp_socket = UdpSocket::bind(SocketAddr::new(bind_addr, udp_port)).await?;
-        let tcp_listener = TcpListener::bind(SocketAddr::new(bind_addr, tcp_port)).await?;
+        // TODO : here channel with command, it must be shared with realtime audio channel
+        let task = async move {
+            match listener.accept().await {
+                Ok((stream, remote_addr)) => {
+                    tracing::info!(%local_addr, %remote_addr, "accepting connection");
+                    processor(stream, audio_buf_size).await;
+                    // TODO : what if done with error?
+                    tracing::info!(%local_addr, %remote_addr, "buffered stream done");
+                }
+                Err(err) => {
+                    tracing::warn!(%err, %local_addr,"failed to accept connection");
+                }
+            }
+        };
 
-        // It may be zero port, so request it from system for sure
-        let udp_addr = udp_socket.local_addr()?;
-        let tcp_addr = tcp_listener.local_addr()?;
+        tokio::spawn(task);
 
-        Ok(Self {
-            inner: Arc::new(Inner {
-                udp_socket,
-                tcp_listener,
-
-                udp_addr,
-                tcp_addr,
-            }),
+        Ok(Channel {
+            local_addr,
+            audio_buf_size,
         })
     }
 
-    pub fn udp_addr(&self) -> SocketAddr {
-        self.inner.udp_addr
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local_addr
     }
 
-    pub fn tcp_addr(&self) -> SocketAddr {
-        self.inner.tcp_addr
-    }
-
-    // TODO : rename
-    // TODO : pass sink pipeline onto packets will go
-    // TODO : return stream id and link it, so it can be deleted using this id
-    pub fn new_buffered_stream(&self, audio_buf_size: usize) -> ! {
-        let this = self.clone();
-        let task = tokio::spawn(async move {
-            let listener = &this.inner.tcp_listener;
-            let local_addr = this.inner.tcp_addr;
-            match listener.accept().await {
-                Ok((stream, remote_addr)) => {
-                    tracing::info!(%local_addr, %remote_addr, "accepted new connection");
-                    processor(stream, audio_buf_size).await;
-                }
-                Err(err) => {
-                    tracing::warn!(%local_addr, %err, "failed to accept new connection");
-                }
-            }
-        });
-
-        todo!()
+    pub fn audio_buf_size(&self) -> usize {
+        self.audio_buf_size
     }
 }
 
 async fn processor(mut stream: TcpStream, audio_buf_size: usize) {
-    let mut audio_buf = AudioBuffer::with_capacity(audio_buf_size);
+    let mut audio_buf = ByteBuffer::new(audio_buf_size);
+    // TODO : more stable
+    let mut jitter_buf = Vec::<RtpPacket>::new();
+
     while let Ok(pkt_len) = stream.read_u16().await {
         // 2 is pkt_len size itself
         let pkt_len: usize = pkt_len.saturating_sub(2).into();
@@ -104,6 +82,16 @@ async fn processor(mut stream: TcpStream, audio_buf_size: usize) {
             continue;
         };
 
-        let rtp_pkt = RtpPacket::new(header, trailer, payload);
+        jitter_buf.push(RtpPacket::new(header, trailer, payload));
+
+        if jitter_buf.len() % 100 == 0 {
+            let used_space = jitter_buf
+                .iter()
+                .map(|pkt| pkt.payload().len())
+                .sum::<usize>();
+
+            tracing::info!(%used_space, "jitter send data");
+            jitter_buf.clear();
+        }
     }
 }

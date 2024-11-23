@@ -7,7 +7,7 @@ use tokio::{
 };
 
 pub struct Channel {
-    listener_addr: SocketAddr,
+    local_addr: SocketAddr,
     shutdown: Option<oneshot::Sender<()>>,
 }
 
@@ -16,13 +16,13 @@ impl Channel {
         const BUF_SIZE: usize = 16 * 2024;
 
         let listener = TcpListener::bind(bind_addr).await?;
-        let listener_addr = listener.local_addr()?;
+        let local_addr = listener.local_addr()?;
         let (tx, rx) = oneshot::channel();
         let task = async move {
             let mut buf = [0; BUF_SIZE];
             while let Ok((mut stream, remote_addr)) = listener.accept().await {
                 while let Ok(len @ 1..) = stream.read(&mut buf).await {
-                    tracing::debug!(%len, %remote_addr, %listener_addr, "event data");
+                    tracing::debug!(%len, %remote_addr, %local_addr, "event data");
                 }
             }
         };
@@ -36,13 +36,13 @@ impl Channel {
         });
 
         Ok(Channel {
-            listener_addr,
+            local_addr,
             shutdown: Some(tx),
         })
     }
 
-    pub fn listener_addr(&self) -> SocketAddr {
-        self.listener_addr
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local_addr
     }
 }
 

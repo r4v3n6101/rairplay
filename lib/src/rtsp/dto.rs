@@ -35,7 +35,7 @@ pub struct Display {
     pub features: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(untagged)]
 pub enum SetupRequest {
     SenderInfo {
@@ -66,7 +66,7 @@ pub enum SetupRequest {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(tag = "timingProtocol")]
 pub enum TimingProtocol {
     #[serde(rename = "PTP")]
@@ -83,7 +83,7 @@ pub enum TimingProtocol {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(tag = "type")]
 pub enum StreamRequest {
     #[serde(rename = 96)]
@@ -174,7 +174,7 @@ pub enum StreamDescriptor {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct FlushBufferedRequest {
     #[serde(rename = "flushUntilSeq")]
     pub flush_until_seqnum: Option<u32>,
@@ -186,7 +186,7 @@ pub struct FlushBufferedRequest {
     pub flush_from_timestamp: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct SetRateAnchorTimeRequest {
     pub rate: f32,
     #[serde(rename = "rtpTime")]

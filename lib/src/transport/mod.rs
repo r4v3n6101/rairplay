@@ -46,7 +46,7 @@ where
         };
         tracing::info!(%remote_addr, "got a new tcp connection");
 
-        let Ok(_) = poll_fn(|cx| make_service.poll_ready(cx)).await;
+        let _ = poll_fn(|cx| make_service.poll_ready(cx)).await;
         let Ok(tower_service) = make_service.call(local_addr).await;
         let hyper_service = service_fn(move |request| tower_service.clone().call(request));
 
