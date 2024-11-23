@@ -5,7 +5,7 @@ use axum::{
     response::IntoResponse,
 };
 use bytes::Bytes;
-use hyper::{header::CONTENT_TYPE, StatusCode};
+use http::{header::CONTENT_TYPE, status::StatusCode};
 
 use crate::streaming;
 

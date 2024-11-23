@@ -108,9 +108,15 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 name = "bin"
 version = "0.1.0"
 dependencies = [
+ "httparse",
+ "hyper",
+ "hyper-util",
  "mdns-sd",
+ "pin-project-lite",
  "rairplay",
  "tokio",
+ "tokio-util",
+ "tower 0.5.1",
  "tracing",
  "tracing-subscriber",
 ]
@@ -580,9 +586,9 @@ checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.91"
+version = "1.0.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "307e3004becf10f5a6e0d59d20f3cd28231b0e0827a96cd3e0ce6d14bc1e4bb3"
+checksum = "37d3544b3f2748c54e147655edb5025752e2303145b5aefb3c3ea2c78b973bb0"
 dependencies = [
  "unicode-ident",
 ]
@@ -613,17 +619,13 @@ dependencies = [
  "axum",
  "bitflags 2.6.0",
  "bytes",
- "httparse",
- "hyper",
- "hyper-util",
+ "http",
  "macaddr",
- "pin-project-lite",
  "plist",
  "ring",
  "serde",
  "thiserror",
  "tokio",
- "tokio-util",
  "tower 0.4.13",
  "tower-http",
  "tracing",

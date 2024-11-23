@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use bytes::{BufMut, Bytes, BytesMut};
-use hyper::{header::CONTENT_TYPE, StatusCode};
+use http::{header::CONTENT_TYPE, status::StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 

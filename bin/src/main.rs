@@ -1,10 +1,11 @@
 use std::net::SocketAddr;
 
-use rairplay::{info::Config, rtsp, transport};
+use rairplay::{info::Config, rtsp};
 use tokio::net::TcpListener;
 use tracing::Level;
 
 mod discovery;
+mod transport;
 
 #[tokio::main]
 async fn main() {
