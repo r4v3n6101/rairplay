@@ -3,13 +3,13 @@ use std::sync::Arc;
 use axum::{
     extract::Request,
     handler::Handler,
-    http::{HeaderName, HeaderValue},
+    http::HeaderName,
     routing::{any, get, post},
     Router,
 };
 use state::{SharedState, State};
 use tokio::sync::Mutex;
-use tower_http::{propagate_header::PropagateHeaderLayer, set_header::SetResponseHeaderLayer};
+use tower_http::propagate_header::PropagateHeaderLayer;
 
 use crate::info::Config;
 
@@ -59,9 +59,4 @@ pub fn svc_router(cfg: Config) -> Router<()> {
         )
         // CSeq is required for RTSP protocol
         .layer(PropagateHeaderLayer::new(HeaderName::from_static("cseq")))
-        // Synthetic header to let mapper know that's RTSP, not HTTP
-        .layer(SetResponseHeaderLayer::overriding(
-            HeaderName::from_static("upgrade"),
-            |_: &_| Some(HeaderValue::from_static("RTSP")),
-        ))
 }

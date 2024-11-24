@@ -9,7 +9,6 @@ const MAX_HEADERS: usize = 32;
 
 const RTSP_VERSION: &[u8] = b"RTSP/1.0";
 const RTSP_VERSION_CRLF: &[u8] = b"RTSP/1.0\r\n";
-const HTTP_VERSION: &[u8] = b"HTTP/1.1";
 const HTTP_VERSION_CRLF: &[u8] = b"HTTP/1.1\r\n";
 const CRLF: &[u8] = b"\r\n";
 
@@ -24,25 +23,22 @@ impl Decoder for Rtsp2Http {
             return Ok(None);
         }
 
-        let mut non_http = false;
         let mut need_more = false;
         loop {
-            if non_http {
-                if let Some(pos) = src
-                    .windows(RTSP_VERSION_CRLF.len())
-                    .position(|bytes| bytes == RTSP_VERSION_CRLF)
-                {
-                    // Replacing version with HTTP and trying to parse again
-                    src[pos..pos + RTSP_VERSION_CRLF.len()].copy_from_slice(HTTP_VERSION_CRLF);
-                    tracing::trace!("replaced version at {pos} position");
-                } else if let Some(pos) = src
-                    .windows(HTTP_VERSION_CRLF.len())
-                    .position(|bytes| bytes == HTTP_VERSION_CRLF)
-                {
-                    // Replace back rtsp, for another call of decode
-                    src[pos..pos + HTTP_VERSION_CRLF.len()].copy_from_slice(RTSP_VERSION_CRLF);
-                    tracing::trace!("replaced back version at {pos} position");
-                }
+            if let Some(pos) = src
+                .windows(RTSP_VERSION_CRLF.len())
+                .position(|bytes| bytes == RTSP_VERSION_CRLF)
+            {
+                // Replacing version with HTTP and trying to parse again
+                src[pos..pos + RTSP_VERSION_CRLF.len()].copy_from_slice(HTTP_VERSION_CRLF);
+                tracing::trace!("replaced version at {pos} position");
+            } else if let Some(pos) = src
+                .windows(HTTP_VERSION_CRLF.len())
+                .position(|bytes| bytes == HTTP_VERSION_CRLF)
+            {
+                // Replace back rtsp, for another call of decode
+                src[pos..pos + HTTP_VERSION_CRLF.len()].copy_from_slice(RTSP_VERSION_CRLF);
+                tracing::trace!("replaced back version at {pos} position");
             }
 
             if need_more {
@@ -73,7 +69,7 @@ impl Decoder for Rtsp2Http {
                     let path = request.path.unwrap();
 
                     // Should be enough to fulfill HTTP request and new header
-                    let mut output = BytesMut::with_capacity(src.len() + path.len() + 32);
+                    let mut output = BytesMut::with_capacity(src.len());
 
                     // Method
                     let method = request.method.unwrap();
@@ -81,8 +77,8 @@ impl Decoder for Rtsp2Http {
                     output.put_u8(b' ');
 
                     // URI path
-                    match (path.parse::<Uri>(), non_http) {
-                        (Ok(rtsp_uri), true) => {
+                    match path.parse::<Uri>() {
+                        Ok(rtsp_uri) => {
                             if rtsp_uri.path() != "*" {
                                 output.put_slice(rtsp_uri.path().as_bytes());
                             }
@@ -95,13 +91,6 @@ impl Decoder for Rtsp2Http {
 
                     // Version & proto (it's always HTTP/1.1)
                     output.put_slice(HTTP_VERSION_CRLF);
-
-                    // Original uri, for debugging
-                    if non_http {
-                        output.put_slice(b"x-rtsp-uri: ");
-                        output.put_slice(path.as_bytes());
-                        output.put_slice(CRLF);
-                    }
 
                     // Headers
                     for header in request.headers {
@@ -130,10 +119,7 @@ impl Decoder for Rtsp2Http {
                     need_more = true;
                 }
                 Err(err @ Error::Version) => {
-                    if non_http {
-                        return Err(io::Error::new(io::ErrorKind::InvalidData, err));
-                    }
-                    non_http = true;
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, err));
                 }
                 Err(err) => {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, err));
@@ -164,31 +150,11 @@ impl<T: AsRef<[u8]>> Encoder<T> for Rtsp2Http {
             }
         };
 
-        let mut rtsp_mode = false;
-        if let Some(upgrade) = response
-            .headers
-            .iter_mut()
-            .find(|h| h.name.eq_ignore_ascii_case("Upgrade"))
-        {
-            if upgrade.value == b"RTSP" {
-                rtsp_mode = true;
-            } else {
-                // Unknown upgradeable
-            }
-
-            // Erase `upgrade` header
-            *upgrade = EMPTY_HEADER;
-        }
-
         // Must be enough
         dst.reserve(item.len());
 
         // Version and proto
-        dst.put_slice(if rtsp_mode {
-            RTSP_VERSION
-        } else {
-            HTTP_VERSION
-        });
+        dst.put_slice(RTSP_VERSION);
 
         // Status code
         dst.put_slice(format!(" {}", response.code.expect("code is mandatory")).as_bytes());
@@ -202,12 +168,7 @@ impl<T: AsRef<[u8]>> Encoder<T> for Rtsp2Http {
         // Headers
         for header in response.headers {
             if header != &EMPTY_HEADER {
-                // TODO : is that necessary?
-                if header.name.eq_ignore_ascii_case("cseq") {
-                    dst.put_slice(b"CSeq");
-                } else {
-                    dst.put_slice(header.name.as_bytes());
-                }
+                dst.put_slice(header.name.as_bytes());
                 dst.put_slice(b": ");
                 dst.put_slice(header.value);
                 dst.put_slice(CRLF);
