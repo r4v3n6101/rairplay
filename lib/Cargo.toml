@@ -13,7 +13,7 @@ bytes = { version = "1", features = ["serde"] }
 bitflags = { version = "2", features = ["serde"] }
 
 http = "1"
-tower = "0.4"
+tower = "0.5"
 tower-http = { version = "0.5", features = ["propagate-header"] }
 tokio = { version = "1.40", features = ["rt", "net", "io-util"] }
 axum = { version = "0.7", default-features = false, features = ["tokio"] }
