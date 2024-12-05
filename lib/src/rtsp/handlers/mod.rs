@@ -68,7 +68,6 @@ pub async fn get_parameter(body: String) -> impl IntoResponse {
     }
 }
 
-// TODO : stop leaking channels, instead of that store them in axum's state
 pub async fn setup(
     State(state): State<SharedState>,
     ConnectInfo(local_addr): ConnectInfo<SocketAddr>,
@@ -101,6 +100,7 @@ pub async fn setup(
         SetupRequest::Streams { requests } => {
             let mut descriptors = Vec::with_capacity(requests.len());
             for stream in requests {
+                let (dispatcher, handler) = streaming::command::channel();
                 let descriptor = match stream {
                     StreamRequest::AudioBuffered { .. } => {
                         // TODO : pass it into config
@@ -109,6 +109,7 @@ pub async fn setup(
                         match streaming::audio::buffered::Channel::create(
                             SocketAddr::new(local_addr.ip(), 0),
                             AUDIO_BUF_SIZE,
+                            handler,
                         )
                         .await
                         {
@@ -134,6 +135,8 @@ pub async fn setup(
                         local_data_port: 10125,
                     },
                 };
+
+                state.dispatchers.lock().unwrap().push(dispatcher);
                 descriptors.push(descriptor);
             }
 

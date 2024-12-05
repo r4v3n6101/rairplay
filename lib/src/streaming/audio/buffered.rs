@@ -5,16 +5,22 @@ use tokio::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
 };
 
-use super::{super::buffer::ByteBuffer, packet::RtpPacket};
+use super::{
+    super::{buffer::ByteBuffer, command},
+    packet::RtpPacket,
+};
 
 pub struct Channel {
     local_addr: SocketAddr,
     audio_buf_size: usize,
-    // TODO : channel for controlling
 }
 
 impl Channel {
-    pub async fn create(bind_addr: impl ToSocketAddrs, audio_buf_size: usize) -> io::Result<Self> {
+    pub async fn create(
+        bind_addr: impl ToSocketAddrs,
+        audio_buf_size: usize,
+        cmd_handler: command::Handler,
+    ) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;
 
@@ -23,7 +29,7 @@ impl Channel {
             match listener.accept().await {
                 Ok((stream, remote_addr)) => {
                     tracing::info!(%local_addr, %remote_addr, "accepting connection");
-                    processor(stream, audio_buf_size).await;
+                    processor(stream, audio_buf_size, cmd_handler).await;
                     // TODO : what if done with error?
                     tracing::info!(%local_addr, %remote_addr, "buffered stream done");
                 }
@@ -50,7 +56,7 @@ impl Channel {
     }
 }
 
-async fn processor(mut stream: TcpStream, audio_buf_size: usize) {
+async fn processor(mut stream: TcpStream, audio_buf_size: usize, cmd_handler: command::Handler) {
     let mut audio_buf = ByteBuffer::new(audio_buf_size);
     // TODO : more stable
     let mut jitter_buf = Vec::<RtpPacket>::new();

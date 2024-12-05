@@ -1,14 +1,14 @@
-use std::{io, net::SocketAddr};
+use std::{io, net::SocketAddr, sync::Arc};
 
 use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, ToSocketAddrs},
-    sync::oneshot,
+    sync::Notify,
 };
 
 pub struct Channel {
     local_addr: SocketAddr,
-    shutdown: Option<oneshot::Sender<()>>,
+    shutdown: Arc<Notify>,
 }
 
 impl Channel {
@@ -17,7 +17,7 @@ impl Channel {
 
         let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;
-        let (tx, rx) = oneshot::channel();
+        let notify = Arc::new(Notify::new());
         let task = async move {
             let mut buf = [0; BUF_SIZE];
             while let Ok((mut stream, remote_addr)) = listener.accept().await {
@@ -27,17 +27,18 @@ impl Channel {
             }
         };
 
+        let notify1 = Arc::clone(&notify);
         tokio::spawn(async move {
             tokio::select! {
+                _ = notify1.notified() => {}
                 _ = task => {}
-                _ = rx => {}
             };
             tracing::info!("event listener done");
         });
 
         Ok(Channel {
             local_addr,
-            shutdown: Some(tx),
+            shutdown: notify,
         })
     }
 
@@ -48,8 +49,6 @@ impl Channel {
 
 impl Drop for Channel {
     fn drop(&mut self) {
-        if let Some(Err(_)) | None = self.shutdown.take().map(|tx| tx.send(())) {
-            tracing::warn!("event listener already closed");
-        }
+        self.shutdown.notify_waiters();
     }
 }

@@ -8,7 +8,6 @@ use axum::{
     Router,
 };
 use state::{SharedState, State};
-use tokio::sync::Mutex;
 use tower_http::propagate_header::PropagateHeaderLayer;
 
 use crate::info::Config;
@@ -21,7 +20,8 @@ mod state;
 pub fn svc_router(cfg: Config) -> Router<()> {
     let state = State {
         cfg,
-        event_channel: Mutex::new(None),
+        event_channel: Default::default(),
+        dispatchers: Default::default(),
     };
     let state = SharedState(Arc::new(state));
     Router::new()
