@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 tracing = "0.1"
-thiserror = "1"
+thiserror = "2"
 
 serde = { version = "1", features = ["derive"] }
 macaddr = { version = "1", features = ["serde"] }
