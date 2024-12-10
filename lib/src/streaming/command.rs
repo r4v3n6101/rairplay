@@ -23,15 +23,6 @@ impl Dispatcher {
         self.send_message(Message::SetRateAnchorTime { rate })
     }
 
-    pub fn set_volume(&self, value: f32) {
-        self.send_message(Message::SetVolume { value })
-    }
-
-    pub fn get_volume(&self) -> Option<f32> {
-        self.send_message(Message::GetVolume {});
-        Some(0.0)
-    }
-
     fn send_message(&self, message: Message) {
         let sender = self.0.clone();
         tokio::spawn(async move {
@@ -60,11 +51,5 @@ pub enum Message {
     SetRateAnchorTime {
         rate: f32,
         // rtp_timestamp: u64,
-    },
-    SetVolume {
-        value: f32,
-    },
-    GetVolume {
-        // TODO : channel: oneshot::Sender<f32>,
     },
 }

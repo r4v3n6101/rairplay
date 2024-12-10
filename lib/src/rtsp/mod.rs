@@ -20,6 +20,7 @@ mod state;
 pub fn svc_router(cfg: Config) -> Router<()> {
     let state = State {
         cfg,
+        last_stream_id: Default::default(),
         event_channel: Default::default(),
         cmd_channel: Default::default(),
     };

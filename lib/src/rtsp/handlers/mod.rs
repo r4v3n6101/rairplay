@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::atomic::Ordering};
 
 use axum::{
     extract::{ConnectInfo, State},
@@ -55,22 +55,15 @@ pub async fn info(State(state): State<SharedState>) -> impl IntoResponse {
 }
 
 pub async fn fp_setup(body: Bytes) -> impl IntoResponse {
-    fairplay::decode_buf(body).map_err(|err| {
-        tracing::error!(%err, "failed to decode fairplay");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })
+    fairplay::decode_buf(body)
+        .inspect_err(|err| tracing::error!(%err, "failed to decode fairplay"))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 pub async fn get_parameter(State(state): State<SharedState>, body: String) -> impl IntoResponse {
     match body.as_str() {
         "volume\r\n" => {
-            // TODO : i don't like to call first one, want to call something unique
-            // May be changed in the future where there will be only one command handler
-            let volume = state
-                .cmd_channel
-                .get_volume()
-                .or(state.cfg.initial_volume)
-                .unwrap_or_default();
+            let volume = state.cfg.initial_volume.unwrap_or_default();
             Ok((
                 [(CONTENT_TYPE, "text/parameters")],
                 format!("volume: {}\r\n", volume),
@@ -129,6 +122,7 @@ pub async fn setup(
         SetupRequest::Streams { requests } => {
             let mut descriptors = Vec::with_capacity(requests.len());
             for stream in requests {
+                let id = state.last_stream_id.fetch_add(1, Ordering::AcqRel);
                 let descriptor = match stream {
                     StreamRequest::AudioBuffered { .. } => {
                         // TODO : pass it into config
@@ -142,8 +136,7 @@ pub async fn setup(
                         .await
                         {
                             Ok(chan) => StreamDescriptor::AudioBuffered {
-                                // TODO : id system to get new id's
-                                id: 1,
+                                id,
                                 local_data_port: chan.local_addr().port(),
                                 audio_buffer_size: chan.audio_buf_size() as u32,
                             },
@@ -153,13 +146,15 @@ pub async fn setup(
                             }
                         }
                     }
+
                     StreamRequest::AudioRealtime { .. } => StreamDescriptor::AudioRealtime {
-                        id: 1,
+                        id,
                         local_data_port: 10123,
                         local_control_port: 10124,
                     },
+
                     StreamRequest::Video { .. } => StreamDescriptor::Video {
-                        id: 2,
+                        id,
                         local_data_port: 10125,
                     },
                 };

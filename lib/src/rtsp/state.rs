@@ -1,4 +1,7 @@
-use std::{ops::Deref, sync::Arc};
+use std::{
+    ops::Deref,
+    sync::{atomic::AtomicU32, Arc},
+};
 
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -17,6 +20,7 @@ impl Deref for SharedState {
 
 pub struct State {
     pub cfg: Config,
+    pub last_stream_id: AtomicU32,
     pub event_channel: AsyncMutex<Option<streaming::event::Channel>>,
     pub cmd_channel: streaming::command::Dispatcher,
 }
