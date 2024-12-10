@@ -10,7 +10,10 @@ use http::{header::CONTENT_TYPE, status::StatusCode};
 use crate::streaming;
 
 use super::{
-    dto::{Display, InfoResponse, SetupRequest, SetupResponse, StreamDescriptor, StreamRequest},
+    dto::{
+        Display, InfoResponse, SetRateAnchorTimeRequest, SetupRequest, SetupResponse,
+        StreamDescriptor, StreamRequest,
+    },
     plist::BinaryPlist,
     state::SharedState,
 };
@@ -58,14 +61,40 @@ pub async fn fp_setup(body: Bytes) -> impl IntoResponse {
     })
 }
 
-pub async fn get_parameter(body: String) -> impl IntoResponse {
+pub async fn get_parameter(State(state): State<SharedState>, body: String) -> impl IntoResponse {
     match body.as_str() {
-        "volume\r\n" => Ok(([(CONTENT_TYPE, "text/parameters")], "volume: 0.0\r\n")),
+        "volume\r\n" => {
+            // TODO : i don't like to call first one, want to call something unique
+            // May be changed in the future where there will be only one command handler
+            let volume = state
+                .cmd_channel
+                .get_volume()
+                .or(state.cfg.initial_volume)
+                .unwrap_or_default();
+            Ok((
+                [(CONTENT_TYPE, "text/parameters")],
+                format!("volume: {}\r\n", volume),
+            ))
+        }
         param => {
             tracing::error!(?param, "unimplemented parameter");
             Err(StatusCode::NOT_IMPLEMENTED)
         }
     }
+}
+
+pub async fn set_rate_anchor_time(
+    State(state): State<SharedState>,
+    BinaryPlist(req): BinaryPlist<SetRateAnchorTimeRequest>,
+) {
+    state.cmd_channel.set_rate_anchor_time(req.rate)
+}
+
+pub async fn flush_buffered(
+    State(state): State<SharedState>,
+    // BinaryPlist(req): BinaryPlist<FlushBufferedRequest>,
+) {
+    state.cmd_channel.flush()
 }
 
 pub async fn setup(
@@ -100,7 +129,6 @@ pub async fn setup(
         SetupRequest::Streams { requests } => {
             let mut descriptors = Vec::with_capacity(requests.len());
             for stream in requests {
-                let (dispatcher, handler) = streaming::command::channel();
                 let descriptor = match stream {
                     StreamRequest::AudioBuffered { .. } => {
                         // TODO : pass it into config
@@ -109,7 +137,7 @@ pub async fn setup(
                         match streaming::audio::buffered::Channel::create(
                             SocketAddr::new(local_addr.ip(), 0),
                             AUDIO_BUF_SIZE,
-                            handler,
+                            state.cmd_channel.new_handler(),
                         )
                         .await
                         {
@@ -136,7 +164,6 @@ pub async fn setup(
                     },
                 };
 
-                state.dispatchers.lock().unwrap().push(dispatcher);
                 descriptors.push(descriptor);
             }
 

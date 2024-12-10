@@ -21,7 +21,7 @@ pub fn svc_router(cfg: Config) -> Router<()> {
     let state = State {
         cfg,
         event_channel: Default::default(),
-        dispatchers: Default::default(),
+        cmd_channel: Default::default(),
     };
     let state = SharedState(Arc::new(state));
     Router::new()
@@ -44,12 +44,11 @@ pub fn svc_router(cfg: Config) -> Router<()> {
                 match req.method().as_str() {
                     "SETUP" => handlers::setup.call(req, state).await,
                     "GET_PARAMETER" => handlers::get_parameter.call(req, state).await,
-
+                    "FLUSHBUFFERED" => handlers::flush_buffered.call(req, state).await,
+                    "SETRATEANCHORTIME" => handlers::set_rate_anchor_time.call(req, state).await,
                     // TODO : impl empty handlers
                     //"SET_PARAMETER" => set_parameter::handler.call(req, state).await,
-                    //"SETRATEANCHORTIME" => handlers::set_rate_anchor_time.call(req, state).await,
                     //"TEARDOWN" => handlers::teardown.call(req, ()).await,
-                    //"FLUSHBUFFERED" => handlers::flush_buffered.call(req, state).await,
                     method => {
                         tracing::error!(?method, path = ?req.uri(), "unknown method");
                         handlers::generic.call(req, state).await

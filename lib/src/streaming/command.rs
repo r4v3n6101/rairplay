@@ -1,27 +1,18 @@
-use std::time::Duration;
+use tokio::sync::broadcast;
 
-use tokio::sync::{mpsc, oneshot};
+pub struct Dispatcher(broadcast::Sender<Message>);
 
-pub fn channel() -> (Dispatcher, Handler) {
-    const COMMAND_QUEUE_SIZE: usize = 1;
+impl Default for Dispatcher {
+    fn default() -> Self {
+        const COMMAND_QUEUE_SIZE: usize = 10;
 
-    let (tx, rx) = mpsc::channel(COMMAND_QUEUE_SIZE);
-
-    (Dispatcher(tx), Handler(rx))
+        Self(broadcast::Sender::new(COMMAND_QUEUE_SIZE))
+    }
 }
 
-pub struct Dispatcher(mpsc::Sender<Message>);
-
 impl Dispatcher {
-    fn send_message(&self, message: Message) {
-        const COMMAND_SEND_TIME_OUT: Duration = Duration::from_secs(1);
-
-        let sender = self.0.clone();
-        tokio::spawn(async move {
-            if let Err(err) = sender.send_timeout(message, COMMAND_SEND_TIME_OUT).await {
-                tracing::warn!(message = ?err.into_inner(), "couldn't send message");
-            }
-        });
+    pub fn new_handler(&self) -> Handler {
+        Handler(self.0.subscribe())
     }
 
     pub fn flush(&self) {
@@ -37,21 +28,33 @@ impl Dispatcher {
     }
 
     pub fn get_volume(&self) -> Option<f32> {
-        let (tx, rx) = oneshot::channel();
-        self.send_message(Message::GetVolume { channel: tx });
-        rx.blocking_recv().ok()
+        self.send_message(Message::GetVolume {});
+        Some(0.0)
+    }
+
+    fn send_message(&self, message: Message) {
+        let sender = self.0.clone();
+        tokio::spawn(async move {
+            sender
+                .send(message)
+                .inspect_err(|err| tracing::warn!(%err, "couldn't send message"))
+        });
     }
 }
 
-pub struct Handler(mpsc::Receiver<Message>);
+pub struct Handler(broadcast::Receiver<Message>);
 
 impl Handler {
     pub async fn receive_message(&mut self) -> Option<Message> {
-        self.0.recv().await
+        self.0
+            .recv()
+            .await
+            .inspect_err(|err| tracing::warn!(%err, "skipped some message"))
+            .ok()
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Message {
     Flush {},
     SetRateAnchorTime {
@@ -62,6 +65,6 @@ pub enum Message {
         value: f32,
     },
     GetVolume {
-        channel: oneshot::Sender<f32>,
+        // TODO : channel: oneshot::Sender<f32>,
     },
 }
