@@ -19,5 +19,3 @@ tokio = { version = "1.40", features = ["rt", "net", "io-util"] }
 axum = { version = "0.7", default-features = false, features = ["tokio"] }
 async-trait = "0.1"
 plist = "1"
-
-ring = "0.17"
