@@ -147,16 +147,40 @@ pub async fn setup(
                         }
                     }
 
-                    StreamRequest::AudioRealtime { .. } => StreamDescriptor::AudioRealtime {
-                        id,
-                        local_data_port: 10123,
-                        local_control_port: 10124,
-                    },
+                    StreamRequest::AudioRealtime { .. } => {
+                        match streaming::audio::realtime::Channel::create(
+                            SocketAddr::new(local_addr.ip(), 0),
+                            SocketAddr::new(local_addr.ip(), 0),
+                            state.cmd_channel.new_handler(),
+                        )
+                        .await
+                        {
+                            Ok(chan) => StreamDescriptor::AudioRealtime {
+                                id,
+                                local_data_port: chan.local_data_addr().port(),
+                                local_control_port: chan.local_control_addr().port(),
+                            },
+                            Err(err) => {
+                                tracing::error!(%err, "realtime audio listener not created");
+                                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                            }
+                        }
+                    }
 
-                    StreamRequest::Video { .. } => StreamDescriptor::Video {
-                        id,
-                        local_data_port: 10125,
-                    },
+                    StreamRequest::Video { .. } => {
+                        match streaming::video::Channel::create(SocketAddr::new(local_addr.ip(), 0))
+                            .await
+                        {
+                            Ok(chan) => StreamDescriptor::Video {
+                                id,
+                                local_data_port: chan.local_addr().port(),
+                            },
+                            Err(err) => {
+                                tracing::error!(%err, "video listener not created");
+                                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                            }
+                        }
+                    }
                 };
 
                 descriptors.push(descriptor);

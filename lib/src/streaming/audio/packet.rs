@@ -182,8 +182,7 @@ impl DerefMut for RtcpHeader {
 }
 
 impl RtcpHeader {
-    // TODO : or four?
-    pub const SIZE: usize = 8;
+    pub const SIZE: usize = 4;
 
     pub fn empty() -> Self {
         Self([0; Self::SIZE])
