@@ -128,7 +128,7 @@ pub async fn setup(
                         // TODO : pass it into config
                         const AUDIO_BUF_SIZE: usize = 8 * 1024 * 1024; // 8mb
 
-                        match streaming::audio::buffered::Channel::create(
+                        match streaming::audio::BufferedChannel::create(
                             SocketAddr::new(local_addr.ip(), 0),
                             AUDIO_BUF_SIZE,
                             state.cmd_channel.new_handler(),
@@ -148,7 +148,7 @@ pub async fn setup(
                     }
 
                     StreamRequest::AudioRealtime { .. } => {
-                        match streaming::audio::realtime::Channel::create(
+                        match streaming::audio::RealtimeChannel::create(
                             SocketAddr::new(local_addr.ip(), 0),
                             SocketAddr::new(local_addr.ip(), 0),
                             state.cmd_channel.new_handler(),

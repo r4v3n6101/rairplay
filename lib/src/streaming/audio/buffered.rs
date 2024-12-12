@@ -67,7 +67,7 @@ impl Channel {
                     tracing::info!(%local_addr, %remote_addr, "buffered stream done");
                 }
                 Err(err) => {
-                    tracing::warn!(%err, %local_addr,"failed to accept connection");
+                    tracing::warn!(%err, %local_addr, "failed to accept connection");
                 }
             }
         };
