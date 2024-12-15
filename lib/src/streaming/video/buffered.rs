@@ -5,9 +5,11 @@ use tokio::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
 };
 
+use crate::crypto::video::AesCipher as AesVideoCipher;
+
 use super::packet::VideoHeader;
 
-async fn processor(mut stream: TcpStream) {
+async fn processor(mut stream: TcpStream, mut cipher: Option<AesVideoCipher>) {
     loop {
         let mut header = VideoHeader::empty();
         if let Err(err) = stream.read_exact(&mut *header).await {
@@ -21,7 +23,7 @@ async fn processor(mut stream: TcpStream) {
             continue;
         }
 
-        // TODO : decrypt video data
+        // TODO : decrypt video
     }
 }
 
@@ -30,7 +32,10 @@ pub struct Channel {
 }
 
 impl Channel {
-    pub async fn create(bind_addr: impl ToSocketAddrs) -> io::Result<Self> {
+    pub async fn create(
+        bind_addr: impl ToSocketAddrs,
+        cipher: Option<AesVideoCipher>,
+    ) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;
 
@@ -38,7 +43,7 @@ impl Channel {
             match listener.accept().await {
                 Ok((stream, remote_addr)) => {
                     tracing::info!(%local_addr, %remote_addr, "accepting connection");
-                    processor(stream).await;
+                    processor(stream, cipher).await;
                     // TODO : what if done with error?
                     tracing::info!(%local_addr, %remote_addr, "video stream done");
                 }

@@ -56,6 +56,11 @@ pub enum SetupRequest {
         #[serde(flatten)]
         timing_proto: TimingProtocol,
 
+        #[serde(rename = "ekey")]
+        ekey: Bytes,
+        #[serde(rename = "eiv")]
+        eiv: Bytes,
+
         #[serde(flatten)]
         content: plist::Value,
     },
@@ -118,6 +123,8 @@ pub enum StreamRequest {
     },
     #[serde(rename = 110)]
     Video {
+        #[serde(rename = "streamConnectionID")]
+        stream_connection_id: u64,
         #[serde(flatten)]
         content: plist::Value,
     },

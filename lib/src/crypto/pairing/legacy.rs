@@ -1,10 +1,6 @@
 use std::mem;
 
-use aes::{
-    cipher::{KeyIvInit, StreamCipher},
-    Aes128,
-};
-use ctr::Ctr128BE;
+use aes::cipher::{KeyIvInit, StreamCipher};
 use ring::{
     agreement, digest,
     rand::{self, SecureRandom},
@@ -12,11 +8,12 @@ use ring::{
 };
 use thiserror::Error;
 
+use super::super::AesCtr128BE;
+
 pub const X25519_KEY_LEN: usize = 32;
 pub const SIGNATURE_LENGTH: usize = 64;
 
 pub type X25519Key = [u8; X25519_KEY_LEN];
-type AesCtr128BE = Ctr128BE<Aes128>;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -150,10 +147,10 @@ impl State {
             })
     }
 
-    pub fn shared_secret(&self) -> Result<&[u8], Error> {
+    pub fn shared_secret(&self) -> Option<&[u8]> {
         match &self.0 {
-            Inner::Verified { shared_secret } => Ok(shared_secret),
-            _ => Err(Error::WrongState),
+            Inner::Verified { shared_secret } => Some(shared_secret),
+            _ => None,
         }
     }
 }

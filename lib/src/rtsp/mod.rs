@@ -15,6 +15,7 @@ mod handlers;
 mod plist;
 mod state;
 
+// TODO : make this MakeService and stop sharing same state across all clients because it's a bug
 pub fn svc_router(cfg: Config) -> Router<()> {
     let state = SharedState::with_config(cfg);
     Router::new()

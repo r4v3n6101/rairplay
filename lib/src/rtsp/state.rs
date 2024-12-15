@@ -19,8 +19,9 @@ pub struct State {
     pub cfg: Config,
     pub last_stream_id: AtomicU32,
 
-    pub fp_msg3: Mutex<Option<Bytes>>,
     pub pairing: Mutex<LegacyPairing>,
+    pub fp_msg3: Mutex<Bytes>,
+    pub fp_key: Mutex<Bytes>,
 
     pub event_channel: AsyncMutex<Option<EventChannel>>,
     pub cmd_channel: CmdDispatcher,
@@ -42,6 +43,7 @@ impl SharedState {
 
             fp_msg3: Default::default(),
             pairing: Default::default(),
+            fp_key: Default::default(),
 
             event_channel: Default::default(),
             cmd_channel: Default::default(),
