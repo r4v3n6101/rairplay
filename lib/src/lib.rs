@@ -1,5 +1,4 @@
 mod crypto;
-mod ffi;
 mod info;
 mod rtsp;
 mod streaming;

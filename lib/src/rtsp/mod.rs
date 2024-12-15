@@ -24,6 +24,9 @@ pub fn svc_router(cfg: Config) -> Router<()> {
         .route("/command", post(()))
         // General info about server
         .route("/info", get(handlers::info))
+        // Legacy pairing (shared secret via ecdh)
+        .route("/pair-setup", post(handlers::pair_setup))
+        .route("/pair-verify", post(handlers::pair_verify))
         // Fair play, but seems like it isn't working correct
         .route("/fp-setup", post(handlers::fp_setup))
         // Unknown handlers, just trace response

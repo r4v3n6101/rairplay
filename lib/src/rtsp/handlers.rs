@@ -1,13 +1,24 @@
 use std::{net::SocketAddr, sync::atomic::Ordering};
 
+use crate::{
+    crypto::{
+        fairplay,
+        pairing::legacy::{SIGNATURE_LENGTH, X25519_KEY_LEN},
+    },
+    streaming::{
+        audio::{
+            buffered::Channel as BufferedAudioChannel, realtime::Channel as RealtimeAudioChannel,
+        },
+        event::Channel as EventChannel,
+        video::Channel as VideoChannel,
+    },
+};
 use axum::{
     extract::{ConnectInfo, State},
     response::IntoResponse,
 };
 use bytes::Bytes;
 use http::{header::CONTENT_TYPE, status::StatusCode};
-
-use crate::{crypto, streaming};
 
 use super::{
     dto::{
@@ -52,8 +63,59 @@ pub async fn info(State(state): State<SharedState>) -> impl IntoResponse {
     BinaryPlist(response)
 }
 
+/// Don't really need body here, because it's duplicate signing key of counterparty.
+/// We can get it at the second request.
+pub async fn pair_setup(State(state): State<SharedState>) -> impl IntoResponse {
+    state
+        .pairing
+        .lock()
+        .unwrap()
+        .setup_verification()
+        .inspect_err(|err| tracing::error!(%err, "legacy pairing setup failed"))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+pub async fn pair_verify(State(state): State<SharedState>, body: Bytes) -> impl IntoResponse {
+    if body.len() < 4 + 2 * X25519_KEY_LEN {
+        tracing::error!(len=%body.len(), "malformed data for legacy pairing");
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let mode = body[0];
+    if mode > 0 {
+        let pubkey_their = body[4..][..X25519_KEY_LEN]
+            .try_into()
+            .expect("x25519 key must be 32 bytes");
+        let verify_their = body[36..][..X25519_KEY_LEN]
+            .try_into()
+            .expect("ed25519 key must be 32 bytes");
+
+        state
+            .pairing
+            .lock()
+            .unwrap()
+            .establish_agreement(pubkey_their, verify_their)
+            .inspect_err(|err| tracing::error!(%err, "legacy pairing establishment failed"))
+            .map(IntoResponse::into_response)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    } else {
+        let signature = body[4..][..SIGNATURE_LENGTH]
+            .try_into()
+            .expect("signature must be 64 bytes");
+
+        state
+            .pairing
+            .lock()
+            .unwrap()
+            .verify_agreement(signature)
+            .inspect_err(|err| tracing::error!(%err, "legacy pairing verification failed"))
+            .map(IntoResponse::into_response)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    }
+}
+
 pub async fn fp_setup(State(state): State<SharedState>, body: Bytes) -> impl IntoResponse {
-    crypto::fairplay::decode_buf(body.clone())
+    fairplay::decode_buf(body.clone())
         .inspect(|_| {
             // Magic number somehow. Hate em.
             if body.len() == 164 {
@@ -105,9 +167,7 @@ pub async fn setup(
             let event_channel = match &mut *lock {
                 Some(chan) => chan,
                 event_channel @ None => {
-                    match streaming::event::Channel::create(SocketAddr::new(local_addr.ip(), 0))
-                        .await
-                    {
+                    match EventChannel::create(SocketAddr::new(local_addr.ip(), 0)).await {
                         Ok(chan) => event_channel.insert(chan),
                         Err(err) => {
                             tracing::error!(%err, "failed creating event listener");
@@ -132,7 +192,7 @@ pub async fn setup(
                         // TODO : pass it into config
                         const AUDIO_BUF_SIZE: usize = 8 * 1024 * 1024; // 8mb
 
-                        match streaming::audio::BufferedChannel::create(
+                        match BufferedAudioChannel::create(
                             SocketAddr::new(local_addr.ip(), 0),
                             AUDIO_BUF_SIZE,
                             state.cmd_channel.new_handler(),
@@ -152,7 +212,7 @@ pub async fn setup(
                     }
 
                     StreamRequest::AudioRealtime { .. } => {
-                        match streaming::audio::RealtimeChannel::create(
+                        match RealtimeAudioChannel::create(
                             SocketAddr::new(local_addr.ip(), 0),
                             SocketAddr::new(local_addr.ip(), 0),
                             state.cmd_channel.new_handler(),
@@ -172,9 +232,7 @@ pub async fn setup(
                     }
 
                     StreamRequest::Video { .. } => {
-                        match streaming::video::Channel::create(SocketAddr::new(local_addr.ip(), 0))
-                            .await
-                        {
+                        match VideoChannel::create(SocketAddr::new(local_addr.ip(), 0)).await {
                             Ok(chan) => StreamDescriptor::Video {
                                 id,
                                 local_data_port: chan.local_addr().port(),

@@ -6,7 +6,11 @@ use std::{
 use bytes::Bytes;
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::{info::Config, streaming};
+use crate::{
+    crypto::pairing::legacy::State as LegacyPairing,
+    info::Config,
+    streaming::{command::Dispatcher as CmdDispatcher, event::Channel as EventChannel},
+};
 
 #[derive(Clone)]
 pub struct SharedState(pub Arc<State>);
@@ -16,9 +20,10 @@ pub struct State {
     pub last_stream_id: AtomicU32,
 
     pub fp_msg3: Mutex<Option<Bytes>>,
+    pub pairing: Mutex<LegacyPairing>,
 
-    pub event_channel: AsyncMutex<Option<streaming::event::Channel>>,
-    pub cmd_channel: streaming::command::Dispatcher,
+    pub event_channel: AsyncMutex<Option<EventChannel>>,
+    pub cmd_channel: CmdDispatcher,
 }
 
 impl Deref for SharedState {
@@ -36,6 +41,7 @@ impl SharedState {
             last_stream_id: Default::default(),
 
             fp_msg3: Default::default(),
+            pairing: Default::default(),
 
             event_channel: Default::default(),
             cmd_channel: Default::default(),

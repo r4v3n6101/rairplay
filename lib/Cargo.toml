@@ -12,6 +12,10 @@ macaddr = { version = "1", features = ["serde"] }
 bytes = { version = "1", features = ["serde"] }
 bitflags = { version = "2", features = ["serde"] }
 
+ring = "0.17"
+aes = "0.8"
+ctr = "0.9"
+
 http = "1"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["propagate-header"] }

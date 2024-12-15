@@ -92,6 +92,7 @@ impl Default for Features {
             | Self::Unknown6
             | Self::ScreenMirroring
             | Self::AirPlayAudio
+            | Self::LegacyPairing
 
             // TODO : | Self::AudioRedundant
 
