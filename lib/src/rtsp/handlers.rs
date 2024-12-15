@@ -7,7 +7,7 @@ use axum::{
 use bytes::Bytes;
 use http::{header::CONTENT_TYPE, status::StatusCode};
 
-use crate::streaming;
+use crate::{crypto, streaming};
 
 use super::{
     dto::{
@@ -17,8 +17,6 @@ use super::{
     plist::BinaryPlist,
     state::SharedState,
 };
-
-mod fairplay;
 
 pub async fn generic(bytes: Option<Bytes>) {
     tracing::trace!(?bytes, "generic handler");
@@ -54,8 +52,14 @@ pub async fn info(State(state): State<SharedState>) -> impl IntoResponse {
     BinaryPlist(response)
 }
 
-pub async fn fp_setup(body: Bytes) -> impl IntoResponse {
-    fairplay::decode_buf(body)
+pub async fn fp_setup(State(state): State<SharedState>, body: Bytes) -> impl IntoResponse {
+    crypto::fairplay::decode_buf(body.clone())
+        .inspect(|_| {
+            // Magic number somehow. Hate em.
+            if body.len() == 164 {
+                state.fp_msg3.lock().unwrap().replace(body.clone());
+            }
+        })
         .inspect_err(|err| tracing::error!(%err, "failed to decode fairplay"))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }

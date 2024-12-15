@@ -24,12 +24,10 @@ impl Dispatcher {
     }
 
     fn send_message(&self, message: Message) {
-        let sender = self.0.clone();
-        tokio::spawn(async move {
-            sender
-                .send(message)
-                .inspect_err(|err| tracing::warn!(%err, "couldn't send message"))
-        });
+        let _ = self
+            .0
+            .send(message)
+            .inspect_err(|err| tracing::warn!(%err, "couldn't send message"));
     }
 }
 

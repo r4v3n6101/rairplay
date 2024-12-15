@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use axum::{
     extract::Request,
     handler::Handler,
@@ -7,7 +5,7 @@ use axum::{
     routing::{any, get, post},
     Router,
 };
-use state::{SharedState, State};
+use state::SharedState;
 use tower_http::propagate_header::PropagateHeaderLayer;
 
 use crate::info::Config;
@@ -18,13 +16,7 @@ mod plist;
 mod state;
 
 pub fn svc_router(cfg: Config) -> Router<()> {
-    let state = State {
-        cfg,
-        last_stream_id: Default::default(),
-        event_channel: Default::default(),
-        cmd_channel: Default::default(),
-    };
-    let state = SharedState(Arc::new(state));
+    let state = SharedState::with_config(cfg);
     Router::new()
         // Heartbeat
         .route("/feedback", post(()))
