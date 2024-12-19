@@ -36,6 +36,8 @@
               extensions = [ "rust-src" "rust-analyzer" ];
             })
           ];
+          FFMPEG_INCLUDE = "${pkgs.ffmpeg-full.dev}/include";
+          FFMPEG_LIBS = pkgs.lib.makeLibraryPath [ pkgs.ffmpeg-full ];
         };
       });
 }
