@@ -124,7 +124,7 @@ pub enum StreamRequest {
     #[serde(rename = 110)]
     Video {
         #[serde(rename = "streamConnectionID")]
-        stream_connection_id: u64,
+        stream_connection_id: i64,
         #[serde(flatten)]
         content: plist::Value,
     },
