@@ -26,18 +26,14 @@ async fn processor(mut stream: TcpStream, audio_buf_size: usize, cmd_handler: co
         let mut trailer = RtpTrailer::empty();
         let mut payload = audio_buf.allocate_buf(payload_len);
 
-        if let Err(err) = stream.read_exact(&mut *header).await {
-            tracing::warn!(%err, %pkt_len, "failed to read rtp header");
-            continue;
-        };
-        if let Err(err) = stream.read_exact(&mut payload).await {
-            tracing::warn!(%err, %pkt_len, "failed to read rtp payload");
-            continue;
-        };
-        if let Err(err) = stream.read_exact(&mut *trailer).await {
-            tracing::warn!(%err, %pkt_len, "failed to read rtp trailer");
-            continue;
-        };
+        match (
+            stream.read_exact(&mut *header).await,
+            stream.read_exact(&mut payload).await,
+            stream.read_exact(&mut *trailer).await,
+        ) {
+            (Ok(_), Ok(_), Ok(_)) => {}
+            _ => break,
+        }
 
         tracing::debug!(?header, ?trailer, "new rtp packet");
     }
@@ -45,13 +41,13 @@ async fn processor(mut stream: TcpStream, audio_buf_size: usize, cmd_handler: co
 
 pub struct Channel {
     local_addr: SocketAddr,
-    audio_buf_size: usize,
+    audio_buf_size: u32,
 }
 
 impl Channel {
     pub async fn create(
         bind_addr: impl ToSocketAddrs,
-        audio_buf_size: usize,
+        audio_buf_size: u32,
         cmd_handler: command::Handler,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
@@ -62,8 +58,7 @@ impl Channel {
             match listener.accept().await {
                 Ok((stream, remote_addr)) => {
                     tracing::info!(%local_addr, %remote_addr, "accepting connection");
-                    processor(stream, audio_buf_size, cmd_handler).await;
-                    // TODO : what if done with error?
+                    processor(stream, audio_buf_size.try_into().unwrap(), cmd_handler).await;
                     tracing::info!(%local_addr, %remote_addr, "buffered stream done");
                 }
                 Err(err) => {
@@ -84,7 +79,7 @@ impl Channel {
         self.local_addr
     }
 
-    pub fn audio_buf_size(&self) -> usize {
+    pub fn audio_buf_size(&self) -> u32 {
         self.audio_buf_size
     }
 }

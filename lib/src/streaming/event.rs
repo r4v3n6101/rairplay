@@ -31,8 +31,8 @@ impl Channel {
         let notify1 = Arc::clone(&notify);
         tokio::spawn(async move {
             tokio::select! {
-                _ = notify1.notified() => {}
-                _ = processor(listener, local_addr) => {}
+                () = notify1.notified() => {}
+                () = processor(listener, local_addr) => {}
             };
             tracing::info!("event listener done");
         });

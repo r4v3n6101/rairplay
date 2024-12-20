@@ -20,7 +20,7 @@ pub struct State {
     pub last_stream_id: AtomicU32,
 
     pub pairing: Mutex<LegacyPairing>,
-    pub fp_msg3: Mutex<Bytes>,
+    pub fp_last_msg: Mutex<Bytes>,
     pub fp_key: Mutex<Bytes>,
 
     pub event_channel: AsyncMutex<Option<EventChannel>>,
@@ -38,15 +38,15 @@ impl SharedState {
     pub fn with_config(cfg: Config) -> Self {
         Self(Arc::new(State {
             cfg,
-            last_stream_id: Default::default(),
+            last_stream_id: AtomicU32::default(),
 
             // TODO : change this shit
             pairing: Mutex::new(LegacyPairing::from_signing_privkey([5; 32])),
-            fp_msg3: Default::default(),
-            fp_key: Default::default(),
+            fp_last_msg: Mutex::default(),
+            fp_key: Mutex::default(),
 
-            event_channel: Default::default(),
-            cmd_channel: Default::default(),
+            event_channel: AsyncMutex::default(),
+            cmd_channel: CmdDispatcher::default(),
         }))
     }
 }

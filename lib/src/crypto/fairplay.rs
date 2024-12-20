@@ -1,5 +1,5 @@
 //! The main idea of what's going on here is taken from [shairplay](https://github.com/juhovh/shairplay/).
-//! Decryption of aes key with the third message of `/fp-setup` is taken from there too.
+//! Decryption of aes key with the last message sent in `/fp-setup` is taken from there too.
 //!
 //! Thank you, my dear!
 
@@ -102,7 +102,7 @@ pub fn decrypt_key(
     encrypted_aes_key: impl AsRef<[u8]>,
 ) -> [u8; DECRYPTED_AES_KEY_LEN] {
     extern "C" {
-        fn playfair_decrypt(msg3: *const u8, cipher_text: *const u8, out: *mut u8);
+        fn playfair_decrypt(msg: *const u8, cipher_text: *const u8, out: *mut u8);
     }
 
     let message = message.as_ref();

@@ -1,4 +1,4 @@
-use bitflags::*;
+use bitflags::bitflags;
 
 pub use macaddr::MacAddr6;
 

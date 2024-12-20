@@ -20,7 +20,7 @@ impl Dispatcher {
     }
 
     pub fn set_rate_anchor_time(&self, rate: f32) {
-        self.send_message(Message::SetRateAnchorTime { rate })
+        self.send_message(Message::SetRateAnchorTime { rate });
     }
 
     fn send_message(&self, message: Message) {
@@ -38,7 +38,7 @@ impl Handler {
         self.0
             .recv()
             .await
-            .inspect_err(|err| tracing::warn!(%err, "skipped some message"))
+            .inspect_err(|err| tracing::warn!(%err, "skipped some messages"))
             .ok()
     }
 }

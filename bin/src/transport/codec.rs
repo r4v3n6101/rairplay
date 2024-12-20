@@ -1,6 +1,6 @@
 use std::io;
 
-use httparse::{Error, Request, Response, Status, EMPTY_HEADER};
+use httparse::{Request, Response, Status, EMPTY_HEADER};
 use hyper::Uri;
 use tokio_util::bytes::{BufMut, Bytes, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
@@ -117,9 +117,6 @@ impl Decoder for Rtsp2Http {
                 }
                 Ok(Status::Partial) => {
                     need_more = true;
-                }
-                Err(err @ Error::Version) => {
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, err));
                 }
                 Err(err) => {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, err));

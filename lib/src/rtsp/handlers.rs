@@ -4,7 +4,7 @@ use crate::{
     crypto::{
         fairplay,
         pairing::legacy::{SIGNATURE_LENGTH, X25519_KEY_LEN},
-        video::AesCipher as AesVideoCipher,
+        video::Cipher as VideoCipher,
     },
     streaming::{
         audio::{
@@ -26,7 +26,7 @@ use super::{
         Display, InfoResponse, SetRateAnchorTimeRequest, SetupRequest, SetupResponse,
         StreamDescriptor, StreamRequest,
     },
-    plist::BinaryPlist,
+    extractor::BinaryPlist,
     state::SharedState,
 };
 
@@ -64,8 +64,8 @@ pub async fn info(State(state): State<SharedState>) -> impl IntoResponse {
     BinaryPlist(response)
 }
 
-/// Don't really need request body here, because it's duplicate signing key of counterparty.
-/// We can get it from the second request.
+/// Don't really need request body here, because it duplicates signing key of counterparty got in
+/// the second request.
 pub async fn pair_setup(State(state): State<SharedState>) -> impl IntoResponse {
     state.pairing.lock().unwrap().verifying_key()
 }
@@ -114,7 +114,7 @@ pub async fn fp_setup(State(state): State<SharedState>, body: Bytes) -> impl Int
         .inspect(|_| {
             // Magic number somehow. Hate em.
             if body.len() == 164 {
-                *state.fp_msg3.lock().unwrap() = body.clone();
+                *state.fp_last_msg.lock().unwrap() = body.clone();
             }
         })
         .inspect_err(|err| tracing::error!(%err, "failed to decode fairplay"))
@@ -127,7 +127,7 @@ pub async fn get_parameter(State(state): State<SharedState>, body: String) -> im
             let volume = state.cfg.initial_volume.unwrap_or_default();
             Ok((
                 [(CONTENT_TYPE, "text/parameters")],
-                format!("volume: {}\r\n", volume),
+                format!("volume: {volume}\r\n"),
             ))
         }
         param => {
@@ -141,14 +141,14 @@ pub async fn set_rate_anchor_time(
     State(state): State<SharedState>,
     BinaryPlist(req): BinaryPlist<SetRateAnchorTimeRequest>,
 ) {
-    state.cmd_channel.set_rate_anchor_time(req.rate)
+    state.cmd_channel.set_rate_anchor_time(req.rate);
 }
 
 pub async fn flush_buffered(
     State(state): State<SharedState>,
     // BinaryPlist(req): BinaryPlist<FlushBufferedRequest>,
 ) {
-    state.cmd_channel.flush()
+    state.cmd_channel.flush();
 }
 
 pub async fn setup(
@@ -175,7 +175,7 @@ pub async fn setup(
             // TODO : log more info from SenderInfo
 
             *state.fp_key.lock().unwrap() = Bytes::from_owner(fairplay::decrypt_key(
-                state.fp_msg3.lock().unwrap().as_ref(),
+                state.fp_last_msg.lock().unwrap().as_ref(),
                 ekey,
             ));
 
@@ -193,7 +193,7 @@ pub async fn setup(
                     match stream {
                         StreamRequest::AudioBuffered { .. } => {
                             // TODO : pass it into config
-                            const AUDIO_BUF_SIZE: usize = 8 * 1024 * 1024; // 8mb
+                            const AUDIO_BUF_SIZE: u32 = 8 * 1024 * 1024; // 8mb
 
                             match BufferedAudioChannel::create(
                                 SocketAddr::new(local_addr.ip(), 0),
@@ -205,7 +205,7 @@ pub async fn setup(
                                 Ok(chan) => StreamDescriptor::AudioBuffered {
                                     id,
                                     local_data_port: chan.local_addr().port(),
-                                    audio_buffer_size: chan.audio_buf_size() as u32,
+                                    audio_buffer_size: chan.audio_buf_size(),
                                 },
                                 Err(err) => {
                                     tracing::error!(%err, "buffered audio listener not created");
@@ -240,7 +240,7 @@ pub async fn setup(
                         } => {
                             let cipher = state.pairing.lock().unwrap().shared_secret().map(
                                 |shared_secret| {
-                                    AesVideoCipher::new(
+                                    VideoCipher::new(
                                         state.fp_key.lock().unwrap().as_ref(),
                                         shared_secret,
                                         stream_connection_id,

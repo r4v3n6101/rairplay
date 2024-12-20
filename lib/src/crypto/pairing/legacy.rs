@@ -3,7 +3,7 @@ use std::mem;
 use aes::cipher::{KeyIvInit, StreamCipher};
 use ring::{
     agreement, digest,
-    rand::{self, SecureRandom},
+    rand::{self},
     signature::{self, KeyPair},
 };
 use thiserror::Error;
@@ -51,7 +51,7 @@ pub struct State {
 impl State {
     pub fn from_signing_privkey(privkey: Ed25519Key) -> Self {
         Self {
-            state: Default::default(),
+            state: Inner::default(),
             keypair: signature::Ed25519KeyPair::from_seed_unchecked(&privkey)
                 .expect("seed len must be 32"),
         }
@@ -82,7 +82,7 @@ impl State {
         let pubkey_our = privkey_our
             .compute_public_key()
             .map_err(|_| Error::Cryptography("ECDH public key computation"))?;
-        let shared_secret = agreement::agree_ephemeral(privkey_our, &pubkey_their, |x| x.to_vec())
+        let shared_secret = agreement::agree_ephemeral(privkey_our, &pubkey_their, <[u8]>::to_vec)
             .map_err(|_| Error::Cryptography("ECDH agreement"))?;
 
         let mut signature: [u8; SIGNATURE_LENGTH] = {
@@ -135,7 +135,7 @@ impl State {
         verify_their
             .verify(&message, &signature)
             .map_err(|_| Error::Verification)
-            .inspect(|_| {
+            .inspect(|()| {
                 self.state = Inner::Verified { shared_secret };
             })
     }
@@ -148,7 +148,7 @@ impl State {
                 Some(shared_secret)
             }
             Inner::Verified { shared_secret } => Some(shared_secret),
-            _ => None,
+            Inner::Empty => None,
         }
     }
 }
