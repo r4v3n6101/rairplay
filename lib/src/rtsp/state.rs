@@ -34,15 +34,15 @@ impl Deref for SharedState {
         &self.0
     }
 }
-
 impl SharedState {
     pub fn with_config(cfg: Config) -> Self {
         Self(Arc::new(State {
             cfg,
             last_stream_id: Default::default(),
 
+            // TODO : change this shit
+            pairing: Mutex::new(LegacyPairing::from_signing_privkey([5; 32])),
             fp_msg3: Default::default(),
-            pairing: Default::default(),
             fp_key: Default::default(),
 
             event_channel: Default::default(),

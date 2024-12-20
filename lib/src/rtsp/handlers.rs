@@ -64,16 +64,10 @@ pub async fn info(State(state): State<SharedState>) -> impl IntoResponse {
     BinaryPlist(response)
 }
 
-/// Don't really need body here, because it's duplicate signing key of counterparty.
+/// Don't really need request body here, because it's duplicate signing key of counterparty.
 /// We can get it from the second request.
 pub async fn pair_setup(State(state): State<SharedState>) -> impl IntoResponse {
-    state
-        .pairing
-        .lock()
-        .unwrap()
-        .setup_verification()
-        .inspect_err(|err| tracing::error!(%err, "legacy pairing setup failed"))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    state.pairing.lock().unwrap().verifying_key()
 }
 
 pub async fn pair_verify(State(state): State<SharedState>, body: Bytes) -> impl IntoResponse {

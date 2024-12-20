@@ -14,6 +14,7 @@ pub const X25519_KEY_LEN: usize = 32;
 pub const SIGNATURE_LENGTH: usize = 64;
 
 pub type X25519Key = [u8; X25519_KEY_LEN];
+pub type Ed25519Key = [u8; X25519_KEY_LEN];
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -29,14 +30,12 @@ pub enum Error {
 #[derive(Default)]
 enum Inner {
     #[default]
-    Uninitialized,
-    Initialized {
-        keypair: signature::Ed25519KeyPair,
-    },
+    Empty,
     Established {
-        verify_their: signature::UnparsedPublicKey<X25519Key>,
+        verify_their: signature::UnparsedPublicKey<Ed25519Key>,
         pubkey_their: agreement::UnparsedPublicKey<X25519Key>,
         pubkey_our: agreement::PublicKey,
+        // TODO : I know its size
         shared_secret: Vec<u8>,
     },
     Verified {
@@ -44,40 +43,34 @@ enum Inner {
     },
 }
 
-#[derive(Default)]
-pub struct State(Inner);
+pub struct State {
+    state: Inner,
+    keypair: signature::Ed25519KeyPair,
+}
 
 impl State {
-    pub fn setup_verification(&mut self) -> Result<X25519Key, Error> {
-        let Inner::Uninitialized = mem::take(&mut self.0) else {
-            return Err(Error::WrongState);
-        };
-
-        let rng = rand::SystemRandom::new();
-
-        // I can't create keypair just with random
-        let mut seed = [0u8; 32];
-        let _ = rng.fill(&mut seed);
-        let keypair = signature::Ed25519KeyPair::from_seed_unchecked(&seed)
-            .map_err(|_| Error::Cryptography("ed25519 key pair generation"))?;
-
-        self.0 = Inner::Initialized { keypair };
-        match &self.0 {
-            Inner::Initialized { keypair } => Ok(keypair
-                .public_key()
-                .as_ref()
-                .try_into()
-                .expect("ed25519 pubkey must be 32 bytes")),
-            _ => unreachable!(),
+    pub fn from_signing_privkey(privkey: Ed25519Key) -> Self {
+        Self {
+            state: Default::default(),
+            keypair: signature::Ed25519KeyPair::from_seed_unchecked(&privkey)
+                .expect("seed len must be 32"),
         }
+    }
+
+    pub fn verifying_key(&self) -> Ed25519Key {
+        self.keypair
+            .public_key()
+            .as_ref()
+            .try_into()
+            .expect("ed25519 pubkey len must be 32 bytes")
     }
 
     pub fn establish_agreement(
         &mut self,
         pubkey_their: X25519Key,
-        verify_their: X25519Key,
+        verify_their: Ed25519Key,
     ) -> Result<[u8; X25519_KEY_LEN + SIGNATURE_LENGTH], Error> {
-        let Inner::Initialized { keypair } = mem::take(&mut self.0) else {
+        let Inner::Empty = mem::take(&mut self.state) else {
             return Err(Error::WrongState);
         };
 
@@ -97,7 +90,7 @@ impl State {
             buf[..X25519_KEY_LEN].copy_from_slice(pubkey_our.as_ref());
             buf[X25519_KEY_LEN..].copy_from_slice(pubkey_their.as_ref());
 
-            keypair
+            self.keypair
                 .sign(&buf)
                 .as_ref()
                 .try_into()
@@ -110,7 +103,7 @@ impl State {
         response[..X25519_KEY_LEN].copy_from_slice(pubkey_our.as_ref());
         response[X25519_KEY_LEN..].copy_from_slice(&signature);
 
-        self.0 = Inner::Established {
+        self.state = Inner::Established {
             verify_their,
             pubkey_our,
             pubkey_their,
@@ -126,7 +119,7 @@ impl State {
             pubkey_their,
             pubkey_our,
             shared_secret,
-        } = mem::take(&mut self.0)
+        } = mem::take(&mut self.state)
         else {
             return Err(Error::WrongState);
         };
@@ -143,12 +136,17 @@ impl State {
             .verify(&message, &signature)
             .map_err(|_| Error::Verification)
             .inspect(|_| {
-                self.0 = Inner::Verified { shared_secret };
+                self.state = Inner::Verified { shared_secret };
             })
     }
 
     pub fn shared_secret(&self) -> Option<&[u8]> {
-        match &self.0 {
+        match &self.state {
+            // Who tf knows when second verify ain't called?
+            Inner::Established { shared_secret, .. } => {
+                tracing::warn!("computed shared secret isn't verified by counterparty");
+                Some(shared_secret)
+            }
             Inner::Verified { shared_secret } => Some(shared_secret),
             _ => None,
         }
@@ -172,6 +170,21 @@ fn cipher(shared_secret: &[u8]) -> AesCtr128BE {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recreate_from_privkey_seed() {
+        const PRIVKEY: [u8; 32] = [
+            153, 62, 61, 195, 68, 210, 33, 179, 119, 105, 98, 195, 181, 225, 238, 146, 135, 226,
+            224, 74, 233, 172, 222, 140, 80, 52, 153, 66, 147, 209, 98, 170,
+        ];
+        const EXPECTED_ED25519_PUBKEY: [u8; 32] = [
+            63, 87, 112, 234, 30, 34, 240, 218, 63, 236, 178, 92, 117, 7, 156, 75, 162, 206, 30,
+            66, 95, 192, 248, 148, 39, 50, 209, 206, 19, 44, 105, 205,
+        ];
+
+        let state = super::State::from_signing_privkey(PRIVKEY);
+        assert_eq!(EXPECTED_ED25519_PUBKEY, state.verifying_key());
+    }
 
     #[test]
     fn test_aes_cipher() {

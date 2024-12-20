@@ -15,7 +15,8 @@ mod handlers;
 mod plist;
 mod state;
 
-// TODO : make this MakeService and stop sharing same state across all clients because it's a bug
+// TODO : rename, so it'll be obvious that isn't make service, because you need to spawn cloned one
+// to handle it separately (otherwise it will share same config)
 pub fn svc_router(cfg: Config) -> Router<()> {
     let state = SharedState::with_config(cfg);
     Router::new()
