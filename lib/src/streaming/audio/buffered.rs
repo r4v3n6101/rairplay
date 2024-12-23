@@ -58,7 +58,7 @@ impl Channel {
             match listener.accept().await {
                 Ok((stream, remote_addr)) => {
                     tracing::info!(%local_addr, %remote_addr, "accepting connection");
-                    processor(stream, audio_buf_size.try_into().unwrap(), cmd_handler).await;
+                    processor(stream, audio_buf_size as usize, cmd_handler).await;
                     tracing::info!(%local_addr, %remote_addr, "buffered stream done");
                 }
                 Err(err) => {
