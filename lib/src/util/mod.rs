@@ -1,15 +1,15 @@
 use bytes::BytesMut;
 
-pub struct ByteBuffer {
+pub struct BytePool {
     buf: BytesMut,
-    buf_size: usize,
+    size: usize,
 }
 
-impl ByteBuffer {
-    pub fn new(buf_size: usize) -> Self {
+impl BytePool {
+    pub fn new(pool_bytes: usize) -> Self {
         Self {
-            buf: BytesMut::zeroed(buf_size),
-            buf_size,
+            buf: BytesMut::zeroed(pool_bytes),
+            size: pool_bytes,
         }
     }
 
@@ -19,8 +19,8 @@ impl ByteBuffer {
         }
 
         if self.buf.len() < requested_len {
-            assert!(self.buf_size >= requested_len);
-            self.buf = BytesMut::zeroed(self.buf_size);
+            assert!(self.size >= requested_len);
+            self.buf = BytesMut::zeroed(self.size);
         }
 
         self.buf.split_to(requested_len)

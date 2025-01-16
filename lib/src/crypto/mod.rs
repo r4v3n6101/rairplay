@@ -1,3 +1,4 @@
+pub mod audio;
 pub mod fairplay;
 pub mod pairing;
 pub mod video;

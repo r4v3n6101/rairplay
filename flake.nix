@@ -18,13 +18,21 @@
           cargo = rustVersion;
           rustc = rustVersion;
         };
-        manifest = (pkgs.lib.importTOML ./Cargo.toml).package;
+        manifest = (pkgs.lib.importTOML ./bin/Cargo.toml).package;
         myRustBuild = rustPlatform.buildRustPackage {
           pname = manifest.name;
           version = manifest.version;
-          src = pkgs.lib.cleanSource ./.;
-          cargoLock.lockFile = ./Cargo.lock;
-          nativeBuildInputs = [ pkgs.libiconv ];
+          #src = pkgs.lib.cleanSource ./.;
+          src = pkgs.fetchgit {
+            url = ./.;
+            rev = "096b61ad14c90169f438e690d096e3fcf87e504e";
+            fetchSubmodules = true;
+          };
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            allowBuiltinFetchGit = true;
+          };
+          nativeBuildInputs = [ pkgs.libiconv pkgs.clang ];
         };
       in
       {
