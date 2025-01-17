@@ -6,9 +6,13 @@
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
+    shairplay = {
+      url = "github:juhovh/shairplay";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay, ... }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay, shairplay, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [ rust-overlay.overlays.default ];
@@ -19,31 +23,31 @@
           rustc = rustVersion;
         };
         manifest = (pkgs.lib.importTOML ./bin/Cargo.toml).package;
-        myRustBuild = rustPlatform.buildRustPackage {
+      in
+      {
+        formatter = pkgs.nixpkgs-fmt;
+
+        packages.default = rustPlatform.buildRustPackage {
           pname = manifest.name;
           version = manifest.version;
-          #src = pkgs.lib.cleanSource ./.;
-          src = pkgs.fetchgit {
-            url = ./.;
-            rev = "096b61ad14c90169f438e690d096e3fcf87e504e";
-            fetchSubmodules = true;
-          };
+          src = pkgs.lib.cleanSource ./.;
           cargoLock = {
             lockFile = ./Cargo.lock;
             allowBuiltinFetchGit = true;
           };
-          nativeBuildInputs = [ pkgs.libiconv pkgs.clang ];
+          nativeBuildInputs = [ pkgs.libiconv ];
+
+          FAIRPLAY3_SRC = "${shairplay}/src/lib/playfair";
         };
-      in
-      {
-        packages.default = myRustBuild;
-        formatter = pkgs.nixpkgs-fmt;
+
         devShell = pkgs.mkShell {
           buildInputs = [
             (rustVersion.override {
               extensions = [ "rust-src" "rust-analyzer" ];
             })
           ];
+
+          FAIRPLAY3_SRC = "${shairplay}/src/lib/playfair";
         };
       });
 }
