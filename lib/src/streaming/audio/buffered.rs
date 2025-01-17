@@ -5,7 +5,7 @@ use tokio::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
 };
 
-use crate::util::BytePool;
+use crate::util::BytesPool;
 
 use super::{
     super::command,
@@ -13,7 +13,7 @@ use super::{
 };
 
 async fn processor(mut stream: TcpStream, audio_buf_size: usize, cmd_handler: command::Handler) {
-    let mut audio_buf = BytePool::new(audio_buf_size);
+    let mut audio_buf = BytesPool::new(audio_buf_size);
 
     while let Ok(pkt_len) = stream.read_u16().await {
         // 2 is pkt_len size itself
