@@ -40,7 +40,7 @@
           FAIRPLAY3_SRC = "${shairplay}/src/lib/playfair";
         };
 
-        devShell = pkgs.mkShell {
+        devShells.default = pkgs.mkShell {
           buildInputs = [
             (rustVersion.override {
               extensions = [ "rust-src" "rust-analyzer" ];
