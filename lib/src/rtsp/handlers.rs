@@ -1,17 +1,17 @@
 use std::{net::SocketAddr, sync::atomic::Ordering};
 
 use crate::{
-    crypto::{
-        fairplay,
-        pairing::legacy::{SIGNATURE_LENGTH, X25519_KEY_LEN},
-        video::Cipher as VideoCipher,
-    },
     streaming::{
         audio::{
             buffered::Channel as BufferedAudioChannel, realtime::Channel as RealtimeAudioChannel,
         },
         event::Channel as EventChannel,
         video::Channel as VideoChannel,
+    },
+    util::crypto::{
+        fairplay,
+        pairing::legacy::{SIGNATURE_LENGTH, X25519_KEY_LEN},
+        video::Cipher as VideoCipher,
     },
 };
 use axum::{

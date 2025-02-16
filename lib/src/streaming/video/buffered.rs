@@ -5,7 +5,7 @@ use tokio::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
 };
 
-use crate::crypto::video::Cipher as VideoCipher;
+use crate::util::crypto::video::Cipher as VideoCipher;
 
 use super::packet::VideoHeader;
 

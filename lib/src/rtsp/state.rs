@@ -7,9 +7,9 @@ use bytes::Bytes;
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{
-    crypto::pairing::legacy::State as LegacyPairing,
     info::Config,
     streaming::{command::Dispatcher as CmdDispatcher, event::Channel as EventChannel},
+    util::crypto::pairing::legacy::State as LegacyPairing,
 };
 
 #[derive(Clone)]

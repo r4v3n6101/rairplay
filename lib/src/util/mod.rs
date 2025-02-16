@@ -1,6 +1,7 @@
-use std::collections::BTreeMap;
-
 use bytes::BytesMut;
+
+pub mod crypto;
+pub mod jitter;
 
 pub struct BytesPool {
     buf: BytesMut,
@@ -26,17 +27,5 @@ impl BytesPool {
         }
 
         self.buf.split_to(requested_len)
-    }
-}
-
-pub struct JitterBuffer {
-    entries: BTreeMap<u16, ()>,
-}
-
-impl JitterBuffer {
-    pub fn new() -> Self {
-        Self {
-            entries: BTreeMap::default(),
-        }
     }
 }
