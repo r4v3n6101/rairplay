@@ -16,17 +16,6 @@ pub const SIGNATURE_LENGTH: usize = 64;
 pub type X25519Key = [u8; X25519_KEY_LEN];
 pub type Ed25519Key = [u8; X25519_KEY_LEN];
 
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("invalid state")]
-    WrongState,
-    // TODO : move somewhen to general errors of cryptography
-    #[error("cryptography: {0}")]
-    Cryptography(&'static str),
-    #[error("signature verification")]
-    Verification,
-}
-
 #[derive(Default)]
 enum Inner {
     #[default]
@@ -151,6 +140,17 @@ impl State {
             Inner::Empty => None,
         }
     }
+}
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("invalid state")]
+    WrongState,
+    // TODO : move somewhen to general errors of cryptography
+    #[error("cryptography: {0}")]
+    Cryptography(&'static str),
+    #[error("signature verification")]
+    Verification,
 }
 
 fn cipher(shared_secret: &[u8]) -> AesCtr128BE {

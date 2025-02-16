@@ -13,20 +13,6 @@ use thiserror::Error;
 
 const APPLE_BPLIST_MIME: &str = "application/x-apple-binary-plist";
 
-#[derive(Debug, Error)]
-pub enum PlistRejection {
-    #[error(transparent)]
-    Plist(#[from] plist::Error),
-    #[error(transparent)]
-    Bytes(#[from] BytesRejection),
-}
-
-impl IntoResponse for PlistRejection {
-    fn into_response(self) -> Response {
-        (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BinaryPlist<T>(pub T);
 
@@ -81,5 +67,19 @@ where
                 .into_response(),
             Err(err) => PlistRejection::from(err).into_response(),
         }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum PlistRejection {
+    #[error(transparent)]
+    Plist(#[from] plist::Error),
+    #[error(transparent)]
+    Bytes(#[from] BytesRejection),
+}
+
+impl IntoResponse for PlistRejection {
+    fn into_response(self) -> Response {
+        (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
     }
 }

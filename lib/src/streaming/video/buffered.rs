@@ -9,22 +9,6 @@ use crate::crypto::video::Cipher as VideoCipher;
 
 use super::packet::VideoHeader;
 
-async fn processor(mut stream: TcpStream, mut cipher: Option<VideoCipher>) {
-    loop {
-        let mut header = VideoHeader::empty();
-        if stream.read_exact(&mut *header).await.is_err() {
-            break;
-        }
-
-        let mut payload = vec![0u8; header.payload_len() as usize];
-        if stream.read_exact(&mut payload).await.is_err() {
-            break;
-        }
-
-        // TODO : decrypt video
-    }
-}
-
 pub struct Channel {
     local_addr: SocketAddr,
 }
@@ -55,5 +39,21 @@ impl Channel {
 
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
+    }
+}
+
+async fn processor(mut stream: TcpStream, mut cipher: Option<VideoCipher>) {
+    loop {
+        let mut header = VideoHeader::empty();
+        if stream.read_exact(&mut *header).await.is_err() {
+            break;
+        }
+
+        let mut payload = vec![0u8; header.payload_len() as usize];
+        if stream.read_exact(&mut payload).await.is_err() {
+            break;
+        }
+
+        // TODO : decrypt video
     }
 }

@@ -34,6 +34,7 @@ impl Deref for SharedState {
         &self.0
     }
 }
+
 impl SharedState {
     pub fn with_config(cfg: Config) -> Self {
         Self(Arc::new(State {

@@ -6,17 +6,6 @@ use tokio::{
     sync::Notify,
 };
 
-async fn processor(listener: TcpListener, local_addr: SocketAddr) {
-    const BUF_SIZE: usize = 16 * 2024;
-
-    let mut buf = [0; BUF_SIZE];
-    while let Ok((mut stream, remote_addr)) = listener.accept().await {
-        while let Ok(len @ 1..) = stream.read(&mut buf).await {
-            tracing::debug!(%len, %remote_addr, %local_addr, "event data");
-        }
-    }
-}
-
 pub struct Channel {
     local_addr: SocketAddr,
     shutdown: Arc<Notify>,
@@ -51,5 +40,16 @@ impl Channel {
 impl Drop for Channel {
     fn drop(&mut self) {
         self.shutdown.notify_waiters();
+    }
+}
+
+async fn processor(listener: TcpListener, local_addr: SocketAddr) {
+    const BUF_SIZE: usize = 16 * 2024;
+
+    let mut buf = [0; BUF_SIZE];
+    while let Ok((mut stream, remote_addr)) = listener.accept().await {
+        while let Ok(len @ 1..) = stream.read(&mut buf).await {
+            tracing::debug!(%len, %remote_addr, %local_addr, "event data");
+        }
     }
 }
