@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::atomic::Ordering};
+use std::{net::SocketAddr, sync::atomic::Ordering, time::Duration};
 
 use crate::{
     streaming::{
@@ -186,15 +186,17 @@ pub async fn setup(
         }
 
         SetupRequest::Streams { requests } => {
+            // TODO : move out this defaults
+            const MIN_BUF_DEPTH: Duration = Duration::from_millis(20);
+            const MAX_BUF_DEPTH: Duration = Duration::from_millis(200);
+            const AUDIO_BUF_SIZE: usize = 8 * 1024 * 1024; // 8mb
+
             let mut descriptors = Vec::with_capacity(requests.len());
             for stream in requests {
                 let id = state.last_stream_id.fetch_add(1, Ordering::AcqRel);
                 let descriptor =
                     match stream {
                         StreamRequest::AudioBuffered { .. } => {
-                            // TODO : pass it into config
-                            const AUDIO_BUF_SIZE: u32 = 8 * 1024 * 1024; // 8mb
-
                             match BufferedAudioChannel::create(
                                 SocketAddr::new(local_addr.ip(), 0),
                                 AUDIO_BUF_SIZE,
@@ -205,7 +207,7 @@ pub async fn setup(
                                 Ok(chan) => StreamDescriptor::AudioBuffered {
                                     id,
                                     local_data_port: chan.local_addr().port(),
-                                    audio_buffer_size: chan.audio_buf_size(),
+                                    audio_buffer_size: chan.audio_buf_size() as u32,
                                 },
                                 Err(err) => {
                                     tracing::error!(%err, "buffered audio listener not created");
@@ -218,6 +220,9 @@ pub async fn setup(
                             match RealtimeAudioChannel::create(
                                 SocketAddr::new(local_addr.ip(), 0),
                                 SocketAddr::new(local_addr.ip(), 0),
+                                AUDIO_BUF_SIZE,
+                                MIN_BUF_DEPTH,
+                                MAX_BUF_DEPTH,
                                 state.cmd_channel.new_handler(),
                             )
                             .await
