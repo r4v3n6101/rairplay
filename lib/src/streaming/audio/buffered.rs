@@ -5,7 +5,7 @@ use tokio::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
 };
 
-use crate::util::BytesPool;
+use crate::util::memory;
 
 use super::{
     super::command,
@@ -14,13 +14,13 @@ use super::{
 
 pub struct Channel {
     local_addr: SocketAddr,
-    audio_buf_size: u32,
+    audio_buf_size: usize,
 }
 
 impl Channel {
     pub async fn create(
         bind_addr: impl ToSocketAddrs,
-        audio_buf_size: u32,
+        audio_buf_size: usize,
         cmd_handler: command::Handler,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
@@ -31,7 +31,7 @@ impl Channel {
             match listener.accept().await {
                 Ok((stream, remote_addr)) => {
                     tracing::info!(%local_addr, %remote_addr, "accepting connection");
-                    processor(stream, audio_buf_size as usize, cmd_handler).await;
+                    processor(stream, audio_buf_size, cmd_handler).await;
                     tracing::info!(%local_addr, %remote_addr, "buffered stream done");
                 }
                 Err(err) => {
@@ -52,13 +52,13 @@ impl Channel {
         self.local_addr
     }
 
-    pub fn audio_buf_size(&self) -> u32 {
+    pub fn audio_buf_size(&self) -> usize {
         self.audio_buf_size
     }
 }
 
 async fn processor(mut stream: TcpStream, audio_buf_size: usize, cmd_handler: command::Handler) {
-    let mut audio_buf = BytesPool::new(audio_buf_size);
+    let mut audio_buf = memory::BytesHunk::new(audio_buf_size);
 
     while let Ok(pkt_len) = stream.read_u16().await {
         // 2 is pkt_len size itself
