@@ -115,6 +115,7 @@ impl<T> Buffer<T> {
                 }
                 None => {
                     let entry = PeekMut::pop(entry);
+                    this.last_popped_idx = entry.idx;
                     data.push(entry.value);
                 }
             }
