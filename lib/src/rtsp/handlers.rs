@@ -1,6 +1,7 @@
 use std::{net::SocketAddr, sync::atomic::Ordering, time::Duration};
 
 use crate::{
+    device::AudioParams,
     streaming::{
         audio::{
             buffered::Channel as BufferedAudioChannel, realtime::Channel as RealtimeAudioChannel,
@@ -147,8 +148,12 @@ pub async fn flush_buffered(
     State(state): State<SharedState>,
     // BinaryPlist(req): BinaryPlist<FlushBufferedRequest>,
 ) {
-    state.audio_streams.values().for_each(|s| s.flush());
-    state.video_streams.values().for_each(|s| s.flush());
+    state
+        .streams
+        .lock()
+        .unwrap()
+        .values()
+        .for_each(|s| s.flush());
 }
 
 pub async fn setup(
@@ -203,11 +208,19 @@ pub async fn setup(
                             )
                             .await
                             {
-                                Ok(chan) => StreamDescriptor::AudioBuffered {
-                                    id,
-                                    local_data_port: chan.local_addr().port(),
-                                    audio_buffer_size: chan.audio_buf_size() as u32,
-                                },
+                                Ok(chan) => {
+                                    // TODO
+                                    let params = AudioParams { sample_rate: 0 };
+                                    let stream =
+                                        state.cfg.audio_device.create(params, chan.data_callback());
+                                    state.streams.lock().unwrap().insert(id, stream);
+
+                                    StreamDescriptor::AudioBuffered {
+                                        id,
+                                        local_data_port: chan.local_addr().port(),
+                                        audio_buffer_size: chan.audio_buf_size() as u32,
+                                    }
+                                }
                                 Err(err) => {
                                     tracing::error!(%err, "buffered audio listener not created");
                                     return Err(StatusCode::INTERNAL_SERVER_ERROR);
@@ -225,11 +238,19 @@ pub async fn setup(
                             )
                             .await
                             {
-                                Ok(chan) => StreamDescriptor::AudioRealtime {
-                                    id,
-                                    local_data_port: chan.local_data_addr().port(),
-                                    local_control_port: chan.local_control_addr().port(),
-                                },
+                                Ok(chan) => {
+                                    // TODO
+                                    let params = AudioParams { sample_rate: 0 };
+                                    let stream =
+                                        state.cfg.audio_device.create(params, chan.data_callback());
+                                    state.streams.lock().unwrap().insert(id, stream);
+
+                                    StreamDescriptor::AudioRealtime {
+                                        id,
+                                        local_data_port: chan.local_data_addr().port(),
+                                        local_control_port: chan.local_control_addr().port(),
+                                    }
+                                }
                                 Err(err) => {
                                     tracing::error!(%err, "realtime audio listener not created");
                                     return Err(StatusCode::INTERNAL_SERVER_ERROR);

@@ -1,14 +1,18 @@
 use std::{marker::PhantomData, time::Duration};
 
+pub type DataCallback<T> = Box<dyn FnMut() -> BufferedData<T>>;
+
 pub struct BufferedData<T> {
     pub wait_until_next: Option<Duration>,
     pub data: Vec<T>,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct AudioParams {
     pub sample_rate: u32,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct VideoParams {
     pub fps: u32,
 }
@@ -20,20 +24,13 @@ pub trait Device: Send + Sync {
     fn create(
         &self,
         params: Self::Params,
-        data_provider: Box<dyn FnMut() -> BufferedData<Self::Content>>,
+        data_callback: DataCallback<Self::Content>,
     ) -> Box<dyn Stream>;
 }
 
 pub trait Stream: Send + Sync + 'static {
     fn flush(&self);
 }
-
-pub trait AudioStream: Stream {
-    fn get_volume(&self) -> f32;
-    fn change_volume(&self, value: f32);
-}
-
-pub trait VideoStream: Stream {}
 
 /// Default implementation that does nothing
 pub struct NullDevice<C, P>(PhantomData<(C, P)>);
@@ -51,11 +48,7 @@ impl<C, P> Device for NullDevice<C, P> {
     type Content = C;
     type Params = P;
 
-    fn create(
-        &self,
-        _: Self::Params,
-        _: Box<dyn FnMut() -> BufferedData<Self::Content>>,
-    ) -> Box<dyn Stream> {
+    fn create(&self, _: Self::Params, _: DataCallback<Self::Content>) -> Box<dyn Stream> {
         tracing::debug!("created null stream");
         Box::new(NullStream(()))
     }
@@ -68,16 +61,3 @@ impl Stream for NullStream {
         tracing::debug!("flush called for null stream");
     }
 }
-
-impl AudioStream for NullStream {
-    fn get_volume(&self) -> f32 {
-        tracing::debug!("volume requested for null stream");
-        0.0
-    }
-
-    fn change_volume(&self, value: f32) {
-        tracing::debug!(%value, "changed volume for null stream")
-    }
-}
-
-impl VideoStream for NullStream {}

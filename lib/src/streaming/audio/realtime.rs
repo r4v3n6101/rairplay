@@ -1,8 +1,9 @@
-use std::{io, net::SocketAddr, time::Duration};
+use std::{io, net::SocketAddr, sync::Arc, time::Duration};
 
 use tokio::net::{ToSocketAddrs, UdpSocket};
 
 use crate::{
+    device::{BufferedData, DataCallback},
     streaming::audio::packet::{RtcpHeader, RtpHeader},
     util::{jitter, memory},
 };
@@ -10,6 +11,7 @@ use crate::{
 pub struct Channel {
     local_data_addr: SocketAddr,
     local_control_addr: SocketAddr,
+    data_buf: Arc<jitter::Buffer<()>>,
 }
 
 impl Channel {
@@ -26,17 +28,19 @@ impl Channel {
         let local_data_addr = data_socket.local_addr()?;
         let local_control_addr = control_socket.local_addr()?;
 
+        let data_buf = Arc::new(jitter::Buffer::new(min_depth, max_depth));
+        let audio_buf = memory::BytesHunk::new(audio_buf_size);
         tokio::spawn(data_processor(
             data_socket,
-            audio_buf_size,
-            min_depth,
-            max_depth,
+            audio_buf,
+            Arc::clone(&data_buf),
         ));
         tokio::spawn(control_processor(control_socket));
 
         Ok(Channel {
             local_data_addr,
             local_control_addr,
+            data_buf,
         })
     }
 
@@ -47,19 +51,27 @@ impl Channel {
     pub fn local_control_addr(&self) -> SocketAddr {
         self.local_control_addr
     }
+
+    pub fn data_callback(&self) -> DataCallback<()> {
+        let data_buf = Arc::clone(&self.data_buf);
+        Box::new(move || {
+            let output = data_buf.pop();
+            BufferedData {
+                wait_until_next: Some(output.wait_time),
+                data: output.data,
+            }
+        })
+    }
 }
 
 async fn data_processor(
     data_socket: UdpSocket,
-    audio_buf_size: usize,
-    min_depth: Duration,
-    max_depth: Duration,
+    mut audio_buf: memory::BytesHunk,
+    data_buf: Arc<jitter::Buffer<()>>,
 ) {
     const PKT_BUF_SIZE: usize = 8 * 1024;
 
     let mut pkt_buf = [0u8; PKT_BUF_SIZE];
-    let mut audio_buf = memory::BytesHunk::new(audio_buf_size);
-    let jitter_buffer = jitter::Buffer::new(min_depth, max_depth);
     while let Ok(pkt_len) = data_socket.recv(&mut pkt_buf).await {
         if pkt_len < RtpHeader::SIZE {
             tracing::warn!(%pkt_len, "malformed realtime rtp packet");
@@ -72,11 +84,11 @@ async fn data_processor(
         let mut buf = audio_buf.allocate_buf(pkt_len - RtpHeader::SIZE);
         buf.copy_from_slice(&pkt_buf[RtpHeader::SIZE..pkt_len]);
 
-        jitter_buffer.insert(
+        data_buf.insert(
             rtp_header.seqnum() as u64,
             // TODO : convert timestamp to ms
             Duration::from_secs(rtp_header.timestamp() as u64 / 44100),
-            buf,
+            (),
         );
     }
 }

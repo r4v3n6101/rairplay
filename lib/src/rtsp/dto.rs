@@ -154,7 +154,7 @@ pub enum StreamDescriptor {
     #[serde(rename = 96)]
     AudioRealtime {
         #[serde(rename = "streamID")]
-        id: u32,
+        id: u64,
         #[serde(rename = "dataPort")]
         local_data_port: u16,
         #[serde(rename = "controlPort")]
@@ -166,7 +166,7 @@ pub enum StreamDescriptor {
     #[serde(rename = 103)]
     AudioBuffered {
         #[serde(rename = "streamID")]
-        id: u32,
+        id: u64,
         #[serde(rename = "dataPort")]
         local_data_port: u16,
         #[serde(rename = "audioBufferSize")]
@@ -175,7 +175,7 @@ pub enum StreamDescriptor {
     #[serde(rename = 110)]
     Video {
         #[serde(rename = "streamID")]
-        id: u32,
+        id: u64,
         #[serde(rename = "dataPort")]
         local_data_port: u16,
     },

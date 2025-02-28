@@ -1,16 +1,14 @@
 use std::{
     collections::BTreeMap,
     ops::Deref,
-    sync::{atomic::AtomicU32, Arc, Mutex},
+    sync::{atomic::AtomicU64, Arc, Mutex},
 };
 
 use bytes::Bytes;
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{
-    device::{AudioStream, VideoStream},
-    info::Config,
-    streaming::event::Channel as EventChannel,
+    device::Stream, info::Config, streaming::event::Channel as EventChannel,
     util::crypto::pairing::legacy::State as LegacyPairing,
 };
 
@@ -19,7 +17,7 @@ pub struct SharedState(pub Arc<State>);
 
 pub struct State {
     pub cfg: Config,
-    pub last_stream_id: AtomicU32,
+    pub last_stream_id: AtomicU64,
 
     pub pairing: Mutex<LegacyPairing>,
     pub fp_last_msg: Mutex<Bytes>,
@@ -27,8 +25,7 @@ pub struct State {
 
     pub event_channel: AsyncMutex<Option<EventChannel>>,
 
-    pub audio_streams: BTreeMap<u64, Box<dyn AudioStream>>,
-    pub video_streams: BTreeMap<u64, Box<dyn VideoStream>>,
+    pub streams: Mutex<BTreeMap<u64, Box<dyn Stream>>>,
 }
 
 impl Deref for SharedState {
@@ -43,7 +40,7 @@ impl SharedState {
     pub fn with_config(cfg: Config) -> Self {
         Self(Arc::new(State {
             cfg,
-            last_stream_id: AtomicU32::default(),
+            last_stream_id: AtomicU64::default(),
 
             // TODO : change this shit
             pairing: Mutex::new(LegacyPairing::from_signing_privkey([5; 32])),
@@ -52,8 +49,7 @@ impl SharedState {
 
             event_channel: AsyncMutex::default(),
 
-            audio_streams: BTreeMap::default(),
-            video_streams: BTreeMap::default(),
+            streams: Mutex::default(),
         }))
     }
 }

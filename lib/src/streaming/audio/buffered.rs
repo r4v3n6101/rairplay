@@ -5,7 +5,7 @@ use tokio::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
 };
 
-use crate::util::memory;
+use crate::{device::DataCallback, util::memory};
 
 use super::packet::{RtpHeader, RtpTrailer};
 
@@ -46,6 +46,10 @@ impl Channel {
 
     pub fn audio_buf_size(&self) -> usize {
         self.audio_buf_size
+    }
+
+    pub fn data_callback(&self) -> DataCallback<()> {
+        todo!()
     }
 }
 
