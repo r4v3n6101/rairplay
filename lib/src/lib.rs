@@ -1,5 +1,7 @@
 #![warn(clippy::pedantic)]
 
+// TODO : change this name
+mod device;
 mod info;
 mod rtsp;
 mod streaming;

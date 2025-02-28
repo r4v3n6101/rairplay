@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     ops::Deref,
     sync::{atomic::AtomicU32, Arc, Mutex},
 };
@@ -7,8 +8,9 @@ use bytes::Bytes;
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{
+    device::{AudioStream, VideoStream},
     info::Config,
-    streaming::{command::Dispatcher as CmdDispatcher, event::Channel as EventChannel},
+    streaming::event::Channel as EventChannel,
     util::crypto::pairing::legacy::State as LegacyPairing,
 };
 
@@ -24,7 +26,9 @@ pub struct State {
     pub fp_key: Mutex<Bytes>,
 
     pub event_channel: AsyncMutex<Option<EventChannel>>,
-    pub cmd_channel: CmdDispatcher,
+
+    pub audio_streams: BTreeMap<u64, Box<dyn AudioStream>>,
+    pub video_streams: BTreeMap<u64, Box<dyn VideoStream>>,
 }
 
 impl Deref for SharedState {
@@ -47,7 +51,9 @@ impl SharedState {
             fp_key: Mutex::default(),
 
             event_channel: AsyncMutex::default(),
-            cmd_channel: CmdDispatcher::default(),
+
+            audio_streams: BTreeMap::default(),
+            video_streams: BTreeMap::default(),
         }))
     }
 }

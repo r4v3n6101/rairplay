@@ -3,10 +3,7 @@ use std::{io, net::SocketAddr, time::Duration};
 use tokio::net::{ToSocketAddrs, UdpSocket};
 
 use crate::{
-    streaming::{
-        audio::packet::{RtcpHeader, RtpHeader},
-        command,
-    },
+    streaming::audio::packet::{RtcpHeader, RtpHeader},
     util::{jitter, memory},
 };
 
@@ -22,7 +19,6 @@ impl Channel {
         audio_buf_size: usize,
         min_depth: Duration,
         max_depth: Duration,
-        cmd_handler: command::Handler,
     ) -> io::Result<Self> {
         let data_socket = UdpSocket::bind(data_bind_addr).await?;
         let control_socket = UdpSocket::bind(control_bind_addr).await?;

@@ -141,14 +141,14 @@ pub async fn set_rate_anchor_time(
     State(state): State<SharedState>,
     BinaryPlist(req): BinaryPlist<SetRateAnchorTimeRequest>,
 ) {
-    state.cmd_channel.set_rate_anchor_time(req.rate);
 }
 
 pub async fn flush_buffered(
     State(state): State<SharedState>,
     // BinaryPlist(req): BinaryPlist<FlushBufferedRequest>,
 ) {
-    state.cmd_channel.flush();
+    state.audio_streams.values().for_each(|s| s.flush());
+    state.video_streams.values().for_each(|s| s.flush());
 }
 
 pub async fn setup(
@@ -186,7 +186,7 @@ pub async fn setup(
         }
 
         SetupRequest::Streams { requests } => {
-            // TODO : move out this defaults
+            // TODO : move out these defaults into the config
             const MIN_BUF_DEPTH: Duration = Duration::from_millis(20);
             const MAX_BUF_DEPTH: Duration = Duration::from_millis(200);
             const AUDIO_BUF_SIZE: usize = 8 * 1024 * 1024; // 8mb
@@ -200,7 +200,6 @@ pub async fn setup(
                             match BufferedAudioChannel::create(
                                 SocketAddr::new(local_addr.ip(), 0),
                                 AUDIO_BUF_SIZE,
-                                state.cmd_channel.new_handler(),
                             )
                             .await
                             {
@@ -223,7 +222,6 @@ pub async fn setup(
                                 AUDIO_BUF_SIZE,
                                 MIN_BUF_DEPTH,
                                 MAX_BUF_DEPTH,
-                                state.cmd_channel.new_handler(),
                             )
                             .await
                             {
