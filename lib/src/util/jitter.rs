@@ -21,7 +21,7 @@ impl<T> Ord for Entry<T> {
 
 impl<T> PartialOrd for Entry<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.idx.partial_cmp(&other.idx).map(Ordering::reverse)
+        Some(self.cmp(other))
     }
 }
 
@@ -99,7 +99,7 @@ impl<T> Buffer<T> {
             return;
         }
 
-        this.entries.push(entry.map(|_| value));
+        this.entries.push(entry.map(|()| value));
     }
 
     pub fn pop(&self) -> Output<T> {
@@ -109,16 +109,13 @@ impl<T> Buffer<T> {
         let mut data = Vec::new();
         while let Some(entry) = this.entries.peek_mut() {
             let pkt_ready = entry.arrival_time + this.buf_depth;
-            match pkt_ready.checked_duration_since(now) {
-                Some(wait_time) => {
-                    return Output { wait_time, data };
-                }
-                None => {
-                    let entry = PeekMut::pop(entry);
-                    this.last_popped_idx = entry.idx;
-                    data.push(entry.value);
-                }
+            if let Some(wait_time) = pkt_ready.checked_duration_since(now) {
+                return Output { wait_time, data };
             }
+
+            let entry = PeekMut::pop(entry);
+            this.last_popped_idx = entry.idx;
+            data.push(entry.value);
         }
 
         Output {
