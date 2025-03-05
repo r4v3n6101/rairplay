@@ -5,7 +5,10 @@ use tokio::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
 };
 
-use crate::{device::DataCallback, util::memory};
+use crate::{
+    device::{BufferedData, DataCallback},
+    util::memory,
+};
 
 use super::packet::{RtpHeader, RtpTrailer};
 
@@ -49,7 +52,11 @@ impl Channel {
     }
 
     pub fn data_callback(&self) -> DataCallback<()> {
-        todo!()
+        // TODO : change to acquiring from jitter buffer or just plain buffer
+        Box::new(|| BufferedData {
+            wait_until_next: None,
+            data: Vec::new(),
+        })
     }
 }
 
@@ -77,7 +84,5 @@ async fn processor(mut stream: TcpStream, audio_buf_size: usize) {
             (Ok(_), Ok(_), Ok(_)) => {}
             _ => break,
         }
-
-        tracing::debug!(?header, ?trailer, "new rtp packet");
     }
 }

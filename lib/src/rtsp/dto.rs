@@ -17,8 +17,6 @@ pub struct InfoResponse {
     pub protocol_version: String,
     #[serde(rename = "sourceVersion")]
     pub source_version: String,
-    #[serde(rename = "initialVolume")]
-    pub initial_volume: Option<f32>,
 
     pub displays: Vec<Display>,
 }
@@ -99,34 +97,42 @@ pub enum StreamRequest {
         audio_format: Option<u32>,
         #[serde(rename = "spf")]
         samples_per_frame: u32,
+        #[serde(rename = "sr")]
+        sample_rate: u32,
+        #[serde(rename = "latencyMin")]
+        latency_min: u32,
+        #[serde(rename = "latencyMax")]
+        latency_max: u32,
+        #[serde(rename = "shk")]
+        shared_key: Option<Bytes>,
+        #[serde(rename = "shiv")]
+        shared_iv: Option<Bytes>,
         #[serde(rename = "controlPort")]
         remote_control_port: u16,
-
-        #[serde(flatten)]
-        content: plist::Value,
     },
     #[serde(rename = 103)]
     AudioBuffered {
         #[serde(rename = "ct")]
         content_type: Option<u8>,
+        #[serde(rename = "audioFormatIndex")]
+        audio_format_index: Option<u8>,
         #[serde(rename = "audioFormat")]
         audio_format: Option<u32>,
         #[serde(rename = "spf")]
-        samples_per_frame: Option<u32>,
+        samples_per_frame: u32,
         #[serde(rename = "shk")]
         shared_key: Option<Bytes>,
         #[serde(rename = "shiv")]
         shared_iv: Option<Bytes>,
-
-        #[serde(flatten)]
-        content: plist::Value,
+        #[serde(rename = "clientID")]
+        client_id: String,
     },
     #[serde(rename = 110)]
     Video {
         #[serde(rename = "streamConnectionID")]
         stream_connection_id: i64,
-        #[serde(flatten)]
-        content: plist::Value,
+        #[serde(rename = "latencyMs")]
+        latency_ms: u32,
     },
 }
 

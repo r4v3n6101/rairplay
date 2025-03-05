@@ -48,7 +48,7 @@ pub fn svc_router(cfg: Config) -> Router<()> {
                     //"SET_PARAMETER" => set_parameter::handler.call(req, state).await,
                     //"TEARDOWN" => handlers::teardown.call(req, ()).await,
                     method => {
-                        tracing::error!(?method, path = ?req.uri(), "unknown method");
+                        tracing::warn!(?method, path = ?req.uri(), "unknown method");
                         handlers::generic.call(req, state).await
                     }
                 }

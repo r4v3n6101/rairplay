@@ -5,7 +5,7 @@ use tokio::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
 };
 
-use crate::util::crypto::video::Cipher as VideoCipher;
+use crate::device::{BufferedData, DataCallback};
 
 use super::packet::VideoHeader;
 
@@ -14,10 +14,7 @@ pub struct Channel {
 }
 
 impl Channel {
-    pub async fn create(
-        bind_addr: impl ToSocketAddrs,
-        cipher: Option<VideoCipher>,
-    ) -> io::Result<Self> {
+    pub async fn create(bind_addr: impl ToSocketAddrs) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;
 
@@ -25,7 +22,7 @@ impl Channel {
             match listener.accept().await {
                 Ok((stream, remote_addr)) => {
                     tracing::info!(%local_addr, %remote_addr, "accepting connection");
-                    processor(stream, cipher).await;
+                    processor(stream).await;
                     tracing::info!(%local_addr, %remote_addr, "video stream done");
                 }
                 Err(err) => {
@@ -40,9 +37,17 @@ impl Channel {
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
     }
+
+    pub fn data_callback(&self) -> DataCallback<()> {
+        // TODO
+        Box::new(|| BufferedData {
+            wait_until_next: None,
+            data: Vec::new(),
+        })
+    }
 }
 
-async fn processor(mut stream: TcpStream, mut cipher: Option<VideoCipher>) {
+async fn processor(mut stream: TcpStream) {
     loop {
         let mut header = VideoHeader::empty();
         if stream.read_exact(&mut *header).await.is_err() {

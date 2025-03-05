@@ -44,7 +44,7 @@ impl Drop for Channel {
 }
 
 async fn processor(listener: TcpListener, local_addr: SocketAddr) {
-    const BUF_SIZE: usize = 16 * 2024;
+    const BUF_SIZE: usize = 16 * 1024;
 
     let mut buf = [0; BUF_SIZE];
     while let Ok((mut stream, remote_addr)) = listener.accept().await {

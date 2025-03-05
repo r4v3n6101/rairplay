@@ -1,5 +1,6 @@
 #![warn(clippy::pedantic)]
 
+mod crypto;
 // TODO : change this name
 mod device;
 mod info;

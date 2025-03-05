@@ -17,6 +17,8 @@ pub struct VideoParams {
     pub fps: u32,
 }
 
+pub trait StreamHandle: Send + Sync + 'static {}
+
 pub trait Device: Send + Sync {
     type Content;
     type Params;
@@ -25,14 +27,16 @@ pub trait Device: Send + Sync {
         &self,
         params: Self::Params,
         data_callback: DataCallback<Self::Content>,
-    ) -> Box<dyn Stream>;
+    ) -> Box<dyn StreamHandle>;
 }
 
-pub trait Stream: Send + Sync + 'static {
-    fn flush(&self);
+pub trait AudioDevice: Device<Content = (), Params = AudioParams> {
+    fn get_volume(&self) -> f32;
+    fn set_volume(&self, value: f32);
 }
 
-/// Default implementation that does nothing
+pub trait VideoDevice: Device<Content = (), Params = VideoParams> {}
+
 pub struct NullDevice<C, P>(PhantomData<(C, P)>);
 
 unsafe impl<C, P> Send for NullDevice<C, P> {}
@@ -48,16 +52,22 @@ impl<C, P> Device for NullDevice<C, P> {
     type Content = C;
     type Params = P;
 
-    fn create(&self, _: Self::Params, _: DataCallback<Self::Content>) -> Box<dyn Stream> {
-        tracing::debug!("created null stream");
+    fn create(&self, _: Self::Params, _: DataCallback<Self::Content>) -> Box<dyn StreamHandle> {
+        tracing::info!("created null stream");
         Box::new(NullStream(()))
     }
 }
 
+impl AudioDevice for NullDevice<(), AudioParams> {
+    fn get_volume(&self) -> f32 {
+        0.0
+    }
+
+    fn set_volume(&self, value: f32) {}
+}
+
+impl VideoDevice for NullDevice<(), VideoParams> {}
+
 pub struct NullStream(());
 
-impl Stream for NullStream {
-    fn flush(&self) {
-        tracing::debug!("flush called for null stream");
-    }
-}
+impl StreamHandle for NullStream {}

@@ -8,8 +8,8 @@ use bytes::Bytes;
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{
-    device::Stream, info::Config, streaming::event::Channel as EventChannel,
-    util::crypto::pairing::legacy::State as LegacyPairing,
+    crypto::pairing::legacy::State as LegacyPairing, device::StreamHandle, info::Config,
+    streaming::event::Channel as EventChannel,
 };
 
 #[derive(Clone)]
@@ -25,7 +25,7 @@ pub struct State {
 
     pub event_channel: AsyncMutex<Option<EventChannel>>,
 
-    pub streams: Mutex<BTreeMap<u64, Box<dyn Stream>>>,
+    pub stream_handles: Mutex<BTreeMap<u64, Box<dyn StreamHandle>>>,
 }
 
 impl Deref for SharedState {
@@ -49,7 +49,7 @@ impl SharedState {
 
             event_channel: AsyncMutex::default(),
 
-            streams: Mutex::default(),
+            stream_handles: Mutex::default(),
         }))
     }
 }

@@ -2,7 +2,7 @@ use bitflags::bitflags;
 
 pub use macaddr::MacAddr6;
 
-use crate::device::{AudioParams, Device, NullDevice, VideoParams};
+use crate::device::{AudioDevice, NullDevice, VideoDevice};
 
 pub struct Config {
     pub mac_addr: MacAddr6,
@@ -11,9 +11,9 @@ pub struct Config {
     pub model: String,
     pub name: String,
     pub fw_version: String,
-    pub initial_volume: Option<f32>,
-    pub audio_device: Box<dyn Device<Content = (), Params = AudioParams>>,
-    pub video_device: Box<dyn Device<Content = (), Params = VideoParams>>,
+
+    pub audio_device: Box<dyn AudioDevice>,
+    pub video_device: Box<dyn VideoDevice>,
 }
 
 impl Default for Config {
@@ -26,8 +26,6 @@ impl Default for Config {
             model: env!("CARGO_PKG_NAME").to_string(),
             name: env!("CARGO_PKG_NAME").to_string(),
             fw_version: env!("CARGO_PKG_VERSION").to_string(),
-
-            initial_volume: None,
 
             audio_device: Box::new(NullDevice::default()),
             video_device: Box::new(NullDevice::default()),

@@ -1,15 +1,14 @@
 use std::{
     cmp::Ordering,
     collections::{binary_heap::PeekMut, BinaryHeap},
-    sync::Mutex,
     time::{Duration, Instant},
 };
 
 #[derive(Clone, Copy)]
 struct Entry<T> {
     idx: u64,
+    timestamp_ms: u64,
     arrival_time: Instant,
-    timestamp: Duration,
     value: T,
 }
 
@@ -33,27 +32,12 @@ impl<T> PartialEq for Entry<T> {
     }
 }
 
-impl<T> Entry<T> {
-    fn map<U>(self, f: impl FnOnce(T) -> U) -> Entry<U> {
-        Entry {
-            idx: self.idx,
-            arrival_time: self.arrival_time,
-            timestamp: self.timestamp,
-            value: f(self.value),
-        }
-    }
-}
-
-struct Inner<T> {
+pub struct Buffer<T> {
     entries: BinaryHeap<Entry<T>>,
     last_entry: Option<Entry<()>>,
     last_popped_idx: u64,
+    jitter_ms: i64,
     buf_depth: Duration,
-    jitter: Duration,
-}
-
-pub struct Buffer<T> {
-    inner: Mutex<Inner<T>>,
     min_depth: Duration,
     max_depth: Duration,
 }
@@ -63,63 +47,70 @@ impl<T> Buffer<T> {
         assert!(min_depth <= max_depth);
 
         Self {
-            inner: Mutex::new(Inner {
-                entries: BinaryHeap::new(),
-                last_entry: None,
-                last_popped_idx: 0,
-                buf_depth: min_depth,
-                jitter: Duration::ZERO,
-            }),
-
+            entries: BinaryHeap::new(),
+            last_entry: None,
+            last_popped_idx: 0,
+            jitter_ms: 0,
+            buf_depth: min_depth,
             min_depth,
             max_depth,
         }
     }
 
-    // TODO : replace Duration with samples mb
-    pub fn insert(&self, idx: u64, timestamp: Duration, value: T) {
-        let this = &mut *self.inner.lock().unwrap();
+    pub fn insert(&mut self, idx: u64, timestamp_ms: u64, value: T) {
         let entry = Entry {
             idx,
+            timestamp_ms,
             arrival_time: Instant::now(),
-            timestamp,
             value: (),
         };
 
-        if let Some(last_entry) = &this.last_entry {
+        if let Some(last_entry) = &self.last_entry {
             let delay = entry.arrival_time.duration_since(last_entry.arrival_time);
-            let expected_delay = entry.timestamp - last_entry.timestamp;
-            this.jitter += (delay - expected_delay - this.jitter) / 16;
-            this.buf_depth = (this.buf_depth + this.jitter).clamp(self.min_depth, self.max_depth);
+            let expected_delay_ms = entry.timestamp_ms as i64 - last_entry.timestamp_ms as i64;
+
+            self.jitter_ms +=
+                ((delay.as_millis() as i64 - expected_delay_ms) - self.jitter_ms) / 16;
+            self.buf_depth = if self.jitter_ms > 0 {
+                self.buf_depth
+                    .saturating_add(Duration::from_millis(self.jitter_ms as u64))
+            } else {
+                self.buf_depth
+                    .saturating_sub(Duration::from_millis((-self.jitter_ms) as u64))
+            }
+            .clamp(self.min_depth, self.max_depth);
         }
-        this.last_entry = Some(entry);
+        self.last_entry = Some(entry);
 
         // Discard late packets
-        if idx <= this.last_popped_idx {
+        if idx <= self.last_popped_idx {
             return;
         }
 
-        this.entries.push(entry.map(|()| value));
+        self.entries.push(Entry {
+            idx: entry.idx,
+            timestamp_ms: entry.timestamp_ms,
+            arrival_time: entry.arrival_time,
+            value,
+        });
     }
 
-    pub fn pop(&self) -> Output<T> {
-        let this = &mut *self.inner.lock().unwrap();
-
+    pub fn pop(&mut self) -> Output<T> {
         let now = Instant::now();
         let mut data = Vec::new();
-        while let Some(entry) = this.entries.peek_mut() {
-            let pkt_ready = entry.arrival_time + this.buf_depth;
+        while let Some(entry) = self.entries.peek_mut() {
+            let pkt_ready = entry.arrival_time + self.buf_depth;
             if let Some(wait_time) = pkt_ready.checked_duration_since(now) {
                 return Output { wait_time, data };
             }
 
             let entry = PeekMut::pop(entry);
-            this.last_popped_idx = entry.idx;
+            self.last_popped_idx = entry.idx;
             data.push(entry.value);
         }
 
         Output {
-            wait_time: this.buf_depth,
+            wait_time: self.buf_depth,
             data,
         }
     }
