@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::atomic::Ordering, time::Duration};
+use std::{net::SocketAddr, sync::atomic::Ordering};
 
 use crate::{
     crypto::{
@@ -132,7 +132,7 @@ pub async fn fp_setup(State(state): State<SharedState>, body: Bytes) -> impl Int
 pub async fn get_parameter(State(state): State<SharedState>, body: String) -> impl IntoResponse {
     match body.as_str() {
         "volume\r\n" => {
-            let volume = state.cfg.audio_device.get_volume();
+            let volume = state.cfg.audio.device.get_volume();
             Ok((
                 [(CONTENT_TYPE, "text/parameters")],
                 format!("volume: {volume}\r\n"),
@@ -194,11 +194,6 @@ pub async fn setup(
         }
 
         SetupRequest::Streams { requests } => {
-            // TODO : move out these defaults into the config
-            const MIN_BUF_DEPTH: Duration = Duration::from_millis(20);
-            const MAX_BUF_DEPTH: Duration = Duration::from_millis(200);
-            const AUDIO_BUF_SIZE: usize = 8 * 1024 * 1024; // 8mb
-
             let mut descriptors = Vec::with_capacity(requests.len());
             for stream in requests {
                 let id = state.last_stream_id.fetch_add(1, Ordering::AcqRel);
@@ -211,7 +206,7 @@ pub async fn setup(
                     } => {
                         match BufferedAudioChannel::create(
                             SocketAddr::new(local_addr.ip(), 0),
-                            AUDIO_BUF_SIZE,
+                            state.cfg.audio.audio_buf_size,
                         )
                         .await
                         {
@@ -219,13 +214,13 @@ pub async fn setup(
                                 // TODO
                                 let params = AudioParams { sample_rate: 0 };
                                 let stream =
-                                    state.cfg.audio_device.create(params, chan.data_callback());
+                                    state.cfg.audio.device.create(params, chan.data_callback());
                                 state.stream_handles.lock().unwrap().insert(id, stream);
 
                                 StreamDescriptor::AudioBuffered {
                                     id,
                                     local_data_port: chan.local_addr().port(),
-                                    audio_buffer_size: chan.audio_buf_size() as u32,
+                                    audio_buffer_size: chan.audio_buf_size(),
                                 }
                             }
                             Err(err) => {
@@ -235,13 +230,14 @@ pub async fn setup(
                         }
                     }
 
-                    StreamRequest::AudioRealtime { .. } => {
+                    StreamRequest::AudioRealtime { sample_rate, .. } => {
                         match RealtimeAudioChannel::create(
                             SocketAddr::new(local_addr.ip(), 0),
                             SocketAddr::new(local_addr.ip(), 0),
-                            AUDIO_BUF_SIZE,
-                            MIN_BUF_DEPTH,
-                            MAX_BUF_DEPTH,
+                            state.cfg.audio.audio_buf_size,
+                            state.cfg.audio.min_jitter_depth,
+                            state.cfg.audio.max_jitter_depth,
+                            sample_rate,
                         )
                         .await
                         {
@@ -249,7 +245,7 @@ pub async fn setup(
                                 // TODO
                                 let params = AudioParams { sample_rate: 0 };
                                 let stream =
-                                    state.cfg.audio_device.create(params, chan.data_callback());
+                                    state.cfg.audio.device.create(params, chan.data_callback());
                                 state.stream_handles.lock().unwrap().insert(id, stream);
 
                                 StreamDescriptor::AudioRealtime {
@@ -283,7 +279,7 @@ pub async fn setup(
                             Ok(chan) => {
                                 let params = VideoParams { fps: 0 };
                                 let stream =
-                                    state.cfg.video_device.create(params, chan.data_callback());
+                                    state.cfg.video.device.create(params, chan.data_callback());
                                 state.stream_handles.lock().unwrap().insert(id, stream);
 
                                 StreamDescriptor::Video {

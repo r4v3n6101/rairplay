@@ -7,7 +7,7 @@ use std::{
 #[derive(Clone, Copy)]
 struct Entry<T> {
     idx: u64,
-    timestamp_ms: u64,
+    timestamp_ns: u128,
     arrival_time: Instant,
     value: T,
 }
@@ -36,7 +36,7 @@ pub struct Buffer<T> {
     entries: BinaryHeap<Entry<T>>,
     last_entry: Option<Entry<()>>,
     last_popped_idx: u64,
-    jitter_ms: i64,
+    jitter_ns: i128,
     buf_depth: Duration,
     min_depth: Duration,
     max_depth: Duration,
@@ -50,33 +50,34 @@ impl<T> Buffer<T> {
             entries: BinaryHeap::new(),
             last_entry: None,
             last_popped_idx: 0,
-            jitter_ms: 0,
+            jitter_ns: 0,
             buf_depth: min_depth,
             min_depth,
             max_depth,
         }
     }
 
-    pub fn insert(&mut self, idx: u64, timestamp_ms: u64, value: T) {
+    pub fn insert(&mut self, idx: u64, timestamp_ns: u128, value: T) {
         let entry = Entry {
             idx,
-            timestamp_ms,
+            timestamp_ns,
             arrival_time: Instant::now(),
             value: (),
         };
 
         if let Some(last_entry) = &self.last_entry {
             let delay = entry.arrival_time.duration_since(last_entry.arrival_time);
-            let expected_delay_ms = entry.timestamp_ms as i64 - last_entry.timestamp_ms as i64;
+            let expected_delay_ns = entry.timestamp_ns as i128 - last_entry.timestamp_ns as i128;
 
-            self.jitter_ms +=
-                ((delay.as_millis() as i64 - expected_delay_ms) - self.jitter_ms) / 16;
-            self.buf_depth = if self.jitter_ms > 0 {
+            self.jitter_ns +=
+                ((delay.as_millis() as i128 - expected_delay_ns) - self.jitter_ns) / 16;
+
+            self.buf_depth = if self.jitter_ns > 0 {
                 self.buf_depth
-                    .saturating_add(Duration::from_millis(self.jitter_ms as u64))
+                    .saturating_add(Duration::from_nanos(self.jitter_ns.unsigned_abs() as u64))
             } else {
                 self.buf_depth
-                    .saturating_sub(Duration::from_millis((-self.jitter_ms) as u64))
+                    .saturating_sub(Duration::from_nanos(self.jitter_ns.unsigned_abs() as u64))
             }
             .clamp(self.min_depth, self.max_depth);
         }
@@ -89,7 +90,7 @@ impl<T> Buffer<T> {
 
         self.entries.push(Entry {
             idx: entry.idx,
-            timestamp_ms: entry.timestamp_ms,
+            timestamp_ns: entry.timestamp_ns,
             arrival_time: entry.arrival_time,
             value,
         });

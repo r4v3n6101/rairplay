@@ -1,36 +1,47 @@
+use std::time::Duration;
+
 use bitflags::bitflags;
+use derivative::Derivative;
 
 pub use macaddr::MacAddr6;
 
 use crate::device::{AudioDevice, NullDevice, VideoDevice};
 
+#[derive(Debug, Derivative)]
+#[derivative(Default)]
 pub struct Config {
     pub mac_addr: MacAddr6,
     pub features: Features,
+    #[derivative(Default(value = "env!(\"CARGO_PKG_AUTHORS\").to_string()"))]
     pub manufacturer: String,
+    #[derivative(Default(value = "env!(\"CARGO_PKG_NAME\").to_string()"))]
     pub model: String,
+    #[derivative(Default(value = "env!(\"CARGO_PKG_NAME\").to_string()"))]
     pub name: String,
+    #[derivative(Default(value = "env!(\"CARGO_PKG_VERSION\").to_string()"))]
     pub fw_version: String,
-
-    pub audio_device: Box<dyn AudioDevice>,
-    pub video_device: Box<dyn VideoDevice>,
+    pub audio: Audio,
+    pub video: Video,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            mac_addr: MacAddr6::default(),
-            features: Features::default(),
+#[derive(Derivative)]
+#[derivative(Debug, Default)]
+pub struct Audio {
+    #[derivative(Default(value = "8 * 1024 * 1024"))]
+    pub audio_buf_size: u32,
+    #[derivative(Default(value = "Duration::from_millis(20)"))]
+    pub min_jitter_depth: Duration,
+    #[derivative(Default(value = "Duration::from_millis(500)"))]
+    pub max_jitter_depth: Duration,
+    #[derivative(Debug = "ignore", Default(value = "Box::new(NullDevice::default())"))]
+    pub device: Box<dyn AudioDevice>,
+}
 
-            manufacturer: env!("CARGO_PKG_AUTHORS").to_string(),
-            model: env!("CARGO_PKG_NAME").to_string(),
-            name: env!("CARGO_PKG_NAME").to_string(),
-            fw_version: env!("CARGO_PKG_VERSION").to_string(),
-
-            audio_device: Box::new(NullDevice::default()),
-            video_device: Box::new(NullDevice::default()),
-        }
-    }
+#[derive(Derivative)]
+#[derivative(Debug, Default)]
+pub struct Video {
+    #[derivative(Debug = "ignore", Default(value = "Box::new(NullDevice::default())"))]
+    pub device: Box<dyn VideoDevice>,
 }
 
 bitflags! {

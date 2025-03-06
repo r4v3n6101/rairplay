@@ -14,11 +14,11 @@ use super::packet::{RtpHeader, RtpTrailer};
 
 pub struct Channel {
     local_addr: SocketAddr,
-    audio_buf_size: usize,
+    audio_buf_size: u32,
 }
 
 impl Channel {
-    pub async fn create(bind_addr: impl ToSocketAddrs, audio_buf_size: usize) -> io::Result<Self> {
+    pub async fn create(bind_addr: impl ToSocketAddrs, audio_buf_size: u32) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;
 
@@ -47,7 +47,7 @@ impl Channel {
         self.local_addr
     }
 
-    pub fn audio_buf_size(&self) -> usize {
+    pub fn audio_buf_size(&self) -> u32 {
         self.audio_buf_size
     }
 
@@ -60,8 +60,8 @@ impl Channel {
     }
 }
 
-async fn processor(mut stream: TcpStream, audio_buf_size: usize) {
-    let mut audio_buf = memory::BytesHunk::new(audio_buf_size);
+async fn processor(mut stream: TcpStream, audio_buf_size: u32) {
+    let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
 
     while let Ok(pkt_len) = stream.read_u16().await {
         // 2 is pkt_len size itself

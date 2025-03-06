@@ -13,21 +13,22 @@ use crate::{
     util::{jitter, memory},
 };
 
-type SharedAudioBuf = Arc<Mutex<jitter::Buffer<()>>>;
+type SharedPacketBuf = Arc<Mutex<jitter::Buffer<()>>>;
 
 pub struct Channel {
     local_data_addr: SocketAddr,
     local_control_addr: SocketAddr,
-    data_buf: SharedAudioBuf,
+    pkt_buf: SharedPacketBuf,
 }
 
 impl Channel {
     pub async fn create(
         data_bind_addr: impl ToSocketAddrs,
         control_bind_addr: impl ToSocketAddrs,
-        audio_buf_size: usize,
+        audio_buf_size: u32,
         min_depth: Duration,
         max_depth: Duration,
+        sample_rate: u32,
     ) -> io::Result<Self> {
         let data_socket = UdpSocket::bind(data_bind_addr).await?;
         let control_socket = UdpSocket::bind(control_bind_addr).await?;
@@ -35,19 +36,19 @@ impl Channel {
         let local_data_addr = data_socket.local_addr()?;
         let local_control_addr = control_socket.local_addr()?;
 
-        let data_buf = Arc::new(Mutex::new(jitter::Buffer::new(min_depth, max_depth)));
-        let audio_buf = memory::BytesHunk::new(audio_buf_size);
+        let pkt_buf = Arc::new(Mutex::new(jitter::Buffer::new(min_depth, max_depth)));
         tokio::spawn(data_processor(
             data_socket,
-            audio_buf,
-            Arc::clone(&data_buf),
+            audio_buf_size,
+            sample_rate,
+            Arc::clone(&pkt_buf),
         ));
         tokio::spawn(control_processor(control_socket));
 
         Ok(Channel {
             local_data_addr,
             local_control_addr,
-            data_buf,
+            pkt_buf,
         })
     }
 
@@ -60,9 +61,9 @@ impl Channel {
     }
 
     pub fn data_callback(&self) -> DataCallback<()> {
-        let data_buf = Arc::clone(&self.data_buf);
+        let pkt_buf = Arc::clone(&self.pkt_buf);
         Box::new(move || {
-            let output = data_buf.lock().unwrap().pop();
+            let output = pkt_buf.lock().unwrap().pop();
             BufferedData {
                 wait_until_next: Some(output.wait_time),
                 data: output.data,
@@ -73,12 +74,14 @@ impl Channel {
 
 async fn data_processor(
     data_socket: UdpSocket,
-    mut audio_buf: memory::BytesHunk,
-    data_buf: SharedAudioBuf,
+    audio_buf_size: u32,
+    sample_rate: u32,
+    data_buf: SharedPacketBuf,
 ) {
     const PKT_BUF_SIZE: usize = 8 * 1024;
 
     let mut pkt_buf = [0u8; PKT_BUF_SIZE];
+    let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
     while let Ok(pkt_len) = data_socket.recv(&mut pkt_buf).await {
         if pkt_len < RtpHeader::SIZE {
             tracing::warn!(%pkt_len, "malformed realtime rtp packet");
@@ -91,11 +94,9 @@ async fn data_processor(
         let mut buf = audio_buf.allocate_buf(pkt_len - RtpHeader::SIZE);
         buf.copy_from_slice(&pkt_buf[RtpHeader::SIZE..pkt_len]);
 
-        // TODO : reduce locks
         data_buf.lock().unwrap().insert(
             rtp_header.seqnum().into(),
-            // TODO : convert timestamp to ms
-            rtp_header.timestamp() as u64 / 44100,
+            (Duration::from_secs(rtp_header.timestamp().into()) / sample_rate).as_nanos(),
             (),
         );
     }
