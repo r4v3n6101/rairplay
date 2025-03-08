@@ -48,6 +48,7 @@
           ];
 
           FAIRPLAY3_SRC = "${shairplay}/src/lib/playfair";
+          RUST_BACKTRACE = "full";
         };
       });
 }
