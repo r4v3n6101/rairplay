@@ -32,7 +32,7 @@ use super::{
     state::{SharedState, StreamDescriptor},
 };
 
-pub async fn generic(bytes: Option<Bytes>) {
+pub async fn generic(bytes: Bytes) {
     tracing::trace!(?bytes, "generic handler");
 }
 

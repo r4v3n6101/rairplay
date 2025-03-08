@@ -18,11 +18,10 @@ aes = "0.8"
 ctr = "0.9"
 
 http = "1"
-tower = "0.4"
-tower-http = { version = "0.5", features = ["propagate-header"] }
-tokio = { version = "1.40", features = ["rt", "net", "io-util"] }
-axum = { version = "0.7", default-features = false, features = ["tokio"] }
-async-trait = "0.1"
+tower = "0.5.2"
+tower-http = { version = "0.6.2", features = ["propagate-header"] }
+tokio = { version = "1.44", features = ["rt", "net", "io-util"] }
+axum = { version = "0.8.1", default-features = false, features = ["tokio"] }
 plist = "1"
 
 [build-dependencies]

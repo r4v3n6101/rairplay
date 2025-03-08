@@ -37,7 +37,7 @@ pub fn svc_router(cfg: Config) -> Router<()> {
         .with_state(state.clone())
         // Custom RTSP methods
         .route(
-            "/:media_id",
+            "/{media_id}",
             any(|req: Request| async move {
                 match req.method().as_str() {
                     // This is empty and useless

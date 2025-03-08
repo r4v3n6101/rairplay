@@ -1,6 +1,5 @@
 use std::ops::Deref;
 
-use async_trait::async_trait;
 use axum::{
     extract::{rejection::BytesRejection, FromRequest, Request},
     http::HeaderValue,
@@ -39,7 +38,6 @@ impl<T> From<T> for BinaryPlist<T> {
     }
 }
 
-#[async_trait]
 impl<T, S> FromRequest<S> for BinaryPlist<T>
 where
     T: DeserializeOwned,
