@@ -63,7 +63,12 @@ impl Channel {
 async fn processor(mut stream: TcpStream, audio_buf_size: u32) {
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
 
-    while let Ok(pkt_len) = stream.read_u16().await {
+    // TODO : log break reasons
+    loop {
+        let Ok(pkt_len) = stream.read_u16().await else {
+            break;
+        };
+
         // 2 is pkt_len size itself
         let pkt_len: usize = pkt_len.saturating_sub(2).into();
 

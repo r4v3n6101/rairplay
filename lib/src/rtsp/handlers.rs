@@ -158,15 +158,12 @@ pub async fn teardown(State(state): State<SharedState>, BinaryPlist(req): Binary
     if let Some(requests) = req.requests {
         for req in requests {
             if let Some(id) = req.id {
-                tracing::info!(%id, "cleaning up stream by id");
                 handles.retain(|k, _| k.id != id);
             } else {
-                tracing::info!(type=%req.ty, "cleaning up stream(s) by type");
                 handles.retain(|k, _| k.ty != req.ty);
             }
         }
     } else {
-        tracing::info!(remaining=%handles.len(), "cleaning up all streams");
         handles.clear();
     }
 }
@@ -235,7 +232,7 @@ pub async fn setup(
 
                         match BufferedAudioChannel::create(
                             SocketAddr::new(local_addr.ip(), 0),
-                            state.cfg.audio.audio_buf_size,
+                            state.cfg.audio.buf_size,
                         )
                         .await
                         {
@@ -285,7 +282,7 @@ pub async fn setup(
                         match RealtimeAudioChannel::create(
                             SocketAddr::new(local_addr.ip(), 0),
                             SocketAddr::new(local_addr.ip(), 0),
-                            state.cfg.audio.audio_buf_size,
+                            state.cfg.audio.buf_size,
                             state.cfg.audio.min_jitter_depth,
                             state.cfg.audio.max_jitter_depth,
                             sample_rate,
@@ -335,7 +332,12 @@ pub async fn setup(
                         //     },
                         // );
 
-                        match VideoChannel::create(SocketAddr::new(local_addr.ip(), 0)).await {
+                        match VideoChannel::create(
+                            SocketAddr::new(local_addr.ip(), 0),
+                            state.cfg.video.buf_size,
+                        )
+                        .await
+                        {
                             Ok(chan) => {
                                 let params = VideoParams {};
                                 let stream =

@@ -20,15 +20,23 @@ pub struct Config {
     pub name: String,
     #[derivative(Default(value = "env!(\"CARGO_PKG_VERSION\").to_string()"))]
     pub fw_version: String,
+    pub pairing: Pairing,
     pub audio: Audio,
     pub video: Video,
 }
 
 #[derive(Derivative)]
 #[derivative(Debug, Default)]
+pub struct Pairing {
+    #[derivative(Debug = "ignore", Default(value = "[5; 32]"))]
+    pub legacy_pairing_key: [u8; 32],
+}
+
+#[derive(Derivative)]
+#[derivative(Debug, Default)]
 pub struct Audio {
-    #[derivative(Default(value = "8 * 1024 * 1024"))]
-    pub audio_buf_size: u32,
+    #[derivative(Default(value = "4 * 1024 * 1024"))]
+    pub buf_size: u32,
     #[derivative(Default(value = "Duration::from_millis(20)"))]
     pub min_jitter_depth: Duration,
     #[derivative(Default(value = "Duration::from_millis(500)"))]
@@ -46,6 +54,8 @@ pub struct Video {
     pub height: u32,
     #[derivative(Default(value = "30"))]
     pub fps: u32,
+    #[derivative(Default(value = "8 * 1024 * 1024"))]
+    pub buf_size: u32,
     #[derivative(Debug = "ignore", Default(value = "Box::new(NullDevice::default())"))]
     pub device: Box<dyn VideoDevice>,
 }

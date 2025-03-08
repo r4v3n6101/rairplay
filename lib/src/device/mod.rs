@@ -94,3 +94,9 @@ impl VideoDevice for NullDevice<(), VideoParams> {}
 pub struct NullStream(());
 
 impl StreamHandle for NullStream {}
+
+impl Drop for NullStream {
+    fn drop(&mut self) {
+        tracing::info!("null stream closed");
+    }
+}

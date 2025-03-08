@@ -82,7 +82,12 @@ async fn data_processor(
 
     let mut pkt_buf = [0u8; PKT_BUF_SIZE];
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
-    while let Ok(pkt_len) = data_socket.recv(&mut pkt_buf).await {
+    // TODO : handle break cases
+    loop {
+        let Ok(pkt_len) = data_socket.recv(&mut pkt_buf).await else {
+            break;
+        };
+
         if pkt_len < RtpHeader::SIZE {
             tracing::warn!(%pkt_len, "malformed realtime rtp packet");
             continue;

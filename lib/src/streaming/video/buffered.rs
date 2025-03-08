@@ -5,7 +5,10 @@ use tokio::{
     net::{TcpListener, TcpStream, ToSocketAddrs},
 };
 
-use crate::device::{BufferedData, DataCallback};
+use crate::{
+    device::{BufferedData, DataCallback},
+    util::memory,
+};
 
 use super::packet::VideoHeader;
 
@@ -14,7 +17,7 @@ pub struct Channel {
 }
 
 impl Channel {
-    pub async fn create(bind_addr: impl ToSocketAddrs) -> io::Result<Self> {
+    pub async fn create(bind_addr: impl ToSocketAddrs, video_buf_size: u32) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;
 
@@ -22,7 +25,7 @@ impl Channel {
             match listener.accept().await {
                 Ok((stream, remote_addr)) => {
                     tracing::info!(%local_addr, %remote_addr, "accepting connection");
-                    processor(stream).await;
+                    processor(stream, video_buf_size).await;
                     tracing::info!(%local_addr, %remote_addr, "video stream done");
                 }
                 Err(err) => {
@@ -47,7 +50,8 @@ impl Channel {
     }
 }
 
-async fn processor(mut stream: TcpStream) {
+async fn processor(mut stream: TcpStream, video_buf_size: u32) {
+    let mut video_buf = memory::BytesHunk::new(video_buf_size as usize);
     loop {
         let mut header = VideoHeader::empty();
         if stream.read_exact(&mut *header).await.is_err() {
