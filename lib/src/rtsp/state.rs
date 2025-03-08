@@ -12,9 +12,6 @@ use crate::{
     streaming::event::Channel as EventChannel,
 };
 
-#[derive(Clone)]
-pub struct SharedState(pub Arc<State>);
-
 pub struct State {
     pub cfg: Config,
     pub last_stream_id: AtomicU64,
@@ -25,8 +22,17 @@ pub struct State {
 
     pub event_channel: AsyncMutex<Option<EventChannel>>,
 
-    pub stream_handles: Mutex<BTreeMap<u64, Box<dyn StreamHandle>>>,
+    pub stream_handles: Mutex<BTreeMap<StreamDescriptor, Box<dyn StreamHandle>>>,
 }
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct StreamDescriptor {
+    pub id: u64,
+    pub ty: u32,
+}
+
+#[derive(Clone)]
+pub struct SharedState(Arc<State>);
 
 impl Deref for SharedState {
     type Target = State;

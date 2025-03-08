@@ -40,6 +40,12 @@ pub struct Audio {
 #[derive(Derivative)]
 #[derivative(Debug, Default)]
 pub struct Video {
+    #[derivative(Default(value = "1920"))]
+    pub width: u32,
+    #[derivative(Default(value = "1080"))]
+    pub height: u32,
+    #[derivative(Default(value = "30"))]
+    pub fps: u32,
     #[derivative(Debug = "ignore", Default(value = "Box::new(NullDevice::default())"))]
     pub device: Box<dyn VideoDevice>,
 }

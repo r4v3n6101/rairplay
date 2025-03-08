@@ -40,13 +40,15 @@ pub fn svc_router(cfg: Config) -> Router<()> {
             "/:media_id",
             any(|req: Request| async move {
                 match req.method().as_str() {
+                    // This is empty and useless
+                    "RECORD" => handlers::generic.call(req, state).await,
                     "SETUP" => handlers::setup.call(req, state).await,
                     "GET_PARAMETER" => handlers::get_parameter.call(req, state).await,
+                    "SET_PARAMETER" => handlers::set_parameter.call(req, state).await,
+                    "FLUSH" => handlers::flush.call(req, state).await,
                     "FLUSHBUFFERED" => handlers::flush_buffered.call(req, state).await,
                     "SETRATEANCHORTIME" => handlers::set_rate_anchor_time.call(req, state).await,
-                    // TODO : impl empty handlers
-                    //"SET_PARAMETER" => set_parameter::handler.call(req, state).await,
-                    //"TEARDOWN" => handlers::teardown.call(req, ()).await,
+                    "TEARDOWN" => handlers::teardown.call(req, state).await,
                     method => {
                         tracing::warn!(?method, path = ?req.uri(), "unknown method");
                         handlers::generic.call(req, state).await
