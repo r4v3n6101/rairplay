@@ -1,4 +1,4 @@
-use std::{io, net::SocketAddr};
+use std::{io, net::SocketAddr, time::Duration};
 
 use tokio::{
     io::AsyncReadExt,
@@ -17,7 +17,11 @@ pub struct Channel {
 }
 
 impl Channel {
-    pub async fn create(bind_addr: impl ToSocketAddrs, video_buf_size: u32) -> io::Result<Self> {
+    pub async fn create(
+        bind_addr: impl ToSocketAddrs,
+        video_buf_size: u32,
+        latency: Duration,
+    ) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;
 
@@ -58,7 +62,7 @@ async fn processor(mut stream: TcpStream, video_buf_size: u32) {
             break;
         }
 
-        let mut payload = vec![0u8; header.payload_len() as usize];
+        let mut payload = video_buf.allocate_buf(header.payload_len() as usize);
         if stream.read_exact(&mut payload).await.is_err() {
             break;
         }
