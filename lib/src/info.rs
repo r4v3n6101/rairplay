@@ -5,7 +5,10 @@ use derivative::Derivative;
 
 pub use macaddr::MacAddr6;
 
-use crate::device::{AudioDevice, NullDevice, VideoDevice};
+use crate::{
+    device::{AudioDevice, NullDevice, VideoDevice},
+    streaming,
+};
 
 #[derive(Debug, Derivative)]
 #[derivative(Default)]
@@ -42,7 +45,7 @@ pub struct Audio {
     #[derivative(Default(value = "Duration::from_millis(500)"))]
     pub max_jitter_depth: Duration,
     #[derivative(Debug = "ignore", Default(value = "Box::new(NullDevice::default())"))]
-    pub device: Box<dyn AudioDevice>,
+    pub device: Box<dyn AudioDevice<Channel = streaming::audio::Channel>>,
 }
 
 #[derive(Derivative)]
@@ -57,7 +60,7 @@ pub struct Video {
     #[derivative(Default(value = "8 * 1024 * 1024"))]
     pub buf_size: u32,
     #[derivative(Debug = "ignore", Default(value = "Box::new(NullDevice::default())"))]
-    pub device: Box<dyn VideoDevice>,
+    pub device: Box<dyn VideoDevice<Channel = streaming::video::Channel>>,
 }
 
 bitflags! {

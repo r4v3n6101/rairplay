@@ -1,7 +1,5 @@
 use std::{fmt, marker::PhantomData, time::Duration};
 
-pub type DataCallback<T> = Box<dyn FnMut() -> BufferedData<T>>;
-
 pub struct BufferedData<T> {
     pub wait_until_next: Option<Duration>,
     pub data: Vec<T>,
@@ -23,62 +21,74 @@ pub struct Codec {
 
 #[derive(Debug, Clone, Copy)]
 pub enum CodecKind {
-    PCM,
-    AAC,
-    OPUS,
-    ALAC,
+    Pcm,
+    Aac,
+    Opus,
+    Alac,
 }
 
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct VideoParams {}
 
-pub trait StreamHandle: Send + Sync + 'static {}
+pub struct AudioPacket;
+pub struct VideoPacket;
 
-pub trait Device: Send + Sync {
+pub trait DataChannel {
     type Content;
-    type Params;
 
-    fn create(
-        &self,
-        params: Self::Params,
-        data_callback: DataCallback<Self::Content>,
-    ) -> Box<dyn StreamHandle>;
+    fn pull_data(&self) -> BufferedData<Self::Content>;
 }
 
-pub trait AudioDevice: Device<Content = (), Params = AudioParams> {
+pub trait Device: Send + Sync {
+    type Params;
+    type Channel: DataChannel;
+
+    fn create(&self, params: Self::Params, channel: Self::Channel);
+}
+
+pub trait AudioDevice: Device<Params = AudioParams>
+where
+    Self::Channel: DataChannel<Content = AudioPacket>,
+{
     fn get_volume(&self) -> f32;
     fn set_volume(&self, value: f32);
 }
 
-pub trait VideoDevice: Device<Content = (), Params = VideoParams> {}
+pub trait VideoDevice: Device<Params = VideoParams>
+where
+    Self::Channel: DataChannel<Content = VideoPacket>,
+{
+}
 
-pub struct NullDevice<C, P>(PhantomData<(C, P)>);
+pub struct NullDevice<Params, Content, Channel>(PhantomData<(Params, Content, Channel)>);
 
-unsafe impl<C, P> Send for NullDevice<C, P> {}
-unsafe impl<C, P> Sync for NullDevice<C, P> {}
+unsafe impl<P, Con, Ch> Send for NullDevice<P, Con, Ch> {}
+unsafe impl<P, Con, Ch> Sync for NullDevice<P, Con, Ch> {}
 
-impl<C, P> Default for NullDevice<C, P> {
+impl<P, Con, Ch> Default for NullDevice<P, Con, Ch> {
     fn default() -> Self {
         Self(PhantomData)
     }
 }
 
-impl<C, P: fmt::Debug> Device for NullDevice<C, P> {
-    type Content = C;
-    type Params = P;
+impl<Params, Channel, Content> Device for NullDevice<Params, Content, Channel>
+where
+    Params: fmt::Debug,
+    Channel: DataChannel<Content = Content>,
+{
+    type Params = Params;
+    type Channel = Channel;
 
-    fn create(
-        &self,
-        params: Self::Params,
-        _: DataCallback<Self::Content>,
-    ) -> Box<dyn StreamHandle> {
+    fn create(&self, params: Self::Params, _: Self::Channel) {
         tracing::info!(?params, "created null stream");
-        Box::new(NullStream(()))
     }
 }
 
-impl AudioDevice for NullDevice<(), AudioParams> {
+impl<Channel> AudioDevice for NullDevice<AudioParams, AudioPacket, Channel>
+where
+    Channel: DataChannel<Content = AudioPacket>,
+{
     fn get_volume(&self) -> f32 {
         tracing::debug!("volume requested for null stream");
         0.0
@@ -89,14 +99,7 @@ impl AudioDevice for NullDevice<(), AudioParams> {
     }
 }
 
-impl VideoDevice for NullDevice<(), VideoParams> {}
-
-pub struct NullStream(());
-
-impl StreamHandle for NullStream {}
-
-impl Drop for NullStream {
-    fn drop(&mut self) {
-        tracing::info!("null stream closed");
-    }
+impl<Channel> VideoDevice for NullDevice<VideoParams, VideoPacket, Channel> where
+    Channel: DataChannel<Content = VideoPacket>
+{
 }

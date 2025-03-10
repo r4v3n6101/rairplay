@@ -2,11 +2,12 @@ use bytes::Bytes;
 use macaddr::MacAddr6;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy)]
-pub enum StreamId {
-    AudioRealtime = 96,
-    AudioBuffered = 103,
-    Video = 110,
+pub struct StreamId;
+
+impl StreamId {
+    pub const AUDIO_REALTIME: u32 = 96;
+    pub const AUDIO_BUFFERED: u32 = 103;
+    pub const VIDEO: u32 = 110;
 }
 
 #[derive(Serialize)]

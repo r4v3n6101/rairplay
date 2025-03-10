@@ -6,13 +6,7 @@ use crate::{
         pairing::legacy::{SIGNATURE_LENGTH, X25519_KEY_LEN},
     },
     device::{AudioParams, VideoParams},
-    streaming::{
-        audio::{
-            buffered::Channel as BufferedAudioChannel, realtime::Channel as RealtimeAudioChannel,
-        },
-        event::Channel as EventChannel,
-        video::Channel as VideoChannel,
-    },
+    streaming::{self, event::Channel as EventChannel},
     util::constants,
 };
 
@@ -30,7 +24,7 @@ use super::{
         StreamResponse, Teardown, VideoRequest,
     },
     extractor::BinaryPlist,
-    state::{SharedState, StreamDescriptor},
+    state::SharedState,
 };
 
 pub async fn generic(bytes: Bytes) {
@@ -155,17 +149,28 @@ pub async fn set_rate_anchor_time(
 }
 
 pub async fn teardown(State(state): State<SharedState>, BinaryPlist(req): BinaryPlist<Teardown>) {
-    let mut handles = state.stream_handles.lock().unwrap();
+    let mut audio_realtime_channels = state.audio_realtime_channels.lock().unwrap();
+    let mut audio_buffered_channels = state.audio_buffered_channels.lock().unwrap();
+    let mut video_channels = state.video_channels.lock().unwrap();
     if let Some(requests) = req.requests {
         for req in requests {
             if let Some(id) = req.id {
-                handles.retain(|k, _| k.id != id);
+                audio_realtime_channels.remove(&id);
+                audio_buffered_channels.remove(&id);
+                video_channels.remove(&id);
             } else {
-                handles.retain(|k, _| k.ty != req.ty);
+                match req.ty {
+                    StreamId::AUDIO_REALTIME => audio_realtime_channels.clear(),
+                    StreamId::AUDIO_BUFFERED => audio_buffered_channels.clear(),
+                    StreamId::VIDEO => video_channels.clear(),
+                    _ => {}
+                }
             }
         }
     } else {
-        handles.clear();
+        audio_realtime_channels.clear();
+        audio_buffered_channels.clear();
+        video_channels.clear();
     }
 }
 
@@ -225,11 +230,11 @@ async fn setup_streams(
     for stream in requests {
         let id = state.last_stream_id.fetch_add(1, Ordering::AcqRel);
         match match stream {
-            StreamRequest::AudioBuffered { request } => {
-                setup_buffered_audio(state.clone(), local_addr, request, id).await
-            }
             StreamRequest::AudioRealtime { request } => {
                 setup_realtime_audio(state.clone(), local_addr, request, id).await
+            }
+            StreamRequest::AudioBuffered { request } => {
+                setup_buffered_audio(state.clone(), local_addr, request, id).await
             }
             StreamRequest::Video { request } => {
                 setup_video(state.clone(), local_addr, request, id).await
@@ -241,64 +246,6 @@ async fn setup_streams(
     }
 
     BinaryPlist(SetupResponse::Streams { responses }).into_response()
-}
-
-async fn setup_buffered_audio(
-    state: SharedState,
-    local_addr: SocketAddr,
-    AudioBufferedRequest {
-        samples_per_frame,
-        audio_format,
-        audio_format_index,
-        ..
-    }: AudioBufferedRequest,
-    id: u64,
-) -> Result<StreamResponse, Response> {
-    let Some(codec) = constants::AUDIO_FORMATS
-        .get(audio_format_index.map_or_else(|| audio_format.trailing_zeros() as usize, usize::from))
-        .copied()
-    else {
-        tracing::error!(
-            %audio_format,
-            ?audio_format_index,
-            "unknown audio codec"
-        );
-        return Err(StatusCode::BAD_REQUEST.into_response());
-    };
-
-    match BufferedAudioChannel::create(
-        SocketAddr::new(local_addr.ip(), 0),
-        state.cfg.audio.buf_size,
-    )
-    .await
-    {
-        Ok(chan) => {
-            let stream = state.cfg.audio.device.create(
-                AudioParams {
-                    samples_per_frame,
-                    codec,
-                },
-                chan.data_callback(),
-            );
-            state.stream_handles.lock().unwrap().insert(
-                StreamDescriptor {
-                    id,
-                    ty: StreamId::AudioBuffered as u32,
-                },
-                stream,
-            );
-
-            Ok(StreamResponse::AudioBuffered {
-                id,
-                local_data_port: chan.local_addr().port(),
-                audio_buffer_size: chan.audio_buf_size(),
-            })
-        }
-        Err(err) => {
-            tracing::error!(%err, "buffered audio listener not created");
-            Err(StatusCode::INTERNAL_SERVER_ERROR.into_response())
-        }
-    }
 }
 
 async fn setup_realtime_audio(
@@ -325,40 +272,98 @@ async fn setup_realtime_audio(
     let min_jitter_depth = Duration::from_secs(min_latency_samples.into()) / sample_rate;
     let max_jitter_depth = Duration::from_secs(max_latency_samples.into()) / sample_rate;
 
-    match RealtimeAudioChannel::create(
+    match streaming::audio::RealtimeChannel::create(
         SocketAddr::new(local_addr.ip(), 0),
         SocketAddr::new(local_addr.ip(), 0),
         state.cfg.audio.buf_size,
+        sample_rate,
         min_jitter_depth.min(state.cfg.audio.min_jitter_depth),
         max_jitter_depth.max(state.cfg.audio.max_jitter_depth),
-        sample_rate,
     )
     .await
     {
         Ok(chan) => {
-            let stream = state.cfg.audio.device.create(
+            let local_data_port = chan.local_data_addr.port();
+            let local_control_port = chan.local_control_addr.port();
+            state.cfg.audio.device.create(
                 AudioParams {
                     samples_per_frame,
                     codec,
                 },
-                chan.data_callback(),
+                streaming::audio::Channel::from(chan.clone()),
             );
-            state.stream_handles.lock().unwrap().insert(
-                StreamDescriptor {
-                    id,
-                    ty: StreamId::AudioRealtime as u32,
-                },
-                stream,
-            );
+            state
+                .audio_realtime_channels
+                .lock()
+                .unwrap()
+                .insert(id, chan);
 
             Ok(StreamResponse::AudioRealtime {
                 id,
-                local_data_port: chan.local_data_addr().port(),
-                local_control_port: chan.local_control_addr().port(),
+                local_data_port,
+                local_control_port,
             })
         }
         Err(err) => {
             tracing::error!(%err, "realtime audio listener not created");
+            Err(StatusCode::INTERNAL_SERVER_ERROR.into_response())
+        }
+    }
+}
+
+async fn setup_buffered_audio(
+    state: SharedState,
+    local_addr: SocketAddr,
+    AudioBufferedRequest {
+        samples_per_frame,
+        audio_format,
+        audio_format_index,
+        ..
+    }: AudioBufferedRequest,
+    id: u64,
+) -> Result<StreamResponse, Response> {
+    let Some(codec) = constants::AUDIO_FORMATS
+        .get(audio_format_index.map_or_else(|| audio_format.trailing_zeros() as usize, usize::from))
+        .copied()
+    else {
+        tracing::error!(
+            %audio_format,
+            ?audio_format_index,
+            "unknown audio codec"
+        );
+        return Err(StatusCode::BAD_REQUEST.into_response());
+    };
+
+    match streaming::audio::BufferedChannel::create(
+        SocketAddr::new(local_addr.ip(), 0),
+        state.cfg.audio.buf_size,
+    )
+    .await
+    {
+        Ok(chan) => {
+            let local_data_port = chan.local_addr.port();
+            let audio_buffer_size = chan.audio_buf_size;
+            state.cfg.audio.device.create(
+                AudioParams {
+                    samples_per_frame,
+                    codec,
+                },
+                streaming::audio::Channel::from(chan.clone()),
+            );
+            state
+                .audio_buffered_channels
+                .lock()
+                .unwrap()
+                .insert(id, chan);
+
+            Ok(StreamResponse::AudioBuffered {
+                id,
+                local_data_port,
+                audio_buffer_size,
+            })
+        }
+        Err(err) => {
+            tracing::error!(%err, "buffered audio listener not created");
             Err(StatusCode::INTERNAL_SERVER_ERROR.into_response())
         }
     }
@@ -380,7 +385,7 @@ async fn setup_video(
     //     },
     // );
 
-    match VideoChannel::create(
+    match streaming::video::ChannelInner::create(
         SocketAddr::new(local_addr.ip(), 0),
         state.cfg.video.buf_size,
         Duration::from_millis(latency_ms.into()),
@@ -388,19 +393,16 @@ async fn setup_video(
     .await
     {
         Ok(chan) => {
-            let params = VideoParams {};
-            let stream = state.cfg.video.device.create(params, chan.data_callback());
-            state.stream_handles.lock().unwrap().insert(
-                StreamDescriptor {
-                    id,
-                    ty: StreamId::Video as u32,
-                },
-                stream,
+            let local_data_port = chan.local_addr.port();
+            state.cfg.video.device.create(
+                VideoParams {},
+                streaming::video::Channel::from(chan.clone()),
             );
+            state.video_channels.lock().unwrap().insert(id, chan);
 
             Ok(StreamResponse::Video {
                 id,
-                local_data_port: chan.local_addr().port(),
+                local_data_port,
             })
         }
         Err(err) => {

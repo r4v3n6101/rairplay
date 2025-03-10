@@ -8,8 +8,9 @@ use bytes::Bytes;
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{
-    crypto::pairing::legacy::State as LegacyPairing, device::StreamHandle, info::Config,
-    streaming::event::Channel as EventChannel,
+    crypto::pairing::legacy::State as LegacyPairing,
+    info::Config,
+    streaming::{self, event::Channel as EventChannel},
 };
 
 pub struct State {
@@ -18,15 +19,11 @@ pub struct State {
     pub fp_last_msg: Mutex<Bytes>,
     pub fp_key: Mutex<Bytes>,
     pub event_channel: AsyncMutex<Option<EventChannel>>,
-    pub stream_handles: Mutex<BTreeMap<StreamDescriptor, Box<dyn StreamHandle>>>,
+    pub audio_realtime_channels: Mutex<BTreeMap<u64, streaming::audio::RealtimeChannel>>,
+    pub audio_buffered_channels: Mutex<BTreeMap<u64, streaming::audio::BufferedChannel>>,
+    pub video_channels: Mutex<BTreeMap<u64, streaming::video::ChannelInner>>,
 
     pub cfg: Config,
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-pub struct StreamDescriptor {
-    pub id: u64,
-    pub ty: u32,
 }
 
 #[derive(Clone)]
@@ -50,7 +47,9 @@ impl SharedState {
             fp_last_msg: Mutex::default(),
             fp_key: Mutex::default(),
             event_channel: AsyncMutex::default(),
-            stream_handles: Mutex::default(),
+            audio_realtime_channels: Mutex::default(),
+            audio_buffered_channels: Mutex::default(),
+            video_channels: Mutex::default(),
 
             cfg,
         }))
