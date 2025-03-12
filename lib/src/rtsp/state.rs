@@ -1,15 +1,16 @@
 use std::{
-    collections::BTreeMap,
     ops::Deref,
-    sync::{atomic::AtomicU64, Arc, Mutex},
+    sync::{atomic::AtomicU64, Arc, Mutex, Weak},
 };
 
 use bytes::Bytes;
 use tokio::sync::Mutex as AsyncMutex;
+use weak_table::WeakValueHashMap;
 
 use crate::{
-    crypto::pairing::legacy::State as LegacyPairing, device::StreamHandle, info::Config,
-    streaming::event::Channel as EventChannel,
+    crypto::pairing::legacy::State as LegacyPairing,
+    info::Config,
+    streaming::{self, event::Channel as EventChannel},
 };
 
 pub struct State {
@@ -18,15 +19,13 @@ pub struct State {
     pub fp_last_msg: Mutex<Bytes>,
     pub fp_key: Mutex<Bytes>,
     pub event_channel: AsyncMutex<Option<EventChannel>>,
-    pub stream_handles: Mutex<BTreeMap<StreamDescriptor, Box<dyn StreamHandle>>>,
+    pub audio_realtime_channels:
+        Mutex<WeakValueHashMap<u64, Weak<streaming::audio::RealtimeSharedData>>>,
+    pub audio_buffered_channels:
+        Mutex<WeakValueHashMap<u64, Weak<streaming::audio::BufferedSharedData>>>,
+    pub video_channels: Mutex<WeakValueHashMap<u64, Weak<streaming::video::SharedData>>>,
 
     pub cfg: Config,
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-pub struct StreamDescriptor {
-    pub id: u64,
-    pub ty: u32,
 }
 
 #[derive(Clone)]
@@ -50,7 +49,9 @@ impl SharedState {
             fp_last_msg: Mutex::default(),
             fp_key: Mutex::default(),
             event_channel: AsyncMutex::default(),
-            stream_handles: Mutex::default(),
+            audio_realtime_channels: Mutex::default(),
+            audio_buffered_channels: Mutex::default(),
+            video_channels: Mutex::default(),
 
             cfg,
         }))

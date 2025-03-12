@@ -6,6 +6,7 @@ use tokio::{
     sync::Notify,
 };
 
+// TODO : rework
 pub struct Channel {
     local_addr: SocketAddr,
     shutdown: Arc<Notify>,

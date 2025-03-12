@@ -2,11 +2,12 @@ use bytes::Bytes;
 use macaddr::MacAddr6;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy)]
-pub enum StreamId {
-    AudioRealtime = 96,
-    AudioBuffered = 103,
-    Video = 110,
+pub struct StreamId;
+
+impl StreamId {
+    pub const AUDIO_REALTIME: u32 = 96;
+    pub const AUDIO_BUFFERED: u32 = 103;
+    pub const VIDEO: u32 = 110;
 }
 
 #[derive(Serialize)]
@@ -42,56 +43,60 @@ pub struct Display {
 
 #[derive(Deserialize)]
 pub struct FlushBufferedRequest {
-    #[serde(rename = "flushUntilSeq")]
-    pub flush_until_seqnum: Option<u32>,
-    #[serde(rename = "flushUntilTS")]
-    pub flush_until_timestamp: Option<u32>,
-    #[serde(rename = "flushFromSeq")]
-    pub flush_from_seqnum: Option<u32>,
-    #[serde(rename = "flushFromTS")]
-    pub flush_from_timestamp: Option<u32>,
+    // #[serde(rename = "flushUntilSeq")]
+    // pub flush_until_seqnum: Option<u32>,
+    // #[serde(rename = "flushUntilTS")]
+    // pub flush_until_timestamp: Option<u32>,
+    // #[serde(rename = "flushFromSeq")]
+    // pub flush_from_seqnum: Option<u32>,
+    // #[serde(rename = "flushFromTS")]
+    // pub flush_from_timestamp: Option<u32>,
 }
 
 #[derive(Deserialize)]
 pub struct SetRateAnchorTimeRequest {
-    pub rate: f32,
-    #[serde(rename = "rtpTime")]
-    pub anchor_rtp_timestamp: Option<u64>,
+    // pub rate: f32,
+    // #[serde(rename = "rtpTime")]
+    // pub anchor_rtp_timestamp: Option<u64>,
 }
 
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum SetupRequest {
     SenderInfo {
-        name: String,
-        model: String,
-        #[serde(rename = "deviceID")]
-        device_id: String,
-        #[serde(rename = "macAddress")]
-        mac_addr: String,
-
-        #[serde(rename = "osName")]
-        os_name: Option<String>,
-        #[serde(rename = "osVersion")]
-        os_version: Option<String>,
-        #[serde(rename = "osBuildVersion")]
-        os_build_version: Option<String>,
-
         #[serde(flatten)]
-        timing_proto: TimingProtocol,
-
-        #[serde(rename = "ekey")]
-        ekey: Bytes,
-        #[serde(rename = "eiv")]
-        eiv: Bytes,
-
-        #[serde(flatten)]
-        content: plist::Value,
+        info: SenderInfo,
     },
     Streams {
         #[serde(rename = "streams")]
         requests: Vec<StreamRequest>,
     },
+}
+
+#[derive(Deserialize)]
+pub struct SenderInfo {
+    pub name: String,
+    pub model: String,
+    #[serde(rename = "deviceID")]
+    pub device_id: String,
+    #[serde(rename = "macAddress")]
+    pub mac_addr: String,
+    #[serde(rename = "osName")]
+    pub os_name: Option<String>,
+    #[serde(rename = "osVersion")]
+    pub os_version: Option<String>,
+    #[serde(rename = "osBuildVersion")]
+    pub os_build_version: Option<String>,
+    #[serde(rename = "ekey")]
+    pub ekey: Bytes,
+    #[serde(rename = "eiv")]
+    pub eiv: Bytes,
+
+    #[serde(flatten)]
+    pub timing_proto: TimingProtocol,
+
+    #[serde(flatten)]
+    pub content: plist::Value,
 }
 
 #[derive(Deserialize)]
@@ -116,55 +121,73 @@ pub enum TimingProtocol {
 pub enum StreamRequest {
     #[serde(rename = 96)]
     AudioRealtime {
-        #[serde(rename = "ct")]
-        content_type: u8,
-        #[serde(rename = "audioFormat")]
-        audio_format: u32,
-        #[serde(rename = "spf")]
-        samples_per_frame: u32,
-        #[serde(rename = "sr")]
-        sample_rate: u32,
-        #[serde(rename = "latencyMin")]
-        latency_min: u32,
-        #[serde(rename = "latencyMax")]
-        latency_max: u32,
-        #[serde(rename = "shk")]
-        shared_key: Option<Bytes>,
-        #[serde(rename = "shiv")]
-        shared_iv: Option<Bytes>,
-        #[serde(rename = "controlPort")]
-        remote_control_port: u16,
+        #[serde(flatten)]
+        request: AudioRealtimeRequest,
     },
     #[serde(rename = 103)]
     AudioBuffered {
-        #[serde(rename = "ct")]
-        content_type: Option<u8>,
-        #[serde(rename = "audioFormat")]
-        audio_format: u32,
-        #[serde(rename = "audioFormatIndex")]
-        audio_format_index: Option<u8>,
-        #[serde(rename = "spf")]
-        samples_per_frame: u32,
-        #[serde(rename = "shk")]
-        shared_key: Option<Bytes>,
-        #[serde(rename = "shiv")]
-        shared_iv: Option<Bytes>,
-        #[serde(rename = "clientID")]
-        client_id: Option<String>,
+        #[serde(flatten)]
+        request: AudioBufferedRequest,
     },
     #[serde(rename = 110)]
     Video {
-        #[serde(rename = "streamConnectionID")]
-        stream_connection_id: i64,
-        #[serde(rename = "latencyMs")]
-        latency_ms: u32,
+        #[serde(flatten)]
+        request: VideoRequest,
     },
+}
+
+#[derive(Deserialize)]
+pub struct AudioRealtimeRequest {
+    #[serde(rename = "ct")]
+    pub content_type: u8,
+    #[serde(rename = "audioFormat")]
+    pub audio_format: u32,
+    #[serde(rename = "spf")]
+    pub samples_per_frame: u32,
+    #[serde(rename = "sr")]
+    pub sample_rate: u32,
+    #[serde(rename = "latencyMin")]
+    pub min_latency_samples: u32,
+    #[serde(rename = "latencyMax")]
+    pub max_latency_samples: u32,
+    #[serde(rename = "shk")]
+    pub shared_key: Option<Bytes>,
+    #[serde(rename = "shiv")]
+    pub shared_iv: Option<Bytes>,
+    #[serde(rename = "controlPort")]
+    pub remote_control_port: u16,
+}
+
+#[derive(Deserialize)]
+pub struct AudioBufferedRequest {
+    #[serde(rename = "ct")]
+    pub content_type: u8,
+    #[serde(rename = "audioFormat")]
+    pub audio_format: u32,
+    #[serde(rename = "audioFormatIndex")]
+    pub audio_format_index: Option<u8>,
+    #[serde(rename = "spf")]
+    pub samples_per_frame: u32,
+    #[serde(rename = "shk")]
+    pub shared_key: Option<Bytes>,
+    #[serde(rename = "shiv")]
+    pub shared_iv: Option<Bytes>,
+    #[serde(rename = "clientID")]
+    pub client_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct VideoRequest {
+    #[serde(rename = "streamConnectionID")]
+    pub stream_connection_id: i64,
+    #[serde(rename = "latencyMs")]
+    pub latency_ms: u32,
 }
 
 #[derive(Serialize)]
 #[serde(untagged)]
 pub enum SetupResponse {
-    General {
+    Info {
         #[serde(rename = "eventPort")]
         event_port: u16,
 
@@ -175,7 +198,7 @@ pub enum SetupResponse {
     },
     Streams {
         #[serde(rename = "streams")]
-        response: Vec<StreamResponse>,
+        responses: Vec<StreamResponse>,
     },
 }
 

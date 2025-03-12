@@ -1,72 +1,18 @@
-use std::{io, net::SocketAddr};
+use std::io;
 
-use tokio::{
-    io::AsyncReadExt,
-    net::{TcpListener, TcpStream, ToSocketAddrs},
-};
+use tokio::{io::AsyncReadExt, net::TcpStream};
 
-use crate::{
-    device::{BufferedData, DataCallback},
-    util::memory,
-};
+use crate::util::{io::is_io_error_fine, memory};
 
 use super::packet::{RtpHeader, RtpTrailer};
 
-pub struct Channel {
-    local_addr: SocketAddr,
-    audio_buf_size: u32,
-}
-
-impl Channel {
-    pub async fn create(bind_addr: impl ToSocketAddrs, audio_buf_size: u32) -> io::Result<Self> {
-        let listener = TcpListener::bind(bind_addr).await?;
-        let local_addr = listener.local_addr()?;
-
-        let task = async move {
-            match listener.accept().await {
-                Ok((stream, remote_addr)) => {
-                    tracing::info!(%local_addr, %remote_addr, "accepting connection");
-                    processor(stream, audio_buf_size).await;
-                    tracing::info!(%local_addr, %remote_addr, "buffered stream done");
-                }
-                Err(err) => {
-                    tracing::warn!(%err, %local_addr, "failed to accept connection");
-                }
-            }
-        };
-
-        tokio::spawn(task);
-
-        Ok(Channel {
-            local_addr,
-            audio_buf_size,
-        })
-    }
-
-    pub fn local_addr(&self) -> SocketAddr {
-        self.local_addr
-    }
-
-    pub fn audio_buf_size(&self) -> u32 {
-        self.audio_buf_size
-    }
-
-    pub fn data_callback(&self) -> DataCallback<()> {
-        // TODO : change to acquiring from jitter buffer or just plain buffer
-        Box::new(|| BufferedData {
-            wait_until_next: None,
-            data: Vec::new(),
-        })
-    }
-}
-
-async fn processor(mut stream: TcpStream, audio_buf_size: u32) {
+pub async fn processor(mut stream: TcpStream, audio_buf_size: u32) -> io::Result<()> {
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
 
-    // TODO : log break reasons
-    loop {
-        let Ok(pkt_len) = stream.read_u16().await else {
-            break;
+    let result = loop {
+        let pkt_len = match stream.read_u16().await {
+            Ok(pkt_len) => pkt_len,
+            Err(err) => break err,
         };
 
         // 2 is pkt_len size itself
@@ -87,7 +33,13 @@ async fn processor(mut stream: TcpStream, audio_buf_size: u32) {
             stream.read_exact(&mut *trailer).await,
         ) {
             (Ok(_), Ok(_), Ok(_)) => {}
-            _ => break,
+            (Err(err), _, _) | (_, Err(err), _) | (_, _, Err(err)) => break err,
         }
+    };
+
+    if is_io_error_fine(&result) {
+        Ok(())
+    } else {
+        Err(result)
     }
 }

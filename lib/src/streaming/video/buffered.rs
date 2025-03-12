@@ -1,68 +1,36 @@
-use std::{io, net::SocketAddr};
+use std::{io, time::Duration};
 
-use tokio::{
-    io::AsyncReadExt,
-    net::{TcpListener, TcpStream, ToSocketAddrs},
-};
+use tokio::{io::AsyncReadExt, net::TcpStream};
 
-use crate::{
-    device::{BufferedData, DataCallback},
-    util::memory,
-};
+use crate::util::{io::is_io_error_fine, memory};
 
 use super::packet::VideoHeader;
 
-pub struct Channel {
-    local_addr: SocketAddr,
-}
-
-impl Channel {
-    pub async fn create(bind_addr: impl ToSocketAddrs, video_buf_size: u32) -> io::Result<Self> {
-        let listener = TcpListener::bind(bind_addr).await?;
-        let local_addr = listener.local_addr()?;
-
-        tokio::spawn(async move {
-            match listener.accept().await {
-                Ok((stream, remote_addr)) => {
-                    tracing::info!(%local_addr, %remote_addr, "accepting connection");
-                    processor(stream, video_buf_size).await;
-                    tracing::info!(%local_addr, %remote_addr, "video stream done");
-                }
-                Err(err) => {
-                    tracing::warn!(%err, %local_addr, "failed to accept connection");
-                }
-            }
-        });
-
-        Ok(Channel { local_addr })
-    }
-
-    pub fn local_addr(&self) -> SocketAddr {
-        self.local_addr
-    }
-
-    pub fn data_callback(&self) -> DataCallback<()> {
-        // TODO
-        Box::new(|| BufferedData {
-            wait_until_next: None,
-            data: Vec::new(),
-        })
-    }
-}
-
-async fn processor(mut stream: TcpStream, video_buf_size: u32) {
+pub async fn processor(
+    mut stream: TcpStream,
+    video_buf_size: u32,
+    latency: Duration,
+) -> io::Result<()> {
     let mut video_buf = memory::BytesHunk::new(video_buf_size as usize);
-    loop {
+    let result = loop {
         let mut header = VideoHeader::empty();
-        if stream.read_exact(&mut *header).await.is_err() {
-            break;
+        match stream.read_exact(&mut *header).await {
+            Ok(_) => {}
+            Err(err) => break err,
         }
 
-        let mut payload = vec![0u8; header.payload_len() as usize];
-        if stream.read_exact(&mut payload).await.is_err() {
-            break;
+        let mut payload = video_buf.allocate_buf(header.payload_len() as usize);
+        match stream.read_exact(&mut payload).await {
+            Ok(_) => {}
+            Err(err) => break err,
         }
 
-        // TODO : decrypt video
+        // TODO : push video packets
+    };
+
+    if is_io_error_fine(&result) {
+        Ok(())
+    } else {
+        Err(result)
     }
 }

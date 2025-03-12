@@ -1,8 +1,8 @@
 #![warn(clippy::pedantic)]
 
 mod crypto;
-// TODO : change this name
 mod device;
+// TODO : rename it
 mod info;
 mod rtsp;
 mod streaming;
