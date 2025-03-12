@@ -1,8 +1,4 @@
-use std::net::SocketAddr;
-
-use rairplay::{svc_router, Config};
 use tokio::net::TcpListener;
-use tower::{service_fn, Service};
 use tracing::Level;
 
 mod discovery;
@@ -19,11 +15,7 @@ async fn main() {
     discovery::mdns_broadcast();
     transport::serve_with_rtsp_remap(
         svc_listener,
-        service_fn(move |addr| {
-            svc_router(Config::default())
-                .into_make_service_with_connect_info::<SocketAddr>()
-                .call(addr)
-        }),
+        rairplay::rtsp::RouterService::serve(rairplay::config::Config::default()),
     )
     .await;
 }

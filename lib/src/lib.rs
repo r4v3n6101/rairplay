@@ -1,11 +1,8 @@
 #![warn(clippy::pedantic)]
 
+pub mod config;
 mod crypto;
-mod device;
-// TODO : rename it
-mod info;
-mod rtsp;
-mod streaming;
+pub mod device;
+pub mod rtsp;
+pub mod streaming;
 mod util;
-
-pub use {info::*, rtsp::svc_router};

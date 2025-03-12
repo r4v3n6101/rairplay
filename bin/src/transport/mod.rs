@@ -24,10 +24,11 @@ where
     B: Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<BoxStdError>,
-    M: Service<SocketAddr, Response = S, Error = Infallible> + Clone + Send + 'static,
     S: Service<Request<Incoming>, Response = Response<B>> + Clone + Send + 'static,
     S::Future: Send,
     S::Error: Into<BoxStdError>,
+
+    M: Service<SocketAddr, Response = S, Error = Infallible>,
 {
     loop {
         let local_addr = match tcp_listener.local_addr() {
