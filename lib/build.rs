@@ -3,5 +3,5 @@ fn main() {
     for entry in glob::glob(&format!("{}/*.c", env!("FAIRPLAY3_SRC"))).unwrap() {
         build.file(entry.unwrap());
     }
-    build.compile("fairplay3");
+    build.cargo_warnings(false).compile("fairplay3");
 }

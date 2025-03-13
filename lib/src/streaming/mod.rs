@@ -1,4 +1,6 @@
-use crate::device::{AudioPacket, BufferedData, DataChannel, VideoPacket};
+use std::io;
+
+use crate::device::{AudioPacket, DataChannel, PullResult, VideoPacket};
 
 pub(crate) mod audio;
 pub(crate) mod event;
@@ -19,9 +21,10 @@ pub struct VideoChannel {
 
 impl DataChannel for AudioChannel {
     type Content = AudioPacket;
+    type Error<'a> = &'a io::Error;
 
-    fn pull_data(&self) -> BufferedData<Self::Content> {
-        match &self.inner {
+    fn pull_data(&mut self) -> PullResult<Self::Content, Self::Error<'_>> {
+        match &mut self.inner {
             AudioChannelInner::Realtime(chan) => chan.pull_data(),
             AudioChannelInner::Buffered(chan) => chan.pull_data(),
         }
@@ -30,8 +33,9 @@ impl DataChannel for AudioChannel {
 
 impl DataChannel for VideoChannel {
     type Content = VideoPacket;
+    type Error<'a> = ();
 
-    fn pull_data(&self) -> BufferedData<Self::Content> {
+    fn pull_data(&mut self) -> PullResult<Self::Content, Self::Error<'_>> {
         self.inner.pull_data()
     }
 }

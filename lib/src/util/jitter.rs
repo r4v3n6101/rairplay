@@ -96,13 +96,13 @@ impl<T> Buffer<T> {
         });
     }
 
-    pub fn pop(&mut self) -> Output<T> {
+    pub fn pop(&mut self) -> (Duration, Vec<T>) {
         let now = Instant::now();
         let mut data = Vec::new();
         while let Some(entry) = self.entries.peek_mut() {
             let pkt_ready = entry.arrival_time + self.buf_depth;
             if let Some(wait_time) = pkt_ready.checked_duration_since(now) {
-                return Output { wait_time, data };
+                return (wait_time, data);
             }
 
             let entry = PeekMut::pop(entry);
@@ -110,14 +110,10 @@ impl<T> Buffer<T> {
             data.push(entry.value);
         }
 
-        Output {
-            wait_time: self.buf_depth,
-            data,
-        }
+        (self.buf_depth, data)
     }
-}
 
-pub struct Output<T> {
-    pub wait_time: Duration,
-    pub data: Vec<T>,
+    pub fn pop_remaining(self) -> Vec<T> {
+        self.entries.into_iter().map(|e| e.value).collect()
+    }
 }

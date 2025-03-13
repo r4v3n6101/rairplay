@@ -7,12 +7,13 @@ edition = "2021"
 derivative = "2.2.0"
 tracing = "0.1"
 thiserror = "1"
+weak-table = "0.3.2"
 
 serde = { version = "1", features = ["derive"] }
 macaddr = { version = "1", features = ["serde"] }
 bytes = { version = "1", features = ["serde"] }
 bitflags = { version = "2", features = ["serde"] }
-weak-table = "0.3.2"
+plist = "1"
 
 ring = "0.17"
 aes = "0.8"
@@ -23,8 +24,7 @@ tower = "0.5.2"
 tower-http = { version = "0.6.2", features = ["propagate-header"] }
 tokio = { version = "1.44", features = ["rt", "net", "io-util"] }
 axum = { version = "0.8.1", default-features = false, features = ["tokio"] }
-plist = "1"
-
+want = "0.3.1"
 
 [build-dependencies]
 glob = "0.3.1"

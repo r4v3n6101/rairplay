@@ -1,9 +1,15 @@
-use std::{io, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    io,
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use tokio::net::{TcpListener, ToSocketAddrs, UdpSocket};
+use want::Taker;
 
 use crate::{
-    device::{AudioPacket, BufferedData, DataChannel},
+    device::{AudioPacket, DataChannel, PullResult},
     util::sync::CancellationHandle,
 };
 
@@ -15,11 +21,12 @@ pub struct RealtimeChannel {
     pub local_data_addr: SocketAddr,
     pub local_control_addr: SocketAddr,
     pub shared_data: Arc<RealtimeSharedData>,
+    tk: Taker,
 }
 
 pub struct RealtimeSharedData {
     pub handle: CancellationHandle<io::Result<()>>,
-    pkt_buf: realtime::PacketBuf,
+    buffer: Mutex<Option<realtime::Data>>,
 }
 
 pub struct BufferedChannel {
@@ -46,9 +53,14 @@ impl RealtimeChannel {
 
         let local_data_addr = data_socket.local_addr()?;
         let local_control_addr = control_socket.local_addr()?;
+        let (gv, tk) = want::new();
         let shared_data = Arc::new(RealtimeSharedData {
             handle: CancellationHandle::default(),
-            pkt_buf: realtime::PacketBuf::new(min_depth, max_depth),
+            buffer: Mutex::new(Some(realtime::Data {
+                // Wait a little before first data will be collected
+                wait_time: min_depth,
+                data: vec![],
+            })),
         });
 
         {
@@ -59,7 +71,10 @@ impl RealtimeChannel {
                         data_socket,
                         audio_buf_size,
                         sample_rate,
-                        &shared_data.pkt_buf,
+                        min_depth,
+                        max_depth,
+                        gv,
+                        &shared_data.buffer,
                     );
                     let control = realtime::control_processor(control_socket);
 
@@ -67,6 +82,8 @@ impl RealtimeChannel {
                     first.or(second)
                 };
 
+                // tokio will handle it with boxing
+                #[allow(clippy::large_futures)]
                 shared_data.handle.wrap_task(task).await;
             });
         }
@@ -75,6 +92,7 @@ impl RealtimeChannel {
             local_data_addr,
             local_control_addr,
             shared_data,
+            tk,
         })
     }
 }
@@ -109,6 +127,37 @@ impl BufferedChannel {
     }
 }
 
+impl DataChannel for RealtimeChannel {
+    type Content = AudioPacket;
+    type Error<'a> = &'a io::Error;
+
+    fn pull_data(&mut self) -> PullResult<Self::Content, Self::Error<'_>> {
+        match self.shared_data.buffer.lock().unwrap().take() {
+            Some(buf) => PullResult::Data {
+                data: buf.data,
+                wait_until_next: buf.wait_time,
+            },
+            None => match self.shared_data.handle.result() {
+                Some(Ok(())) => PullResult::Finished,
+                Some(Err(err)) => PullResult::Error(err),
+                None => {
+                    self.tk.want();
+                    PullResult::Requested
+                }
+            },
+        }
+    }
+}
+
+impl DataChannel for BufferedChannel {
+    type Content = AudioPacket;
+    type Error<'a> = &'a io::Error;
+
+    fn pull_data(&mut self) -> PullResult<Self::Content, Self::Error<'_>> {
+        PullResult::Finished
+    }
+}
+
 impl Drop for RealtimeChannel {
     fn drop(&mut self) {
         self.shared_data.handle.close();
@@ -118,28 +167,5 @@ impl Drop for RealtimeChannel {
 impl Drop for BufferedChannel {
     fn drop(&mut self) {
         self.shared_data.handle.close();
-    }
-}
-
-impl DataChannel for RealtimeChannel {
-    type Content = AudioPacket;
-
-    fn pull_data(&self) -> BufferedData<Self::Content> {
-        let (data, wait_time) = self.shared_data.pkt_buf.pop();
-        BufferedData {
-            data: vec![],
-            wait_until_next: Some(wait_time),
-        }
-    }
-}
-
-impl DataChannel for BufferedChannel {
-    type Content = AudioPacket;
-
-    fn pull_data(&self) -> BufferedData<Self::Content> {
-        BufferedData {
-            data: vec![],
-            wait_until_next: None,
-        }
     }
 }

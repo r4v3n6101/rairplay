@@ -1,8 +1,43 @@
 use std::{fmt, marker::PhantomData, time::Duration};
 
-pub struct BufferedData<T> {
-    pub wait_until_next: Option<Duration>,
-    pub data: Vec<T>,
+pub enum PullResult<T, E> {
+    Data {
+        data: Vec<T>,
+        wait_until_next: Duration,
+    },
+    Requested,
+    Finished,
+    Error(E),
+}
+
+pub trait DataChannel {
+    type Content;
+    type Error<'a>
+    where
+        Self: 'a;
+
+    fn pull_data(&mut self) -> PullResult<Self::Content, Self::Error<'_>>;
+}
+
+pub trait Device: Send + Sync {
+    type Params;
+    type Channel: DataChannel;
+
+    fn create(&self, params: Self::Params, channel: Self::Channel);
+}
+
+pub trait AudioDevice: Device<Params = AudioParams>
+where
+    Self::Channel: DataChannel<Content = AudioPacket>,
+{
+    fn get_volume(&self) -> f32;
+    fn set_volume(&self, value: f32);
+}
+
+pub trait VideoDevice: Device<Params = VideoParams>
+where
+    Self::Channel: DataChannel<Content = VideoPacket>,
+{
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -33,33 +68,6 @@ pub struct VideoParams {}
 
 pub struct AudioPacket;
 pub struct VideoPacket;
-
-pub trait DataChannel {
-    type Content;
-
-    fn pull_data(&self) -> BufferedData<Self::Content>;
-}
-
-pub trait Device: Send + Sync {
-    type Params;
-    type Channel: DataChannel;
-
-    fn create(&self, params: Self::Params, channel: Self::Channel);
-}
-
-pub trait AudioDevice: Device<Params = AudioParams>
-where
-    Self::Channel: DataChannel<Content = AudioPacket>,
-{
-    fn get_volume(&self) -> f32;
-    fn set_volume(&self, value: f32);
-}
-
-pub trait VideoDevice: Device<Params = VideoParams>
-where
-    Self::Channel: DataChannel<Content = VideoPacket>,
-{
-}
 
 pub struct NullDevice<Params, Content, Channel>(PhantomData<(Params, Content, Channel)>);
 

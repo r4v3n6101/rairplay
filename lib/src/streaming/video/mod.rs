@@ -3,7 +3,7 @@ use std::{io, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::net::{TcpListener, ToSocketAddrs};
 
 use crate::{
-    device::{BufferedData, DataChannel, VideoPacket},
+    device::{DataChannel, PullResult, VideoPacket},
     util::sync::CancellationHandle,
 };
 
@@ -53,19 +53,17 @@ impl Channel {
     }
 }
 
-impl Drop for Channel {
-    fn drop(&mut self) {
-        self.shared_data.handle.close();
+impl DataChannel for Channel {
+    type Content = VideoPacket;
+    type Error<'a> = ();
+
+    fn pull_data(&mut self) -> PullResult<Self::Content, Self::Error<'_>> {
+        PullResult::Finished
     }
 }
 
-impl DataChannel for Channel {
-    type Content = VideoPacket;
-
-    fn pull_data(&self) -> BufferedData<Self::Content> {
-        BufferedData {
-            wait_until_next: None,
-            data: vec![],
-        }
+impl Drop for Channel {
+    fn drop(&mut self) {
+        self.shared_data.handle.close();
     }
 }
