@@ -1,12 +1,16 @@
-use std::{net::SocketAddr, sync::atomic::Ordering, time::Duration};
+use std::{
+    net::SocketAddr,
+    sync::{atomic::Ordering, Arc, Weak},
+    time::Duration,
+};
 
 use crate::{
     crypto::{
         fairplay,
         pairing::legacy::{SIGNATURE_LENGTH, X25519_KEY_LEN},
     },
-    device::{AudioParams, VideoParams},
-    streaming::{self, event::Channel as EventChannel},
+    device::{AudioDevice, AudioParams, ChannelHandle, VideoDevice, VideoParams},
+    streaming::{self, audio, event::Channel as EventChannel, video},
     util::constants,
 };
 
@@ -31,7 +35,7 @@ pub async fn generic(bytes: Bytes) {
     tracing::trace!(?bytes, "generic handler");
 }
 
-pub async fn info(State(state): State<SharedState>) -> impl IntoResponse {
+pub async fn info<A, V>(State(state): State<SharedState<A, V>>) -> impl IntoResponse {
     const PROTOVERS: &str = "1.1";
     const SRCVERS: &str = "770.8.1";
 
@@ -61,11 +65,14 @@ pub async fn info(State(state): State<SharedState>) -> impl IntoResponse {
 
 /// Don't really need request body here, because it duplicates signing key of counterparty got in
 /// the second request.
-pub async fn pair_setup(State(state): State<SharedState>) -> impl IntoResponse {
+pub async fn pair_setup<A, V>(State(state): State<SharedState<A, V>>) -> impl IntoResponse {
     state.pairing.lock().unwrap().verifying_key()
 }
 
-pub async fn pair_verify(State(state): State<SharedState>, body: Bytes) -> impl IntoResponse {
+pub async fn pair_verify<A, V>(
+    State(state): State<SharedState<A, V>>,
+    body: Bytes,
+) -> impl IntoResponse {
     if body.len() < 4 + 2 * X25519_KEY_LEN {
         tracing::error!(len=%body.len(), "malformed data for legacy pairing");
         return Err(StatusCode::BAD_REQUEST);
@@ -104,7 +111,10 @@ pub async fn pair_verify(State(state): State<SharedState>, body: Bytes) -> impl 
     }
 }
 
-pub async fn fp_setup(State(state): State<SharedState>, body: Bytes) -> impl IntoResponse {
+pub async fn fp_setup<A, V>(
+    State(state): State<SharedState<A, V>>,
+    body: Bytes,
+) -> impl IntoResponse {
     fairplay::decode_buf(body.clone())
         .inspect(|_| {
             // Magic number somehow. Hate em.
@@ -116,7 +126,10 @@ pub async fn fp_setup(State(state): State<SharedState>, body: Bytes) -> impl Int
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-pub async fn get_parameter(State(state): State<SharedState>, body: String) -> impl IntoResponse {
+pub async fn get_parameter<A: AudioDevice, V>(
+    State(state): State<SharedState<A, V>>,
+    body: String,
+) -> impl IntoResponse {
     match body.as_str() {
         "volume\r\n" => {
             let volume = state.cfg.audio.device.get_volume();
@@ -136,19 +149,14 @@ pub async fn set_parameter(body: Bytes) {}
 
 pub async fn flush() {}
 
-pub async fn flush_buffered(
-    State(state): State<SharedState>,
-    BinaryPlist(req): BinaryPlist<FlushBufferedRequest>,
-) {
-}
+pub async fn flush_buffered(BinaryPlist(req): BinaryPlist<FlushBufferedRequest>) {}
 
-pub async fn set_rate_anchor_time(
-    State(state): State<SharedState>,
-    BinaryPlist(req): BinaryPlist<SetRateAnchorTimeRequest>,
-) {
-}
+pub async fn set_rate_anchor_time(BinaryPlist(req): BinaryPlist<SetRateAnchorTimeRequest>) {}
 
-pub async fn teardown(State(state): State<SharedState>, BinaryPlist(req): BinaryPlist<Teardown>) {
+pub async fn teardown<A, V>(
+    State(state): State<SharedState<A, V>>,
+    BinaryPlist(req): BinaryPlist<Teardown>,
+) {
     let mut audio_realtime_channels = state.audio_realtime_channels.lock().unwrap();
     let mut audio_buffered_channels = state.audio_buffered_channels.lock().unwrap();
     let mut video_channels = state.video_channels.lock().unwrap();
@@ -156,40 +164,36 @@ pub async fn teardown(State(state): State<SharedState>, BinaryPlist(req): Binary
         for req in requests {
             if let Some(id) = req.id {
                 if let Some(chan) = audio_realtime_channels.remove(&id) {
-                    chan.handle.close();
+                    chan.close();
                 }
                 if let Some(chan) = audio_buffered_channels.remove(&id) {
-                    chan.handle.close();
+                    chan.close();
                 }
                 if let Some(chan) = video_channels.remove(&id) {
-                    chan.handle.close();
+                    chan.close();
                 }
             } else {
                 match req.ty {
-                    StreamId::AUDIO_REALTIME => audio_realtime_channels
-                        .drain()
-                        .for_each(|(_, c)| c.handle.close()),
-                    StreamId::AUDIO_BUFFERED => audio_buffered_channels
-                        .drain()
-                        .for_each(|(_, c)| c.handle.close()),
-                    StreamId::VIDEO => video_channels.drain().for_each(|(_, c)| c.handle.close()),
+                    StreamId::AUDIO_REALTIME => {
+                        audio_realtime_channels.drain().for_each(|(_, c)| c.close());
+                    }
+                    StreamId::AUDIO_BUFFERED => {
+                        audio_buffered_channels.drain().for_each(|(_, c)| c.close());
+                    }
+                    StreamId::VIDEO => video_channels.drain().for_each(|(_, c)| c.close()),
                     _ => {}
                 }
             }
         }
     } else {
-        audio_realtime_channels
-            .drain()
-            .for_each(|(_, c)| c.handle.close());
-        audio_buffered_channels
-            .drain()
-            .for_each(|(_, c)| c.handle.close());
-        video_channels.drain().for_each(|(_, c)| c.handle.close());
+        audio_realtime_channels.drain().for_each(|(_, c)| c.close());
+        audio_buffered_channels.drain().for_each(|(_, c)| c.close());
+        video_channels.drain().for_each(|(_, c)| c.close());
     }
 }
 
-pub async fn setup(
-    state: State<SharedState>,
+pub async fn setup<A: AudioDevice, V: VideoDevice>(
+    state: State<SharedState<A, V>>,
     connect_info: ConnectInfo<SocketAddr>,
     BinaryPlist(req): BinaryPlist<SetupRequest>,
 ) -> impl IntoResponse {
@@ -203,8 +207,8 @@ pub async fn setup(
     }
 }
 
-async fn setup_info(
-    State(state): State<SharedState>,
+async fn setup_info<A, V>(
+    State(state): State<SharedState<A, V>>,
     ConnectInfo(local_addr): ConnectInfo<SocketAddr>,
     SenderInfo { ekey, .. }: SenderInfo,
 ) -> impl IntoResponse {
@@ -235,8 +239,8 @@ async fn setup_info(
     }))
 }
 
-async fn setup_streams(
-    State(state): State<SharedState>,
+async fn setup_streams<A: AudioDevice, V: VideoDevice>(
+    State(state): State<SharedState<A, V>>,
     ConnectInfo(local_addr): ConnectInfo<SocketAddr>,
     requests: Vec<StreamRequest>,
 ) -> Response {
@@ -262,14 +266,11 @@ async fn setup_streams(
     BinaryPlist(SetupResponse::Streams { responses }).into_response()
 }
 
-async fn setup_realtime_audio(
-    state: SharedState,
+async fn setup_realtime_audio<A: AudioDevice, V>(
+    state: SharedState<A, V>,
     local_addr: SocketAddr,
     AudioRealtimeRequest {
         audio_format,
-        min_latency_samples,
-        max_latency_samples,
-        sample_rate,
         samples_per_frame,
         ..
     }: AudioRealtimeRequest,
@@ -283,16 +284,20 @@ async fn setup_realtime_audio(
         return Err(StatusCode::BAD_REQUEST.into_response());
     };
 
-    let min_jitter_depth = Duration::from_secs(min_latency_samples.into()) / sample_rate;
-    let max_jitter_depth = Duration::from_secs(max_latency_samples.into()) / sample_rate;
-
+    let shared_data = Arc::new(audio::RealtimeSharedData::default());
+    let stream = state.cfg.audio.device.create(
+        AudioParams {
+            samples_per_frame,
+            codec,
+        },
+        Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
+    );
     match streaming::audio::RealtimeChannel::create(
         SocketAddr::new(local_addr.ip(), 0),
         SocketAddr::new(local_addr.ip(), 0),
         state.cfg.audio.buf_size,
-        sample_rate,
-        min_jitter_depth.min(state.cfg.audio.min_jitter_depth),
-        max_jitter_depth.max(state.cfg.audio.max_jitter_depth),
+        shared_data.clone(),
+        stream,
     )
     .await
     {
@@ -303,14 +308,7 @@ async fn setup_realtime_audio(
                 .audio_realtime_channels
                 .lock()
                 .unwrap()
-                .insert(id, chan.shared_data.clone());
-            state.cfg.audio.device.create(
-                AudioParams {
-                    samples_per_frame,
-                    codec,
-                },
-                streaming::AudioChannel::from(chan),
-            );
+                .insert(id, shared_data);
 
             Ok(StreamResponse::AudioRealtime {
                 id,
@@ -325,8 +323,8 @@ async fn setup_realtime_audio(
     }
 }
 
-async fn setup_buffered_audio(
-    state: SharedState,
+async fn setup_buffered_audio<A: AudioDevice, V>(
+    state: SharedState<A, V>,
     local_addr: SocketAddr,
     AudioBufferedRequest {
         samples_per_frame,
@@ -348,9 +346,20 @@ async fn setup_buffered_audio(
         return Err(StatusCode::BAD_REQUEST.into_response());
     };
 
+    let shared_data = Arc::new(audio::BufferedSharedData::default());
+    let stream = state.cfg.audio.device.create(
+        AudioParams {
+            samples_per_frame,
+            codec,
+        },
+        Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
+    );
+
     match streaming::audio::BufferedChannel::create(
         SocketAddr::new(local_addr.ip(), 0),
         state.cfg.audio.buf_size,
+        shared_data.clone(),
+        stream,
     )
     .await
     {
@@ -361,14 +370,7 @@ async fn setup_buffered_audio(
                 .audio_buffered_channels
                 .lock()
                 .unwrap()
-                .insert(id, chan.shared_data.clone());
-            state.cfg.audio.device.create(
-                AudioParams {
-                    samples_per_frame,
-                    codec,
-                },
-                streaming::AudioChannel::from(chan),
-            );
+                .insert(id, shared_data);
 
             Ok(StreamResponse::AudioBuffered {
                 id,
@@ -383,8 +385,8 @@ async fn setup_buffered_audio(
     }
 }
 
-async fn setup_video(
-    state: SharedState,
+async fn setup_video<A, V: VideoDevice>(
+    state: SharedState<A, V>,
     local_addr: SocketAddr,
     VideoRequest { latency_ms, .. }: VideoRequest,
     id: u64,
@@ -399,25 +401,25 @@ async fn setup_video(
     //     },
     // );
 
+    let shared_data = Arc::new(video::SharedData::default());
+    let stream = state.cfg.video.device.create(
+        VideoParams {},
+        Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
+    );
+
     match streaming::video::Channel::create(
         SocketAddr::new(local_addr.ip(), 0),
         state.cfg.video.buf_size,
         Duration::from_millis(latency_ms.into()),
+        shared_data.clone(),
+        stream,
     )
     .await
     {
         Ok(chan) => {
             let local_data_port = chan.local_addr.port();
-            state
-                .video_channels
-                .lock()
-                .unwrap()
-                .insert(id, chan.shared_data.clone());
-            state
-                .cfg
-                .video
-                .device
-                .create(VideoParams {}, streaming::VideoChannel::from(chan));
+
+            state.video_channels.lock().unwrap().insert(id, shared_data);
 
             Ok(StreamResponse::Video {
                 id,

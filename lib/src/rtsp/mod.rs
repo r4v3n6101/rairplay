@@ -14,7 +14,10 @@ use state::SharedState;
 use tower::Service;
 use tower_http::propagate_header::PropagateHeaderLayer;
 
-use crate::config::Config;
+use crate::{
+    config::Config,
+    device::{AudioDevice, VideoDevice},
+};
 
 mod dto;
 mod extractor;
@@ -26,7 +29,9 @@ pub struct RouterService {
 }
 
 impl RouterService {
-    pub fn serve(cfg: Config) -> Self {
+    pub fn serve<ADev: AudioDevice + 'static, VDev: VideoDevice + 'static>(
+        cfg: Config<ADev, VDev>,
+    ) -> Self {
         let state = SharedState::with_config(cfg);
         let inner = Router::new()
             // Heartbeat

@@ -1,44 +1,38 @@
-use std::{fmt, marker::PhantomData, time::Duration};
+use std::sync::Weak;
 
-pub enum PullResult<T, E> {
-    Data {
-        data: Vec<T>,
-        wait_until_next: Duration,
-    },
-    Requested,
-    Finished,
-    Error(E),
-}
+mod null;
 
-pub trait DataChannel {
-    type Content;
-    type Error<'a>
-    where
-        Self: 'a;
-
-    fn pull_data(&mut self) -> PullResult<Self::Content, Self::Error<'_>>;
-}
-
-pub trait Device: Send + Sync {
+pub trait Device: Send + Sync + 'static {
     type Params;
-    type Channel: DataChannel;
+    type Stream: Stream;
 
-    fn create(&self, params: Self::Params, channel: Self::Channel);
+    fn create(&self, params: Self::Params, handle: Weak<dyn ChannelHandle>) -> Self::Stream;
 }
 
-pub trait AudioDevice: Device<Params = AudioParams>
-where
-    Self::Channel: DataChannel<Content = AudioPacket>,
-{
+pub trait ChannelHandle: Send + Sync + 'static {
+    fn close(&self);
+}
+
+pub trait Stream: Send + Sync + 'static {
+    type Content;
+
+    fn on_data(&self, content: Self::Content);
+    fn on_ok(self);
+    fn on_err(self, err: ());
+}
+
+pub trait AudioDevice: Device<Params = AudioParams, Stream: AudioStream> {
     fn get_volume(&self) -> f32;
     fn set_volume(&self, value: f32);
 }
 
-pub trait VideoDevice: Device<Params = VideoParams>
-where
-    Self::Channel: DataChannel<Content = VideoPacket>,
-{
-}
+pub trait VideoDevice: Device<Params = VideoParams, Stream: VideoStream> {}
+
+pub trait AudioStream: Stream<Content = AudioPacket> {}
+impl<T> AudioStream for T where T: Stream<Content = AudioPacket> {}
+
+pub trait VideoStream: Stream<Content = VideoPacket> {}
+impl<T> VideoStream for T where T: Stream<Content = VideoPacket> {}
 
 #[derive(Debug, Clone, Copy)]
 pub struct AudioParams {
@@ -66,48 +60,7 @@ pub enum CodecKind {
 #[non_exhaustive]
 pub struct VideoParams {}
 
+#[derive(Debug)]
 pub struct AudioPacket;
+#[derive(Debug)]
 pub struct VideoPacket;
-
-pub struct NullDevice<Params, Content, Channel>(PhantomData<(Params, Content, Channel)>);
-
-unsafe impl<P, Con, Ch> Send for NullDevice<P, Con, Ch> {}
-unsafe impl<P, Con, Ch> Sync for NullDevice<P, Con, Ch> {}
-
-impl<P, Con, Ch> Default for NullDevice<P, Con, Ch> {
-    fn default() -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<Params, Channel, Content> Device for NullDevice<Params, Content, Channel>
-where
-    Params: fmt::Debug,
-    Channel: DataChannel<Content = Content>,
-{
-    type Params = Params;
-    type Channel = Channel;
-
-    fn create(&self, params: Self::Params, _: Self::Channel) {
-        tracing::info!(?params, "created null stream");
-    }
-}
-
-impl<Channel> AudioDevice for NullDevice<AudioParams, AudioPacket, Channel>
-where
-    Channel: DataChannel<Content = AudioPacket>,
-{
-    fn get_volume(&self) -> f32 {
-        tracing::debug!("volume requested for null stream");
-        0.0
-    }
-
-    fn set_volume(&self, value: f32) {
-        tracing::debug!(%value, "volume changed for null stream");
-    }
-}
-
-impl<Channel> VideoDevice for NullDevice<VideoParams, VideoPacket, Channel> where
-    Channel: DataChannel<Content = VideoPacket>
-{
-}

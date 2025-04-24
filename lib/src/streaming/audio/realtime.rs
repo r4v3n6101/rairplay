@@ -1,11 +1,10 @@
-use std::{io, sync::Mutex, time::Duration};
+use std::{io, time::Duration};
 
 use tokio::net::UdpSocket;
-use want::Giver;
 
 use crate::{
-    device::AudioPacket,
-    util::{io::is_io_error_fine, jitter, memory},
+    device::{AudioPacket, AudioStream},
+    util::{io::is_io_error_fine, memory},
 };
 
 use super::packet::{RtcpHeader, RtpHeader};
@@ -18,60 +17,37 @@ pub struct Data {
 pub async fn data_processor(
     data_socket: UdpSocket,
     audio_buf_size: u32,
-    sample_rate: u32,
-    min_depth: Duration,
-    max_depth: Duration,
-
-    mut gv: Giver,
-    output: &Mutex<Option<Data>>,
+    stream: &impl AudioStream,
 ) -> io::Result<()> {
     const PKT_BUF_SIZE: usize = 8 * 1024;
 
     let mut pkt_buf = [0u8; PKT_BUF_SIZE];
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
-    let mut pkts = jitter::Buffer::<AudioPacket>::new(min_depth, max_depth);
     let result = loop {
-        tokio::select! {
-            _ = gv.want() => {
-                let (wait_time, data) = pkts.pop();
-                output.lock().unwrap().replace(Data {
-                    wait_time,
-                    data
-                });
-                gv.give();
-            },
-            else => {
-                let pkt_len = match data_socket.recv(&mut pkt_buf).await {
-                    Ok(pkt_len) => pkt_len,
-                    Err(err) => break err,
-                };
+        let pkt_len = match data_socket.recv(&mut pkt_buf).await {
+            Ok(pkt_len) => pkt_len,
+            Err(err) => break err,
+        };
 
-                if pkt_len < RtpHeader::SIZE {
-                    tracing::warn!(%pkt_len, "malformed realtime rtp packet");
-                    continue;
-                }
-
-                let mut rtp_header = RtpHeader::empty();
-                rtp_header.copy_from_slice(&pkt_buf[..RtpHeader::SIZE]);
-
-                let mut buf = audio_buf.allocate_buf(pkt_len - RtpHeader::SIZE);
-                buf.copy_from_slice(&pkt_buf[RtpHeader::SIZE..pkt_len]);
-
-                pkts.insert(
-                    rtp_header.seqnum().into(),
-                    (Duration::from_secs(rtp_header.timestamp().into()) / sample_rate).as_nanos(),
-                    AudioPacket,
-                );
-            }
+        if pkt_len < RtpHeader::SIZE {
+            tracing::warn!(%pkt_len, "malformed realtime rtp packet");
+            continue;
         }
-    };
 
-    let data = pkts.pop_remaining();
-    output.lock().unwrap().replace(Data {
-        wait_time: Duration::ZERO,
-        data,
-    });
-    gv.give();
+        let mut rtp_header = RtpHeader::empty();
+        rtp_header.copy_from_slice(&pkt_buf[..RtpHeader::SIZE]);
+
+        let mut buf = audio_buf.allocate_buf(pkt_len - RtpHeader::SIZE);
+        buf.copy_from_slice(&pkt_buf[RtpHeader::SIZE..pkt_len]);
+
+        // TODO : call with RTP packet
+        stream.on_data(AudioPacket);
+        // pkts.insert(
+        //     rtp_header.seqnum().into(),
+        //     (Duration::from_secs(rtp_header.timestamp().into()) / sample_rate).as_nanos(),
+        //     AudioPacket,
+        // );
+    };
 
     if is_io_error_fine(&result) {
         Ok(())

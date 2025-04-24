@@ -8,39 +8,41 @@ use tokio::sync::Mutex as AsyncMutex;
 use weak_table::WeakValueHashMap;
 
 use crate::{
-    config::Config,
-    crypto::pairing::legacy::State as LegacyPairing,
-    streaming::{self, event::Channel as EventChannel},
+    config::Config, crypto::pairing::legacy::State as LegacyPairing, device::ChannelHandle,
+    streaming::event::Channel as EventChannel,
 };
 
-pub struct State {
+pub struct State<ADev, VDev> {
     pub last_stream_id: AtomicU64,
     pub pairing: Mutex<LegacyPairing>,
     pub fp_last_msg: Mutex<Bytes>,
     pub fp_key: Mutex<Bytes>,
     pub event_channel: AsyncMutex<Option<EventChannel>>,
-    pub audio_realtime_channels:
-        Mutex<WeakValueHashMap<u64, Weak<streaming::audio::RealtimeSharedData>>>,
-    pub audio_buffered_channels:
-        Mutex<WeakValueHashMap<u64, Weak<streaming::audio::BufferedSharedData>>>,
-    pub video_channels: Mutex<WeakValueHashMap<u64, Weak<streaming::video::SharedData>>>,
+    pub audio_realtime_channels: Mutex<WeakValueHashMap<u64, Weak<dyn ChannelHandle>>>,
+    pub audio_buffered_channels: Mutex<WeakValueHashMap<u64, Weak<dyn ChannelHandle>>>,
+    pub video_channels: Mutex<WeakValueHashMap<u64, Weak<dyn ChannelHandle>>>,
 
-    pub cfg: Config,
+    pub cfg: Config<ADev, VDev>,
 }
 
-#[derive(Clone)]
-pub struct SharedState(Arc<State>);
+pub struct SharedState<ADev, VDev>(Arc<State<ADev, VDev>>);
 
-impl Deref for SharedState {
-    type Target = State;
+impl<A, V> Clone for SharedState<A, V> {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+impl<A, V> Deref for SharedState<A, V> {
+    type Target = State<A, V>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl SharedState {
-    pub fn with_config(cfg: Config) -> Self {
+impl<A, V> SharedState<A, V> {
+    pub fn with_config(cfg: Config<A, V>) -> Self {
         Self(Arc::new(State {
             last_stream_id: AtomicU64::default(),
             pairing: Mutex::new(LegacyPairing::from_signing_privkey(

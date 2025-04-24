@@ -5,14 +5,9 @@ use derivative::Derivative;
 
 pub use macaddr::MacAddr6;
 
-use crate::{
-    device::{AudioDevice, NullDevice, VideoDevice},
-    streaming,
-};
-
 #[derive(Debug, Derivative)]
 #[derivative(Default)]
-pub struct Config {
+pub struct Config<ADev, VDev> {
     pub mac_addr: MacAddr6,
     pub features: Features,
     #[derivative(Default(value = "env!(\"CARGO_PKG_AUTHORS\").to_string()"))]
@@ -24,8 +19,8 @@ pub struct Config {
     #[derivative(Default(value = "env!(\"CARGO_PKG_VERSION\").to_string()"))]
     pub fw_version: String,
     pub pairing: Pairing,
-    pub audio: Audio,
-    pub video: Video,
+    pub audio: Audio<ADev>,
+    pub video: Video<VDev>,
 }
 
 #[derive(Derivative)]
@@ -37,20 +32,20 @@ pub struct Pairing {
 
 #[derive(Derivative)]
 #[derivative(Debug, Default)]
-pub struct Audio {
+pub struct Audio<Device> {
     #[derivative(Default(value = "4 * 1024 * 1024"))]
     pub buf_size: u32,
     #[derivative(Default(value = "Duration::from_millis(20)"))]
     pub min_jitter_depth: Duration,
-    #[derivative(Default(value = "Duration::from_millis(500)"))]
+    #[derivative(Default(value = "Duration::from_millis(200)"))]
     pub max_jitter_depth: Duration,
-    #[derivative(Debug = "ignore", Default(value = "Box::new(NullDevice::default())"))]
-    pub device: Box<dyn AudioDevice<Channel = streaming::AudioChannel>>,
+    #[derivative(Debug = "ignore")]
+    pub device: Device,
 }
 
 #[derive(Derivative)]
 #[derivative(Debug, Default)]
-pub struct Video {
+pub struct Video<Device> {
     #[derivative(Default(value = "1920"))]
     pub width: u32,
     #[derivative(Default(value = "1080"))]
@@ -59,8 +54,8 @@ pub struct Video {
     pub fps: u32,
     #[derivative(Default(value = "8 * 1024 * 1024"))]
     pub buf_size: u32,
-    #[derivative(Debug = "ignore", Default(value = "Box::new(NullDevice::default())"))]
-    pub device: Box<dyn VideoDevice<Channel = streaming::VideoChannel>>,
+    #[derivative(Debug = "ignore")]
+    pub device: Device,
 }
 
 bitflags! {
