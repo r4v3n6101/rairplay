@@ -1,4 +1,4 @@
-use std::{fmt, marker::PhantomData, sync::Weak};
+use std::{error::Error, fmt, marker::PhantomData, sync::Weak};
 
 use super::{
     AudioDevice, AudioPacket, AudioParams, ChannelHandle, Device, Stream, VideoDevice, VideoPacket,
@@ -17,15 +17,15 @@ where
     type Content = C;
 
     fn on_data(&self, content: Self::Content) {
-        tracing::debug!(?content, "stream feed with content");
+        tracing::trace!(?content, "stream feed with content");
     }
 
     fn on_ok(self) {
         tracing::info!("null stream finished successfully");
     }
 
-    fn on_err(self, err: ()) {
-        tracing::error!("null stream finished with an error");
+    fn on_err(self, err: Box<dyn Error>) {
+        tracing::error!(%err, "null stream finished with an error");
     }
 }
 

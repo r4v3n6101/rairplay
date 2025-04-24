@@ -1,6 +1,6 @@
-use std::sync::Weak;
+use std::{error::Error, sync::Weak};
 
-mod null;
+pub mod null;
 
 pub trait Device: Send + Sync + 'static {
     type Params;
@@ -18,7 +18,7 @@ pub trait Stream: Send + Sync + 'static {
 
     fn on_data(&self, content: Self::Content);
     fn on_ok(self);
-    fn on_err(self, err: ());
+    fn on_err(self, err: Box<dyn Error>);
 }
 
 pub trait AudioDevice: Device<Params = AudioParams, Stream: AudioStream> {

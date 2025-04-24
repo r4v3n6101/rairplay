@@ -8,7 +8,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use weak_table::WeakValueHashMap;
 
 use crate::{
-    config::Config, crypto::pairing::legacy::State as LegacyPairing, device::ChannelHandle,
+    config::Config, crypto::pairing::legacy::State as LegacyPairing, playback::ChannelHandle,
     streaming::event::Channel as EventChannel,
 };
 

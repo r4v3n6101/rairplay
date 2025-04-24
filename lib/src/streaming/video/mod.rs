@@ -3,7 +3,7 @@ use std::{io, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::net::{TcpListener, ToSocketAddrs};
 
 use crate::{
-    device::{ChannelHandle, VideoStream},
+    playback::{ChannelHandle, VideoStream},
     util::sync::CancellationHandle,
 };
 
@@ -43,7 +43,7 @@ impl Channel {
                 };
                 match shared_data.handle.wrap_task(task).await {
                     Ok(()) => stream.on_ok(),
-                    Err(err) => stream.on_err(()),
+                    Err(err) => stream.on_err(err.into()),
                 }
             });
         }

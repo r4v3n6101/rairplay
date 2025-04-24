@@ -9,7 +9,7 @@ use crate::{
         fairplay,
         pairing::legacy::{SIGNATURE_LENGTH, X25519_KEY_LEN},
     },
-    device::{AudioDevice, AudioParams, ChannelHandle, VideoDevice, VideoParams},
+    playback::{AudioDevice, AudioParams, ChannelHandle, VideoDevice, VideoParams},
     streaming::{self, audio, event::Channel as EventChannel, video},
     util::constants,
 };

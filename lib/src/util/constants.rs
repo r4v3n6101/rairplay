@@ -1,4 +1,5 @@
-use crate::device::{Codec, CodecKind};
+// TODO : move Codec/CodecKind
+use crate::playback::{Codec, CodecKind};
 
 pub static AUDIO_FORMATS: [Codec; 33] = [
     // 0    Dummy

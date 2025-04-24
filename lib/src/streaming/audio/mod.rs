@@ -3,7 +3,7 @@ use std::{io, net::SocketAddr, sync::Arc};
 use tokio::net::{TcpListener, ToSocketAddrs, UdpSocket};
 
 use crate::{
-    device::{AudioStream, ChannelHandle},
+    playback::{AudioStream, ChannelHandle},
     util::sync::CancellationHandle,
 };
 
@@ -61,7 +61,7 @@ impl RealtimeChannel {
                 match shared_data.handle.wrap_task(task).await {
                     Ok(()) => stream.on_ok(),
                     // TODO : error
-                    Err(err) => stream.on_err(()),
+                    Err(err) => stream.on_err(err.into()),
                 }
             });
         }
@@ -95,7 +95,7 @@ impl BufferedChannel {
 
                 match shared_data.handle.wrap_task(task).await {
                     Ok(()) => stream.on_ok(),
-                    Err(err) => stream.on_err(()),
+                    Err(err) => stream.on_err(err.into()),
                 }
             });
         }

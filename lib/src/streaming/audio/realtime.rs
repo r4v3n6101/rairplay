@@ -1,18 +1,13 @@
-use std::{io, time::Duration};
+use std::io;
 
 use tokio::net::UdpSocket;
 
 use crate::{
-    device::{AudioPacket, AudioStream},
+    playback::{AudioPacket, AudioStream},
     util::{io::is_io_error_fine, memory},
 };
 
 use super::packet::{RtcpHeader, RtpHeader};
-
-pub struct Data {
-    pub wait_time: Duration,
-    pub data: Vec<AudioPacket>,
-}
 
 pub async fn data_processor(
     data_socket: UdpSocket,

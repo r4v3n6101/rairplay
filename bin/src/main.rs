@@ -1,3 +1,4 @@
+use rairplay::playback::null::NullDevice;
 use tokio::net::TcpListener;
 use tracing::Level;
 
@@ -15,7 +16,10 @@ async fn main() {
     discovery::mdns_broadcast();
     transport::serve_with_rtsp_remap(
         svc_listener,
-        rairplay::rtsp::RouterService::serve(rairplay::config::Config::default()),
+        rairplay::rtsp::RouterService::serve(rairplay::config::Config::<
+            NullDevice<_, _>,
+            NullDevice<_, _>,
+        >::default()),
     )
     .await;
 }

@@ -2,7 +2,7 @@
 
 pub mod config;
 mod crypto;
-pub mod device;
+pub mod playback;
 pub mod rtsp;
 mod streaming;
 mod util;
