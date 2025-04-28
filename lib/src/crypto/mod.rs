@@ -1,6 +1,5 @@
-pub mod audio;
 pub mod fairplay;
 pub mod pairing;
-pub mod video;
+pub mod streaming;
 
 type AesCtr128BE = ctr::Ctr128BE<aes::Aes128>;

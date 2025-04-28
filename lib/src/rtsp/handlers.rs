@@ -5,8 +5,9 @@ use std::{
 
 use crate::{
     crypto::{
-        self, fairplay,
+        fairplay,
         pairing::legacy::{SIGNATURE_LENGTH, X25519_KEY_LEN},
+        streaming::{AudioBufferedCipher, VideoCipher},
     },
     playback::{
         audio::{AudioDevice, AudioParams},
@@ -302,6 +303,7 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         SocketAddr::new(local_addr.ip(), 0),
         state.cfg.audio.buf_size,
         shared_data.clone(),
+        None,
         stream,
     )
     .await
@@ -353,8 +355,8 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
     };
 
     let cipher = shared_key
-        .and_then(|key| <[u8; crypto::audio::KEY_LEN]>::try_from(key.as_ref()).ok())
-        .map(crypto::audio::BufferedCipher::new);
+        .and_then(|key| <[u8; AudioBufferedCipher::KEY_LEN]>::try_from(key.as_ref()).ok())
+        .map(AudioBufferedCipher::new);
 
     let shared_data = Arc::new(SharedData::default());
     let stream = state.cfg.audio.device.create(
@@ -411,7 +413,7 @@ async fn setup_video<A, V: VideoDevice>(
         .unwrap()
         .shared_secret()
         .map(|shared_secret| {
-            crypto::video::Cipher::new(
+            VideoCipher::new(
                 state.fp_key.lock().unwrap().as_ref(),
                 shared_secret,
                 stream_connection_id,

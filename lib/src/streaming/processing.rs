@@ -6,10 +6,7 @@ use tokio::{
 };
 
 use crate::{
-    crypto::{
-        self,
-        audio::{AAD_LEN, NONCE_LEN, TAG_LEN},
-    },
+    crypto::streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
     playback::{
         audio::{AudioPacket, AudioStream, RtpPacket},
         video::{PacketKind, VideoPacket, VideoStream},
@@ -31,7 +28,7 @@ pub async fn event_processor(listener: TcpListener, local_addr: SocketAddr) {
 pub async fn audio_buffered_processor(
     audio_buf_size: u32,
     mut tcp_stream: TcpStream,
-    cipher: Option<crypto::audio::BufferedCipher>,
+    cipher: Option<AudioBufferedCipher>,
     stream: &impl AudioStream,
 ) -> io::Result<()> {
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
@@ -41,21 +38,25 @@ pub async fn audio_buffered_processor(
         // 2 is pkt_len field size itself
         let pkt_len: usize = pkt_len.saturating_sub(2).into();
 
-        if pkt_len < RtpPacket::HEADER_LEN + TAG_LEN + NONCE_LEN {
+        if pkt_len
+            < RtpPacket::HEADER_LEN + AudioBufferedCipher::TAG_LEN + AudioBufferedCipher::NONCE_LEN
+        {
             return Err(io::Error::other("malformed buffered stream"));
         }
 
         // rtp pkt length w/o encryption data
-        let pkt_len = pkt_len - (TAG_LEN + NONCE_LEN);
+        let pkt_len = pkt_len - (AudioBufferedCipher::TAG_LEN + AudioBufferedCipher::NONCE_LEN);
         let mut rtp = RtpPacket {
             inner: audio_buf.allocate_buf(pkt_len),
         };
         tcp_stream.read_exact(rtp.as_mut()).await?;
 
         if let Some(cipher) = &cipher {
-            let mut tag = [0u8; TAG_LEN];
-            let mut nonce = [0u8; NONCE_LEN];
-            let aad = (rtp.header()[4..][..AAD_LEN]).try_into().unwrap();
+            let mut tag = [0u8; AudioBufferedCipher::TAG_LEN];
+            let mut nonce = [0u8; AudioBufferedCipher::NONCE_LEN];
+            let aad = (rtp.header()[4..][..AudioBufferedCipher::AAD_LEN])
+                .try_into()
+                .unwrap();
 
             tcp_stream.read_exact(&mut tag).await?;
             tcp_stream.read_exact(&mut nonce[4..]).await?;
@@ -74,6 +75,7 @@ pub async fn audio_buffered_processor(
 pub async fn audio_realtime_processor(
     socket: UdpSocket,
     audio_buf_size: u32,
+    cipher: Option<AudioRealtimeCipher>,
     stream: &impl AudioStream,
 ) -> io::Result<()> {
     const PKT_BUF_SIZE: usize = 16 * 1024;
@@ -110,7 +112,7 @@ pub async fn control_processor(socket: UdpSocket) -> io::Result<()> {
 pub async fn video_processor(
     video_buf_size: u32,
     mut tcp_stream: TcpStream,
-    mut cipher: Option<crypto::video::Cipher>,
+    mut cipher: Option<VideoCipher>,
     stream: &impl VideoStream,
 ) -> io::Result<()> {
     const UNKNOWN_BYTES: usize = 112;

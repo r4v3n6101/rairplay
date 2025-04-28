@@ -6,7 +6,7 @@ use tokio::{
 };
 
 use crate::{
-    crypto::{self, audio::BufferedCipher},
+    crypto::streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
     playback::{audio::AudioStream, video::VideoStream, ChannelHandle},
     util::{io::remap_io_error_if_needed, sync::CancellationHandle},
 };
@@ -69,6 +69,7 @@ impl AudioRealtimeChannel {
         control_bind_addr: impl ToSocketAddrs,
         audio_buf_size: u32,
         shared_data: Arc<SharedData>,
+        cipher: Option<AudioRealtimeCipher>,
         stream: impl AudioStream,
     ) -> io::Result<Self> {
         let data_socket = UdpSocket::bind(data_bind_addr).await?;
@@ -81,8 +82,12 @@ impl AudioRealtimeChannel {
             let shared_data = shared_data.clone();
             tokio::spawn(async move {
                 let task = async {
-                    let data =
-                        processing::audio_realtime_processor(data_socket, audio_buf_size, &stream);
+                    let data = processing::audio_realtime_processor(
+                        data_socket,
+                        audio_buf_size,
+                        cipher,
+                        &stream,
+                    );
                     let control = processing::control_processor(control_socket);
 
                     let (first, second) = tokio::join!(data, control);
@@ -111,7 +116,7 @@ impl AudioBufferedChannel {
         bind_addr: impl ToSocketAddrs,
         audio_buf_size: u32,
         shared_data: Arc<SharedData>,
-        cipher: Option<BufferedCipher>,
+        cipher: Option<AudioBufferedCipher>,
         stream: impl AudioStream,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
@@ -154,7 +159,7 @@ impl VideoChannel {
         bind_addr: impl ToSocketAddrs,
         video_buf_size: u32,
         shared_data: Arc<SharedData>,
-        cipher: Option<crypto::video::Cipher>,
+        cipher: Option<VideoCipher>,
         stream: impl VideoStream,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;

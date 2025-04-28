@@ -1,15 +1,57 @@
-use aes::cipher::{KeyIvInit, StreamCipher};
-use ring::digest;
+use aes::cipher::{KeyIvInit as _, StreamCipher as _};
+use ring::{aead, digest};
 
 use super::AesCtr128BE;
 
-pub struct Cipher {
+pub struct AudioBufferedCipher {
+    key: aead::LessSafeKey,
+}
+
+impl AudioBufferedCipher {
+    pub const KEY_LEN: usize = 32;
+    pub const AAD_LEN: usize = 8;
+    pub const TAG_LEN: usize = 16;
+    pub const NONCE_LEN: usize = aead::NONCE_LEN;
+
+    pub fn new(key: [u8; Self::KEY_LEN]) -> Self {
+        Self {
+            key: aead::LessSafeKey::new(
+                aead::UnboundKey::new(&aead::CHACHA20_POLY1305, &key).expect("valid keylen"),
+            ),
+        }
+    }
+
+    pub fn open_in_place(
+        &self,
+        nonce: [u8; Self::NONCE_LEN],
+        aad: [u8; Self::AAD_LEN],
+        tag: [u8; Self::TAG_LEN],
+        inout: &mut [u8],
+    ) -> Result<(), &'static str> {
+        self.key
+            .open_in_place_separate_tag(
+                aead::Nonce::assume_unique_for_key(nonce),
+                aead::Aad::from(aad),
+                aead::Tag::from(tag),
+                inout,
+                0..,
+            )
+            .map_err(|_| "can't decipher buffered")
+            .map(|_| ())
+    }
+}
+
+pub struct AudioRealtimeCipher {
+    // TODO : AES
+}
+
+pub struct VideoCipher {
     aesctr: AesCtr128BE,
     og: [u8; 16],
     next_decrypt_count: usize,
 }
 
-impl Cipher {
+impl VideoCipher {
     pub fn new(
         fp_key: impl AsRef<[u8]>,
         shared_secret: impl AsRef<[u8]>,
