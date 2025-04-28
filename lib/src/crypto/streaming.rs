@@ -1,7 +1,14 @@
-use aes::cipher::{KeyIvInit as _, StreamCipher as _};
-use ring::{aead, digest};
+use aes::cipher::{
+    block_padding::{NoPadding, Padding},
+    inout::InOutBuf,
+    BlockDecryptMut, KeyIvInit as _, StreamCipher as _,
+};
+use ring::{
+    aead,
+    digest::{self, Digest},
+};
 
-use super::AesCtr128BE;
+use super::{AesCbc128, AesCtr128BE};
 
 pub struct AudioBufferedCipher {
     key: aead::LessSafeKey,
@@ -43,6 +50,29 @@ impl AudioBufferedCipher {
 
 pub struct AudioRealtimeCipher {
     // TODO : AES
+    aescbc: AesCbc128,
+}
+
+impl AudioRealtimeCipher {
+    pub fn new(
+        fp_key: impl AsRef<[u8]>,
+        shared_secret: impl AsRef<[u8]>,
+        eiv: impl AsRef<[u8]>,
+    ) -> Self {
+        let key = decrypt_fp_aes_key(fp_key, shared_secret);
+
+        // TODO : may panic!!!
+        Self {
+            aescbc: AesCbc128::new(key.as_ref()[..16].into(), eiv.as_ref()[..16].into()),
+        }
+    }
+
+    pub fn decrypt(&mut self, inout: &mut [u8]) {
+        let blocks = InOutBuf::from(inout);
+        // Remains must not be touched
+        let (mut blocks, _) = blocks.into_chunks();
+        self.aescbc.decrypt_blocks_inout_mut(blocks.reborrow());
+    }
 }
 
 pub struct VideoCipher {
@@ -57,12 +87,7 @@ impl VideoCipher {
         shared_secret: impl AsRef<[u8]>,
         stream_connection_id: i64,
     ) -> Self {
-        let key = {
-            let mut digest = digest::Context::new(&digest::SHA512);
-            digest.update(fp_key.as_ref());
-            digest.update(shared_secret.as_ref());
-            digest.finish()
-        };
+        let key = decrypt_fp_aes_key(fp_key, shared_secret);
 
         let hash1 = {
             let mut digest = digest::Context::new(&digest::SHA512);
@@ -112,4 +137,11 @@ impl VideoCipher {
             self.next_decrypt_count = 16 - restlen;
         }
     }
+}
+
+fn decrypt_fp_aes_key(fp_key: impl AsRef<[u8]>, shared_secret: impl AsRef<[u8]>) -> Digest {
+    let mut digest = digest::Context::new(&digest::SHA512);
+    digest.update(fp_key.as_ref());
+    digest.update(shared_secret.as_ref());
+    digest.finish()
 }

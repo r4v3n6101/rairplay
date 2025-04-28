@@ -7,7 +7,7 @@ use crate::{
     crypto::{
         fairplay,
         pairing::legacy::{SIGNATURE_LENGTH, X25519_KEY_LEN},
-        streaming::{AudioBufferedCipher, VideoCipher},
+        streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
     },
     playback::{
         audio::{AudioDevice, AudioParams},
@@ -216,7 +216,7 @@ pub async fn setup<A: AudioDevice, V: VideoDevice>(
 async fn setup_info<A, V>(
     State(state): State<SharedState<A, V>>,
     ConnectInfo(local_addr): ConnectInfo<SocketAddr>,
-    SenderInfo { ekey, .. }: SenderInfo,
+    SenderInfo { ekey, eiv, .. }: SenderInfo,
 ) -> impl IntoResponse {
     let mut lock = state.event_channel.lock().await;
     let event_channel = match &mut *lock {
@@ -233,11 +233,11 @@ async fn setup_info<A, V>(
     };
 
     // TODO : log more info from SenderInfo
-
-    *state.fp_key.lock().unwrap() = Bytes::from_owner(fairplay::decrypt_key(
+    *state.ekey.lock().unwrap() = Bytes::from_owner(fairplay::decrypt_key(
         state.fp_last_msg.lock().unwrap().as_ref(),
         ekey,
     ));
+    *state.eiv.lock().unwrap() = eiv;
 
     Ok(BinaryPlist(SetupResponse::Info {
         event_port: event_channel.local_addr().port(),
@@ -290,6 +290,19 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         return Err(StatusCode::BAD_REQUEST.into_response());
     };
 
+    let cipher = state
+        .pairing
+        .lock()
+        .unwrap()
+        .shared_secret()
+        .map(|shared_secret| {
+            AudioRealtimeCipher::new(
+                state.ekey.lock().unwrap().as_ref(),
+                shared_secret,
+                state.eiv.lock().unwrap().as_ref(),
+            )
+        });
+
     let shared_data = Arc::new(SharedData::default());
     let stream = state.cfg.audio.device.create(
         AudioParams {
@@ -303,7 +316,7 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         SocketAddr::new(local_addr.ip(), 0),
         state.cfg.audio.buf_size,
         shared_data.clone(),
-        None,
+        cipher,
         stream,
     )
     .await
@@ -414,7 +427,7 @@ async fn setup_video<A, V: VideoDevice>(
         .shared_secret()
         .map(|shared_secret| {
             VideoCipher::new(
-                state.fp_key.lock().unwrap().as_ref(),
+                state.ekey.lock().unwrap().as_ref(),
                 shared_secret,
                 stream_connection_id,
             )

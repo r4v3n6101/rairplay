@@ -75,7 +75,7 @@ pub async fn audio_buffered_processor(
 pub async fn audio_realtime_processor(
     socket: UdpSocket,
     audio_buf_size: u32,
-    cipher: Option<AudioRealtimeCipher>,
+    mut cipher: Option<AudioRealtimeCipher>,
     stream: &impl AudioStream,
 ) -> io::Result<()> {
     const PKT_BUF_SIZE: usize = 16 * 1024;
@@ -95,7 +95,11 @@ pub async fn audio_realtime_processor(
         };
         rtp.as_mut().copy_from_slice(&pkt_buf[..pkt_len]);
 
-        // decrypting
+        if let Some(cipher) = &mut cipher {
+            // TODO : offload data
+            cipher.decrypt(rtp.payload());
+        }
+
         stream.on_data(AudioPacket { rtp });
     }
 }
