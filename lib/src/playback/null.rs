@@ -1,9 +1,6 @@
 use std::{error::Error, fmt, marker::PhantomData, sync::Weak};
 
-use super::{
-    AudioDevice, AudioPacket, AudioParams, ChannelHandle, Device, Stream, VideoDevice, VideoPacket,
-    VideoParams,
-};
+use super::{ChannelHandle, Device, Stream};
 
 pub struct NullStream<C>(PhantomData<C>);
 
@@ -53,16 +50,3 @@ where
         NullStream(PhantomData)
     }
 }
-
-impl AudioDevice for NullDevice<AudioParams, AudioPacket> {
-    fn get_volume(&self) -> f32 {
-        tracing::debug!("volume requested for null stream");
-        0.0
-    }
-
-    fn set_volume(&self, value: f32) {
-        tracing::debug!(%value, "volume changed for null stream");
-    }
-}
-
-impl VideoDevice for NullDevice<VideoParams, VideoPacket> {}

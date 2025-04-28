@@ -1,16 +1,21 @@
 use std::{
     net::SocketAddr,
     sync::{atomic::Ordering, Arc, Weak},
-    time::Duration,
 };
 
 use crate::{
     crypto::{
-        fairplay,
+        self, fairplay,
         pairing::legacy::{SIGNATURE_LENGTH, X25519_KEY_LEN},
     },
-    playback::{AudioDevice, AudioParams, ChannelHandle, VideoDevice, VideoParams},
-    streaming::{self, audio, event::Channel as EventChannel, video},
+    playback::{
+        audio::{AudioDevice, AudioParams},
+        video::{VideoDevice, VideoParams},
+        ChannelHandle,
+    },
+    streaming::{
+        AudioBufferedChannel, AudioRealtimeChannel, EventChannel, SharedData, VideoChannel,
+    },
     util::constants,
 };
 
@@ -284,7 +289,7 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         return Err(StatusCode::BAD_REQUEST.into_response());
     };
 
-    let shared_data = Arc::new(audio::RealtimeSharedData::default());
+    let shared_data = Arc::new(SharedData::default());
     let stream = state.cfg.audio.device.create(
         AudioParams {
             samples_per_frame,
@@ -292,7 +297,7 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         },
         Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
     );
-    match streaming::audio::RealtimeChannel::create(
+    match AudioRealtimeChannel::create(
         SocketAddr::new(local_addr.ip(), 0),
         SocketAddr::new(local_addr.ip(), 0),
         state.cfg.audio.buf_size,
@@ -330,6 +335,7 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
         samples_per_frame,
         audio_format,
         audio_format_index,
+        shared_key,
         ..
     }: AudioBufferedRequest,
     id: u64,
@@ -346,7 +352,11 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
         return Err(StatusCode::BAD_REQUEST.into_response());
     };
 
-    let shared_data = Arc::new(audio::BufferedSharedData::default());
+    let cipher = shared_key
+        .and_then(|key| <[u8; crypto::audio::KEY_LEN]>::try_from(key.as_ref()).ok())
+        .map(crypto::audio::BufferedCipher::new);
+
+    let shared_data = Arc::new(SharedData::default());
     let stream = state.cfg.audio.device.create(
         AudioParams {
             samples_per_frame,
@@ -355,10 +365,11 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
         Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
     );
 
-    match streaming::audio::BufferedChannel::create(
+    match AudioBufferedChannel::create(
         SocketAddr::new(local_addr.ip(), 0),
         state.cfg.audio.buf_size,
         shared_data.clone(),
+        cipher,
         stream,
     )
     .await
@@ -388,30 +399,36 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
 async fn setup_video<A, V: VideoDevice>(
     state: SharedState<A, V>,
     local_addr: SocketAddr,
-    VideoRequest { latency_ms, .. }: VideoRequest,
+    VideoRequest {
+        stream_connection_id,
+        ..
+    }: VideoRequest,
     id: u64,
 ) -> Result<StreamResponse, Response> {
-    // let cipher = state.pairing.lock().unwrap().shared_secret().map(
-    //     |shared_secret| {
-    //         VideoCipher::new(
-    //             state.fp_key.lock().unwrap().as_ref(),
-    //             shared_secret,
-    //             stream_connection_id,
-    //         )
-    //     },
-    // );
+    let cipher = state
+        .pairing
+        .lock()
+        .unwrap()
+        .shared_secret()
+        .map(|shared_secret| {
+            crypto::video::Cipher::new(
+                state.fp_key.lock().unwrap().as_ref(),
+                shared_secret,
+                stream_connection_id,
+            )
+        });
 
-    let shared_data = Arc::new(video::SharedData::default());
+    let shared_data = Arc::new(SharedData::default());
     let stream = state.cfg.video.device.create(
         VideoParams {},
         Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
     );
 
-    match streaming::video::Channel::create(
+    match VideoChannel::create(
         SocketAddr::new(local_addr.ip(), 0),
         state.cfg.video.buf_size,
-        Duration::from_millis(latency_ms.into()),
         shared_data.clone(),
+        cipher,
         stream,
     )
     .await

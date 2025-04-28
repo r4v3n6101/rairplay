@@ -8,8 +8,9 @@ use tokio::sync::Mutex as AsyncMutex;
 use weak_table::WeakValueHashMap;
 
 use crate::{
-    config::Config, crypto::pairing::legacy::State as LegacyPairing, playback::ChannelHandle,
-    streaming::event::Channel as EventChannel,
+    config::Config,
+    crypto::pairing::legacy::State as LegacyPairing,
+    streaming::{EventChannel, SharedData},
 };
 
 pub struct State<ADev, VDev> {
@@ -18,9 +19,9 @@ pub struct State<ADev, VDev> {
     pub fp_last_msg: Mutex<Bytes>,
     pub fp_key: Mutex<Bytes>,
     pub event_channel: AsyncMutex<Option<EventChannel>>,
-    pub audio_realtime_channels: Mutex<WeakValueHashMap<u64, Weak<dyn ChannelHandle>>>,
-    pub audio_buffered_channels: Mutex<WeakValueHashMap<u64, Weak<dyn ChannelHandle>>>,
-    pub video_channels: Mutex<WeakValueHashMap<u64, Weak<dyn ChannelHandle>>>,
+    pub audio_realtime_channels: Mutex<WeakValueHashMap<u64, Weak<SharedData>>>,
+    pub audio_buffered_channels: Mutex<WeakValueHashMap<u64, Weak<SharedData>>>,
+    pub video_channels: Mutex<WeakValueHashMap<u64, Weak<SharedData>>>,
 
     pub cfg: Config<ADev, VDev>,
 }

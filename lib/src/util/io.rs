@@ -1,12 +1,20 @@
 use std::io;
 
-pub fn is_io_error_fine(err: &io::Error) -> bool {
-    matches!(
-        err.kind(),
-        io::ErrorKind::UnexpectedEof
-            | io::ErrorKind::ConnectionAborted
-            | io::ErrorKind::ConnectionReset
-    )
+pub fn remap_io_error_if_needed(res: io::Result<()>) -> io::Result<()> {
+    match res {
+        Ok(()) => Ok(()),
+        Err(err)
+            if matches!(
+                err.kind(),
+                io::ErrorKind::UnexpectedEof
+                    | io::ErrorKind::ConnectionAborted
+                    | io::ErrorKind::ConnectionReset
+            ) =>
+        {
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
 }
 
 #[cfg(test)]
@@ -18,7 +26,7 @@ mod tests {
         net::{TcpListener, TcpStream},
     };
 
-    use crate::util::io::is_io_error_fine;
+    use crate::util::io::remap_io_error_if_needed;
 
     #[tokio::test]
     async fn check_stream_close_is_fine() {
@@ -33,9 +41,9 @@ mod tests {
         });
         let task2 = tokio::spawn(async move {
             let (mut s, _) = listener.accept().await.unwrap();
-            let err = s.read_u8().await.unwrap_err();
+            let res = s.read_u8().await.map(|_| ());
 
-            assert!(is_io_error_fine(&err));
+            assert!(remap_io_error_if_needed(res).is_ok());
         });
 
         let _ = tokio::join!(task1, task2);

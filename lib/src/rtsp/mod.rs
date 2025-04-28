@@ -16,7 +16,7 @@ use tower_http::propagate_header::PropagateHeaderLayer;
 
 use crate::{
     config::Config,
-    playback::{AudioDevice, VideoDevice},
+    playback::{audio::AudioDevice, video::VideoDevice},
 };
 
 mod dto;

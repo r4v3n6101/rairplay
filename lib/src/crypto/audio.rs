@@ -1,11 +1,11 @@
 use ring::aead;
 
-const KEY_LEN: usize = 32;
-const AAD_LEN: usize = 8;
-const TAG_LEN: usize = 16;
+pub const KEY_LEN: usize = 32;
+pub const AAD_LEN: usize = 8;
+pub const TAG_LEN: usize = 16;
+pub const NONCE_LEN: usize = aead::NONCE_LEN;
 
 pub struct BufferedCipher {
-    // TODO : chacha20-poly1305
     key: aead::LessSafeKey,
 }
 
@@ -20,7 +20,7 @@ impl BufferedCipher {
 
     pub fn open_in_place(
         &self,
-        nonce: [u8; aead::NONCE_LEN],
+        nonce: [u8; NONCE_LEN],
         aad: [u8; AAD_LEN],
         tag: [u8; TAG_LEN],
         inout: &mut [u8],
