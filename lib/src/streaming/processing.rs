@@ -31,6 +31,8 @@ pub async fn audio_buffered_processor(
     cipher: Option<AudioBufferedCipher>,
     stream: &impl AudioStream,
 ) -> io::Result<()> {
+    const TRAILER_LEN: usize = 24;
+
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
 
     loop {
@@ -38,14 +40,12 @@ pub async fn audio_buffered_processor(
         // 2 is pkt_len field size itself
         let pkt_len: usize = pkt_len.saturating_sub(2).into();
 
-        if pkt_len
-            < RtpPacket::HEADER_LEN + AudioBufferedCipher::TAG_LEN + AudioBufferedCipher::NONCE_LEN
-        {
+        if pkt_len < RtpPacket::HEADER_LEN + TRAILER_LEN {
             return Err(io::Error::other("malformed buffered stream"));
         }
 
         // rtp pkt length w/o encryption data
-        let pkt_len = pkt_len - (AudioBufferedCipher::TAG_LEN + AudioBufferedCipher::NONCE_LEN);
+        let pkt_len = pkt_len - TRAILER_LEN;
         let mut rtp = RtpPacket {
             inner: audio_buf.allocate_buf(pkt_len),
         };
