@@ -9,7 +9,7 @@ use weak_table::WeakValueHashMap;
 
 use crate::{
     config::Config,
-    crypto::pairing::legacy::State as LegacyPairing,
+    crypto::{pairing::legacy::State as LegacyPairing, AesIv128, AesKey128},
     streaming::{EventChannel, SharedData},
 };
 
@@ -17,8 +17,8 @@ pub struct State<ADev, VDev> {
     pub last_stream_id: AtomicU64,
     pub pairing: Mutex<LegacyPairing>,
     pub fp_last_msg: Mutex<Bytes>,
-    pub ekey: Mutex<Bytes>,
-    pub eiv: Mutex<Bytes>,
+    pub ekey: Mutex<AesKey128>,
+    pub eiv: Mutex<AesIv128>,
     pub event_channel: AsyncMutex<Option<EventChannel>>,
     pub audio_realtime_channels: Mutex<WeakValueHashMap<u64, Weak<SharedData>>>,
     pub audio_buffered_channels: Mutex<WeakValueHashMap<u64, Weak<SharedData>>>,

@@ -5,6 +5,8 @@
 
 use thiserror::Error;
 
+use super::AesKey128;
+
 const MESSAGES: [&[u8]; 4] = [
     &[
         70, 80, 76, 89, 3, 1, 2, 0, 0, 0, 0, 130, 2, 0, 15, 159, 63, 158, 10, 37, 33, 219, 223, 49,
@@ -46,7 +48,6 @@ const MESSAGES: [&[u8]; 4] = [
     ],
 ];
 const FP_HEADER: &[u8] = &[70, 80, 76, 89, 3, 1, 4, 0, 0, 0, 0, 20];
-const DECRYPTED_AES_KEY_LEN: usize = 16;
 
 #[derive(Debug, Error)]
 pub enum DecodingError {
@@ -97,17 +98,14 @@ pub fn decode_buf(buf: impl AsRef<[u8]>) -> Result<Vec<u8>, DecodingError> {
     }
 }
 
-pub fn decrypt_key(
-    message: impl AsRef<[u8]>,
-    encrypted_aes_key: impl AsRef<[u8]>,
-) -> [u8; DECRYPTED_AES_KEY_LEN] {
+pub fn decrypt_key(message: impl AsRef<[u8]>, encrypted_aes_key: impl AsRef<[u8]>) -> AesKey128 {
     extern "C" {
         fn playfair_decrypt(msg: *const u8, cipher_text: *const u8, out: *mut u8);
     }
 
     let message = message.as_ref();
     let encrypted_aes_key = encrypted_aes_key.as_ref();
-    let mut aes = [0u8; DECRYPTED_AES_KEY_LEN];
+    let mut aes = AesKey128::default();
 
     unsafe {
         playfair_decrypt(

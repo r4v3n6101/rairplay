@@ -8,7 +8,7 @@ use tokio::{
 use crate::{
     crypto::streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
     playback::{
-        audio::{AudioPacket, AudioStream, RtpPacket},
+        audio::{AudioPacket, AudioStream, RtpHeader, RtpPacket},
         video::{PacketKind, VideoPacket, VideoStream},
     },
     util::memory,
@@ -28,7 +28,7 @@ pub async fn event_processor(listener: TcpListener, local_addr: SocketAddr) {
 pub async fn audio_buffered_processor(
     audio_buf_size: u32,
     mut tcp_stream: TcpStream,
-    cipher: Option<AudioBufferedCipher>,
+    cipher: AudioBufferedCipher,
     stream: &impl AudioStream,
 ) -> io::Result<()> {
     const TRAILER_LEN: usize = 24;
@@ -40,7 +40,7 @@ pub async fn audio_buffered_processor(
         // 2 is pkt_len field size itself
         let pkt_len: usize = pkt_len.saturating_sub(2).into();
 
-        if pkt_len < RtpPacket::HEADER_LEN + TRAILER_LEN {
+        if pkt_len < RtpHeader::SIZE + TRAILER_LEN {
             return Err(io::Error::other("malformed buffered stream"));
         }
 
@@ -51,21 +51,22 @@ pub async fn audio_buffered_processor(
         };
         tcp_stream.read_exact(rtp.as_mut()).await?;
 
-        if let Some(cipher) = &cipher {
-            let mut tag = [0u8; AudioBufferedCipher::TAG_LEN];
-            let mut nonce = [0u8; AudioBufferedCipher::NONCE_LEN];
-            let aad = (rtp.header()[4..][..AudioBufferedCipher::AAD_LEN])
-                .try_into()
-                .unwrap();
+        let mut tag = [0u8; AudioBufferedCipher::TAG_LEN];
+        let mut nonce = [0u8; AudioBufferedCipher::NONCE_LEN];
+        let aad = (rtp.as_ref()[4..][..AudioBufferedCipher::AAD_LEN])
+            .try_into()
+            .unwrap();
 
-            tcp_stream.read_exact(&mut tag).await?;
-            tcp_stream.read_exact(&mut nonce[4..]).await?;
+        tcp_stream.read_exact(&mut tag).await?;
+        tcp_stream.read_exact(&mut nonce[4..]).await?;
 
-            // TODO : offload to thread pool
-            if let Err(err) = cipher.open_in_place(nonce, aad, tag, rtp.payload()) {
-                // TODO!
-                continue;
-            }
+        // TODO : offload to thread pool
+        if cipher
+            .open_in_place(nonce, aad, tag, rtp.payload_mut())
+            .is_err()
+        {
+            tracing::warn!(rtp=?rtp.header(), payload_len=%rtp.payload().len(), "packet can't be decrypted, skipping it");
+            continue;
         }
 
         stream.on_data(AudioPacket { rtp });
@@ -75,7 +76,7 @@ pub async fn audio_buffered_processor(
 pub async fn audio_realtime_processor(
     socket: UdpSocket,
     audio_buf_size: u32,
-    mut cipher: Option<AudioRealtimeCipher>,
+    cipher: AudioRealtimeCipher,
     stream: &impl AudioStream,
 ) -> io::Result<()> {
     const PKT_BUF_SIZE: usize = 16 * 1024;
@@ -85,7 +86,7 @@ pub async fn audio_realtime_processor(
     loop {
         let pkt_len = socket.recv(&mut pkt_buf).await?;
 
-        if pkt_len < RtpPacket::HEADER_LEN {
+        if pkt_len < RtpHeader::SIZE {
             tracing::warn!(%pkt_len, "malformed realtime rtp packet");
             continue;
         }
@@ -95,10 +96,8 @@ pub async fn audio_realtime_processor(
         };
         rtp.as_mut().copy_from_slice(&pkt_buf[..pkt_len]);
 
-        if let Some(cipher) = &mut cipher {
-            // TODO : offload data
-            cipher.decrypt(rtp.payload());
-        }
+        // TODO : offload data
+        cipher.decrypt(rtp.payload_mut());
 
         stream.on_data(AudioPacket { rtp });
     }
@@ -116,7 +115,7 @@ pub async fn control_processor(socket: UdpSocket) -> io::Result<()> {
 pub async fn video_processor(
     video_buf_size: u32,
     mut tcp_stream: TcpStream,
-    mut cipher: Option<VideoCipher>,
+    mut cipher: VideoCipher,
     stream: &impl VideoStream,
 ) -> io::Result<()> {
     const UNKNOWN_BYTES: usize = 112;
@@ -141,10 +140,12 @@ pub async fn video_processor(
         };
         tcp_stream.read_exact(&mut pkt.payload).await?;
 
-        if let Some(cipher) = &mut cipher {
+        // Header doesn't need decryption
+        if matches!(kind, PacketKind::Payload) {
             // TODO : Offload to thread
             cipher.decrypt(&mut pkt.payload);
         }
+
         stream.on_data(pkt);
     }
 }

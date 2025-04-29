@@ -15,6 +15,7 @@ pub const SIGNATURE_LENGTH: usize = 64;
 
 pub type X25519Key = [u8; X25519_KEY_LEN];
 pub type Ed25519Key = [u8; X25519_KEY_LEN];
+pub type SharedSecret = [u8; 32];
 
 #[derive(Default)]
 enum Inner {
@@ -25,10 +26,10 @@ enum Inner {
         pubkey_their: agreement::UnparsedPublicKey<X25519Key>,
         pubkey_our: agreement::PublicKey,
         // TODO : I know its size
-        shared_secret: Vec<u8>,
+        shared_secret: SharedSecret,
     },
     Verified {
-        shared_secret: Vec<u8>,
+        shared_secret: SharedSecret,
     },
 }
 
@@ -59,10 +60,6 @@ impl State {
         pubkey_their: X25519Key,
         verify_their: Ed25519Key,
     ) -> Result<[u8; X25519_KEY_LEN + SIGNATURE_LENGTH], Error> {
-        let Inner::Empty = mem::take(&mut self.state) else {
-            return Err(Error::WrongState);
-        };
-
         let rng = rand::SystemRandom::new();
         let pubkey_their = agreement::UnparsedPublicKey::new(&agreement::X25519, pubkey_their);
         let verify_their = signature::UnparsedPublicKey::new(&signature::ED25519, verify_their);
@@ -71,8 +68,10 @@ impl State {
         let pubkey_our = privkey_our
             .compute_public_key()
             .map_err(|_| Error::Cryptography("ECDH public key computation"))?;
-        let shared_secret = agreement::agree_ephemeral(privkey_our, &pubkey_their, <[u8]>::to_vec)
-            .map_err(|_| Error::Cryptography("ECDH agreement"))?;
+        let shared_secret = agreement::agree_ephemeral(privkey_our, &pubkey_their, |x| {
+            SharedSecret::try_from(x).expect("shared secret must be 32 bytes")
+        })
+        .map_err(|_| Error::Cryptography("ECDH agreement"))?;
 
         let mut signature: [u8; SIGNATURE_LENGTH] = {
             let mut buf = [0u8; 2 * X25519_KEY_LEN];
@@ -129,8 +128,8 @@ impl State {
             })
     }
 
-    pub fn shared_secret(&self) -> Option<&[u8]> {
-        match &self.state {
+    pub fn shared_secret(&self) -> Option<SharedSecret> {
+        match self.state {
             // Who tf knows when second verify ain't called?
             Inner::Established { shared_secret, .. } => {
                 tracing::warn!("computed shared secret isn't verified by counterparty");

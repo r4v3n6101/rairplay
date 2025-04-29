@@ -19,8 +19,7 @@ impl BytesHunk {
         }
 
         if self.buf.len() < requested_len {
-            assert!(self.size >= requested_len);
-            self.buf = BytesMut::zeroed(self.size);
+            self.buf = BytesMut::zeroed(self.size.max(requested_len));
         }
 
         self.buf.split_to(requested_len)

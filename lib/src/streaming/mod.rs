@@ -7,7 +7,7 @@ use tokio::{
 
 use crate::{
     crypto::streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
-    playback::{audio::AudioStream, video::VideoStream, ChannelHandle},
+    playback::{audio::AudioStream, video::VideoStream, ChannelHandle, Stream},
     util::{io::remap_io_error_if_needed, sync::CancellationHandle},
 };
 
@@ -69,7 +69,7 @@ impl AudioRealtimeChannel {
         control_bind_addr: impl ToSocketAddrs,
         audio_buf_size: u32,
         shared_data: Arc<SharedData>,
-        cipher: Option<AudioRealtimeCipher>,
+        cipher: AudioRealtimeCipher,
         stream: impl AudioStream,
     ) -> io::Result<Self> {
         let data_socket = UdpSocket::bind(data_bind_addr).await?;
@@ -78,31 +78,27 @@ impl AudioRealtimeChannel {
         let local_data_addr = data_socket.local_addr()?;
         let local_control_addr = control_socket.local_addr()?;
 
-        {
-            let shared_data = shared_data.clone();
-            tokio::spawn(async move {
-                let task = async {
-                    let data = processing::audio_realtime_processor(
-                        data_socket,
-                        audio_buf_size,
-                        cipher,
-                        &stream,
-                    );
-                    let control = processing::control_processor(control_socket);
+        tokio::spawn(async move {
+            let task = async {
+                let data = processing::audio_realtime_processor(
+                    data_socket,
+                    audio_buf_size,
+                    cipher,
+                    &stream,
+                );
+                let control = processing::control_processor(control_socket);
 
-                    let (first, second) = tokio::join!(data, control);
-                    first.or(second)
-                };
+                let (first, second) = tokio::join!(data, control);
+                first.or(second)
+            };
 
-                // tokio will handle it with boxing
-                #[allow(clippy::large_futures)]
-                match remap_io_error_if_needed(shared_data.handle.wrap_task(task).await) {
-                    Ok(()) => stream.on_ok(),
-                    // TODO : error
-                    Err(err) => stream.on_err(err.into()),
-                }
-            });
-        }
+            // tokio will handle it with boxing
+            #[allow(clippy::large_futures)]
+            match remap_io_error_if_needed(shared_data.handle.wrap_task(task).await) {
+                Ok(()) => stream.on_ok(),
+                Err(err) => stream.on_err(err.into()),
+            }
+        });
 
         Ok(Self {
             local_data_addr,
@@ -116,36 +112,33 @@ impl AudioBufferedChannel {
         bind_addr: impl ToSocketAddrs,
         audio_buf_size: u32,
         shared_data: Arc<SharedData>,
-        cipher: Option<AudioBufferedCipher>,
+        cipher: AudioBufferedCipher,
         stream: impl AudioStream,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;
 
-        {
-            let shared_data = shared_data.clone();
-            tokio::spawn(async move {
-                let task = async {
-                    match listener.accept().await {
-                        Ok((tcp_stream, _)) => {
-                            processing::audio_buffered_processor(
-                                audio_buf_size,
-                                tcp_stream,
-                                cipher,
-                                &stream,
-                            )
-                            .await
-                        }
-                        Err(err) => Err(err),
+        tokio::spawn(async move {
+            let task = async {
+                match listener.accept().await {
+                    Ok((tcp_stream, _)) => {
+                        processing::audio_buffered_processor(
+                            audio_buf_size,
+                            tcp_stream,
+                            cipher,
+                            &stream,
+                        )
+                        .await
                     }
-                };
-
-                match remap_io_error_if_needed(shared_data.handle.wrap_task(task).await) {
-                    Ok(()) => stream.on_ok(),
-                    Err(err) => stream.on_err(err.into()),
+                    Err(err) => Err(err),
                 }
-            });
-        }
+            };
+
+            match remap_io_error_if_needed(shared_data.handle.wrap_task(task).await) {
+                Ok(()) => stream.on_ok(),
+                Err(err) => stream.on_err(err.into()),
+            }
+        });
 
         Ok(Self {
             local_addr,
@@ -159,7 +152,7 @@ impl VideoChannel {
         bind_addr: impl ToSocketAddrs,
         video_buf_size: u32,
         shared_data: Arc<SharedData>,
-        cipher: Option<VideoCipher>,
+        cipher: VideoCipher,
         stream: impl VideoStream,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;

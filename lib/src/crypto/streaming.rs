@@ -1,14 +1,7 @@
-use aes::cipher::{
-    block_padding::{NoPadding, Padding},
-    inout::InOutBuf,
-    BlockDecryptMut, KeyIvInit as _, StreamCipher as _,
-};
-use ring::{
-    aead,
-    digest::{self, Digest},
-};
+use aes::cipher::{block_padding::NoPadding, BlockDecryptMut, KeyIvInit as _, StreamCipher as _};
+use ring::{aead, digest};
 
-use super::{AesCbc128, AesCtr128BE};
+use super::{AesCbc128, AesCtr128BE, AesIv128, AesKey128};
 
 pub struct AudioBufferedCipher {
     key: aead::LessSafeKey,
@@ -34,7 +27,7 @@ impl AudioBufferedCipher {
         aad: [u8; Self::AAD_LEN],
         tag: [u8; Self::TAG_LEN],
         inout: &mut [u8],
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), ()> {
         self.key
             .open_in_place_separate_tag(
                 aead::Nonce::assume_unique_for_key(nonce),
@@ -43,35 +36,28 @@ impl AudioBufferedCipher {
                 inout,
                 0..,
             )
-            .map_err(|_| "can't decipher buffered")
+            .map_err(|_| ())
             .map(|_| ())
     }
 }
 
 pub struct AudioRealtimeCipher {
-    // TODO : AES
     aescbc: AesCbc128,
 }
 
 impl AudioRealtimeCipher {
-    pub fn new(
-        fp_key: impl AsRef<[u8]>,
-        shared_secret: impl AsRef<[u8]>,
-        eiv: impl AsRef<[u8]>,
-    ) -> Self {
-        let key = decrypt_fp_aes_key(fp_key, shared_secret);
-
-        // TODO : may panic!!!
+    pub fn new(key: AesKey128, eiv: AesIv128) -> Self {
         Self {
-            aescbc: AesCbc128::new(key.as_ref()[..16].into(), eiv.as_ref()[..16].into()),
+            aescbc: AesCbc128::new(&key.into(), eiv.as_ref().into()),
         }
     }
 
-    pub fn decrypt(&mut self, inout: &mut [u8]) {
-        let blocks = InOutBuf::from(inout);
-        // Remains must not be touched
-        let (mut blocks, _) = blocks.into_chunks();
-        self.aescbc.decrypt_blocks_inout_mut(blocks.reborrow());
+    pub fn decrypt(&self, buf: &mut [u8]) {
+        let encrypted_len = buf.len() - (buf.len() % 16);
+        let _ = self
+            .aescbc
+            .clone()
+            .decrypt_padded_mut::<NoPadding>(&mut buf[..encrypted_len]);
     }
 }
 
@@ -82,24 +68,18 @@ pub struct VideoCipher {
 }
 
 impl VideoCipher {
-    pub fn new(
-        fp_key: impl AsRef<[u8]>,
-        shared_secret: impl AsRef<[u8]>,
-        stream_connection_id: i64,
-    ) -> Self {
-        let key = decrypt_fp_aes_key(fp_key, shared_secret);
-
+    pub fn new(key: AesKey128, stream_connection_id: i64) -> Self {
         let hash1 = {
             let mut digest = digest::Context::new(&digest::SHA512);
             digest.update(format!("AirPlayStreamKey{stream_connection_id}").as_bytes());
-            digest.update(&key.as_ref()[..16]);
+            digest.update(&key);
             digest.finish()
         };
 
         let hash2 = {
             let mut digest = digest::Context::new(&digest::SHA512);
             digest.update(format!("AirPlayStreamIV{stream_connection_id}").as_bytes());
-            digest.update(&key.as_ref()[..16]);
+            digest.update(&key);
             digest.finish()
         };
 
@@ -137,11 +117,4 @@ impl VideoCipher {
             self.next_decrypt_count = 16 - restlen;
         }
     }
-}
-
-fn decrypt_fp_aes_key(fp_key: impl AsRef<[u8]>, shared_secret: impl AsRef<[u8]>) -> Digest {
-    let mut digest = digest::Context::new(&digest::SHA512);
-    digest.update(fp_key.as_ref());
-    digest.update(shared_secret.as_ref());
-    digest.finish()
 }

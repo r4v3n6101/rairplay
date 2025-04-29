@@ -5,9 +5,10 @@ use std::{
 
 use crate::{
     crypto::{
-        fairplay,
+        fairplay, hash_aes_key,
         pairing::legacy::{SIGNATURE_LENGTH, X25519_KEY_LEN},
         streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
+        AesIv128,
     },
     playback::{
         audio::{AudioDevice, AudioParams},
@@ -232,12 +233,23 @@ async fn setup_info<A, V>(
         }
     };
 
+    let Ok(eiv) = AesIv128::try_from(eiv.as_ref()) else {
+        tracing::error!("invalid length of passed iv");
+        return Err(StatusCode::BAD_REQUEST);
+    };
+
+    if let Some(shared_secret) = state.pairing.lock().unwrap().shared_secret() {
+        let aes_key = fairplay::decrypt_key(state.fp_last_msg.lock().unwrap().as_ref(), ekey);
+        let aes_digest = hash_aes_key(aes_key, shared_secret);
+
+        *state.ekey.lock().unwrap() = aes_digest;
+        *state.eiv.lock().unwrap() = eiv;
+    } else {
+        tracing::error!("must be paired before setup call");
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     // TODO : log more info from SenderInfo
-    *state.ekey.lock().unwrap() = Bytes::from_owner(fairplay::decrypt_key(
-        state.fp_last_msg.lock().unwrap().as_ref(),
-        ekey,
-    ));
-    *state.eiv.lock().unwrap() = eiv;
 
     Ok(BinaryPlist(SetupResponse::Info {
         event_port: event_channel.local_addr().port(),
@@ -290,18 +302,7 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         return Err(StatusCode::BAD_REQUEST.into_response());
     };
 
-    let cipher = state
-        .pairing
-        .lock()
-        .unwrap()
-        .shared_secret()
-        .map(|shared_secret| {
-            AudioRealtimeCipher::new(
-                state.ekey.lock().unwrap().as_ref(),
-                shared_secret,
-                state.eiv.lock().unwrap().as_ref(),
-            )
-        });
+    let cipher = AudioRealtimeCipher::new(*state.ekey.lock().unwrap(), *state.eiv.lock().unwrap());
 
     let shared_data = Arc::new(SharedData::default());
     let stream = state.cfg.audio.device.create(
@@ -367,9 +368,16 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
         return Err(StatusCode::BAD_REQUEST.into_response());
     };
 
-    let cipher = shared_key
-        .and_then(|key| <[u8; AudioBufferedCipher::KEY_LEN]>::try_from(key.as_ref()).ok())
-        .map(AudioBufferedCipher::new);
+    let cipher = {
+        let Ok(key) = <[u8; AudioBufferedCipher::KEY_LEN]>::try_from(shared_key.as_ref()) else {
+            tracing::error!(
+                len = shared_key.len(),
+                "insufficient length of key for buffered audio's decryption"
+            );
+            return Err(StatusCode::BAD_REQUEST.into_response());
+        };
+        AudioBufferedCipher::new(key)
+    };
 
     let shared_data = Arc::new(SharedData::default());
     let stream = state.cfg.audio.device.create(
@@ -420,18 +428,7 @@ async fn setup_video<A, V: VideoDevice>(
     }: VideoRequest,
     id: u64,
 ) -> Result<StreamResponse, Response> {
-    let cipher = state
-        .pairing
-        .lock()
-        .unwrap()
-        .shared_secret()
-        .map(|shared_secret| {
-            VideoCipher::new(
-                state.ekey.lock().unwrap().as_ref(),
-                shared_secret,
-                stream_connection_id,
-            )
-        });
+    let cipher = VideoCipher::new(*state.ekey.lock().unwrap(), stream_connection_id);
 
     let shared_data = Arc::new(SharedData::default());
     let stream = state.cfg.video.device.create(

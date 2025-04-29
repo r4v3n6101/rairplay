@@ -169,7 +169,7 @@ pub struct AudioBufferedRequest {
     #[serde(rename = "spf")]
     pub samples_per_frame: u32,
     #[serde(rename = "shk")]
-    pub shared_key: Option<Bytes>,
+    pub shared_key: Bytes,
     #[serde(rename = "shiv")]
     pub shared_iv: Option<Bytes>,
     #[serde(rename = "clientID")]
