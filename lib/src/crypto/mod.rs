@@ -13,7 +13,5 @@ pub fn hash_aes_key(aes_key: AesKey128, shared_secret: impl AsRef<[u8]>) -> AesK
     let mut digest = ring::digest::Context::new(&ring::digest::SHA512);
     digest.update(aes_key.as_ref());
     digest.update(shared_secret.as_ref());
-    digest.finish().as_ref()[..16]
-        .try_into()
-        .expect("digest must be at least 16 bytes")
+    digest.finish().as_ref()[..16].try_into().unwrap()
 }

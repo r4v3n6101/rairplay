@@ -16,7 +16,7 @@ impl AudioBufferedCipher {
     pub fn new(key: [u8; Self::KEY_LEN]) -> Self {
         Self {
             key: aead::LessSafeKey::new(
-                aead::UnboundKey::new(&aead::CHACHA20_POLY1305, &key).expect("valid keylen"),
+                aead::UnboundKey::new(&aead::CHACHA20_POLY1305, &key).unwrap(),
             ),
         }
     }

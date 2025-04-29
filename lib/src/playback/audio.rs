@@ -56,12 +56,11 @@ pub struct RtpPacket {
 }
 
 impl RtpPacket {
-    /// # Panics
-    /// May panic if packet is less than 12 bytes
     pub fn header(&self) -> RtpHeader {
         RtpHeader(
             (self.inner[..RtpHeader::SIZE])
                 .try_into()
+                // TODO
                 .expect("rtp packet must be at least 12 bytes"),
         )
     }

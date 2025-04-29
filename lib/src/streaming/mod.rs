@@ -7,7 +7,7 @@ use tokio::{
 
 use crate::{
     crypto::streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
-    playback::{audio::AudioStream, video::VideoStream, ChannelHandle, Stream},
+    playback::{audio::AudioStream, video::VideoStream, ChannelHandle},
     util::{io::remap_io_error_if_needed, sync::CancellationHandle},
 };
 

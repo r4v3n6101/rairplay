@@ -57,11 +57,6 @@ impl RouterService {
                         "SETUP" => handlers::setup.call(req, state).await,
                         "GET_PARAMETER" => handlers::get_parameter.call(req, state).await,
                         "SET_PARAMETER" => handlers::set_parameter.call(req, state).await,
-                        "FLUSH" => handlers::flush.call(req, state).await,
-                        "FLUSHBUFFERED" => handlers::flush_buffered.call(req, state).await,
-                        "SETRATEANCHORTIME" => {
-                            handlers::set_rate_anchor_time.call(req, state).await
-                        }
                         "TEARDOWN" => handlers::teardown.call(req, state).await,
                         method => {
                             tracing::warn!(?method, path = ?req.uri(), "unknown method");

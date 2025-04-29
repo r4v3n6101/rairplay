@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use bitflags::bitflags;
 use derivative::Derivative;
 
@@ -35,11 +33,6 @@ pub struct Pairing {
 pub struct Audio<Device> {
     #[derivative(Default(value = "4 * 1024 * 1024"))]
     pub buf_size: u32,
-    #[derivative(Default(value = "Duration::from_millis(20)"))]
-    pub min_jitter_depth: Duration,
-    #[derivative(Default(value = "Duration::from_millis(200)"))]
-    pub max_jitter_depth: Duration,
-    #[derivative(Debug = "ignore")]
     pub device: Device,
 }
 
@@ -52,9 +45,8 @@ pub struct Video<Device> {
     pub height: u32,
     #[derivative(Default(value = "30"))]
     pub fps: u32,
-    #[derivative(Default(value = "8 * 1024 * 1024"))]
+    #[derivative(Default(value = "4 * 1024 * 1024"))]
     pub buf_size: u32,
-    #[derivative(Debug = "ignore")]
     pub device: Device,
 }
 
@@ -161,5 +153,6 @@ impl Default for Features {
             | Self::BufferedAudio
             | Self::NTPClock
             | Self::PTPClock
+        // TODO | Self::NowPlayingInfo
     }
 }

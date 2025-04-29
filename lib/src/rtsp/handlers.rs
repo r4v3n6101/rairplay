@@ -30,9 +30,9 @@ use http::{header::CONTENT_TYPE, status::StatusCode};
 
 use super::{
     dto::{
-        AudioBufferedRequest, AudioRealtimeRequest, Display, FlushBufferedRequest, InfoResponse,
-        SenderInfo, SetRateAnchorTimeRequest, SetupRequest, SetupResponse, StreamId, StreamRequest,
-        StreamResponse, Teardown, VideoRequest,
+        AudioBufferedRequest, AudioRealtimeRequest, Display, InfoResponse, SenderInfo,
+        SetupRequest, SetupResponse, StreamId, StreamRequest, StreamResponse, Teardown,
+        VideoRequest,
     },
     extractor::BinaryPlist,
     state::SharedState,
@@ -87,12 +87,8 @@ pub async fn pair_verify<A, V>(
 
     let mode = body[0];
     if mode > 0 {
-        let pubkey_their = body[4..][..X25519_KEY_LEN]
-            .try_into()
-            .expect("x25519 key must be 32 bytes");
-        let verify_their = body[36..][..X25519_KEY_LEN]
-            .try_into()
-            .expect("ed25519 key must be 32 bytes");
+        let pubkey_their = body[4..][..X25519_KEY_LEN].try_into().unwrap();
+        let verify_their = body[36..][..X25519_KEY_LEN].try_into().unwrap();
 
         state
             .pairing
@@ -103,9 +99,7 @@ pub async fn pair_verify<A, V>(
             .map(IntoResponse::into_response)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
     } else {
-        let signature = body[4..][..SIGNATURE_LENGTH]
-            .try_into()
-            .expect("signature must be 64 bytes");
+        let signature = body[4..][..SIGNATURE_LENGTH].try_into().unwrap();
 
         state
             .pairing
@@ -153,12 +147,6 @@ pub async fn get_parameter<A: AudioDevice, V>(
 }
 
 pub async fn set_parameter(body: Bytes) {}
-
-pub async fn flush() {}
-
-pub async fn flush_buffered(BinaryPlist(req): BinaryPlist<FlushBufferedRequest>) {}
-
-pub async fn set_rate_anchor_time(BinaryPlist(req): BinaryPlist<SetRateAnchorTimeRequest>) {}
 
 pub async fn teardown<A, V>(
     State(state): State<SharedState<A, V>>,

@@ -42,25 +42,6 @@ pub struct Display {
 }
 
 #[derive(Deserialize)]
-pub struct FlushBufferedRequest {
-    // #[serde(rename = "flushUntilSeq")]
-    // pub flush_until_seqnum: Option<u32>,
-    // #[serde(rename = "flushUntilTS")]
-    // pub flush_until_timestamp: Option<u32>,
-    // #[serde(rename = "flushFromSeq")]
-    // pub flush_from_seqnum: Option<u32>,
-    // #[serde(rename = "flushFromTS")]
-    // pub flush_from_timestamp: Option<u32>,
-}
-
-#[derive(Deserialize)]
-pub struct SetRateAnchorTimeRequest {
-    // pub rate: f32,
-    // #[serde(rename = "rtpTime")]
-    // pub anchor_rtp_timestamp: Option<u64>,
-}
-
-#[derive(Deserialize)]
 #[serde(untagged)]
 pub enum SetupRequest {
     SenderInfo {

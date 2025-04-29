@@ -42,17 +42,12 @@ impl State {
     pub fn from_signing_privkey(privkey: Ed25519Key) -> Self {
         Self {
             state: Inner::default(),
-            keypair: signature::Ed25519KeyPair::from_seed_unchecked(&privkey)
-                .expect("seed len must be 32"),
+            keypair: signature::Ed25519KeyPair::from_seed_unchecked(&privkey).unwrap(),
         }
     }
 
     pub fn verifying_key(&self) -> Ed25519Key {
-        self.keypair
-            .public_key()
-            .as_ref()
-            .try_into()
-            .expect("ed25519 pubkey len must be 32 bytes")
+        self.keypair.public_key().as_ref().try_into().unwrap()
     }
 
     pub fn establish_agreement(
@@ -69,7 +64,7 @@ impl State {
             .compute_public_key()
             .map_err(|_| Error::Cryptography("ECDH public key computation"))?;
         let shared_secret = agreement::agree_ephemeral(privkey_our, &pubkey_their, |x| {
-            SharedSecret::try_from(x).expect("shared secret must be 32 bytes")
+            SharedSecret::try_from(x).unwrap()
         })
         .map_err(|_| Error::Cryptography("ECDH agreement"))?;
 
@@ -78,11 +73,7 @@ impl State {
             buf[..X25519_KEY_LEN].copy_from_slice(pubkey_our.as_ref());
             buf[X25519_KEY_LEN..].copy_from_slice(pubkey_their.as_ref());
 
-            self.keypair
-                .sign(&buf)
-                .as_ref()
-                .try_into()
-                .expect("ed25519 signature must be 64 bytes")
+            self.keypair.sign(&buf).as_ref().try_into().unwrap()
         };
         let mut cipher = cipher(&shared_secret);
         cipher.apply_keystream(&mut signature);
