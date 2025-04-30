@@ -145,6 +145,7 @@ impl Default for Features {
             // A glitch whether /fp-setup is called, but the audio/video data is clear
             | Self::MFiSoft_FairPlay
             | Self::AudioUnencrypted
+            // TODO : require stream type130 | Self::AirPlayVideoV2
 
             // Seems like needed for a GET /info call
             | Self::UnifiedAdvertisingInfo
@@ -153,6 +154,5 @@ impl Default for Features {
             | Self::BufferedAudio
             | Self::NTPClock
             | Self::PTPClock
-        // TODO | Self::NowPlayingInfo
     }
 }

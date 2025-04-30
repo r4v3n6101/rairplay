@@ -68,7 +68,7 @@ pub struct VideoCipher {
 }
 
 impl VideoCipher {
-    pub fn new(key: AesKey128, stream_connection_id: i64) -> Self {
+    pub fn new(key: AesKey128, stream_connection_id: u64) -> Self {
         let hash1 = {
             let mut digest = digest::Context::new(&digest::SHA512);
             digest.update(format!("AirPlayStreamKey{stream_connection_id}").as_bytes());

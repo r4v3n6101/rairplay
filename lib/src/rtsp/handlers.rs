@@ -416,7 +416,7 @@ async fn setup_video<A, V: VideoDevice>(
     }: VideoRequest,
     id: u64,
 ) -> Result<StreamResponse, Response> {
-    let cipher = VideoCipher::new(*state.ekey.lock().unwrap(), stream_connection_id);
+    let cipher = VideoCipher::new(*state.ekey.lock().unwrap(), stream_connection_id as u64);
 
     let shared_data = Arc::new(SharedData::default());
     let stream = state.cfg.video.device.create(
