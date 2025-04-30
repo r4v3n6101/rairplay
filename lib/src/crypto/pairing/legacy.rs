@@ -25,7 +25,6 @@ enum Inner {
         verify_their: signature::UnparsedPublicKey<Ed25519Key>,
         pubkey_their: agreement::UnparsedPublicKey<X25519Key>,
         pubkey_our: agreement::PublicKey,
-        // TODO : I know its size
         shared_secret: SharedSecret,
     },
     Verified {

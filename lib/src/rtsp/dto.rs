@@ -131,10 +131,6 @@ pub struct AudioRealtimeRequest {
     pub min_latency_samples: u32,
     #[serde(rename = "latencyMax")]
     pub max_latency_samples: u32,
-    #[serde(rename = "shk")]
-    pub shared_key: Option<Bytes>,
-    #[serde(rename = "shiv")]
-    pub shared_iv: Option<Bytes>,
     #[serde(rename = "controlPort")]
     pub remote_control_port: u16,
 }
@@ -151,8 +147,6 @@ pub struct AudioBufferedRequest {
     pub samples_per_frame: u32,
     #[serde(rename = "shk")]
     pub shared_key: Bytes,
-    #[serde(rename = "shiv")]
-    pub shared_iv: Option<Bytes>,
     #[serde(rename = "clientID")]
     pub client_id: Option<String>,
 }
