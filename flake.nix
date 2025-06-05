@@ -45,7 +45,13 @@
             (rustVersion.override {
               extensions = [ "rust-src" "rust-analyzer" ];
             })
+            (
+              pkgs.writeShellScriptBin "ffplay_res" ''
+                ${pkgs.ffmpeg-full}/bin/ffplay -f rawvideo -pixel_format yuvj420p -color_range 2 -video_size 498x1080 -framerate 30 $1
+              ''
+            )
           ];
+          nativeBuildInputs = [ pkgs.pkg-config pkgs.ffmpeg-full.dev ];
 
           FAIRPLAY3_SRC = "${shairplay}/src/lib/playfair";
           RUST_BACKTRACE = "full";
