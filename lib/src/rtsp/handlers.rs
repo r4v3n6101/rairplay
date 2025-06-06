@@ -293,13 +293,23 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
     let cipher = AudioRealtimeCipher::new(*state.ekey.lock().unwrap(), *state.eiv.lock().unwrap());
 
     let shared_data = Arc::new(SharedData::default());
-    let stream = state.cfg.audio.device.create(
-        AudioParams {
-            samples_per_frame,
-            codec,
-        },
-        Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
-    );
+    let params = AudioParams {
+        samples_per_frame,
+        codec,
+    };
+    let stream = state
+        .cfg
+        .audio
+        .device
+        .create(
+            params,
+            Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
+        )
+        .map_err(|err| {
+            tracing::error!(%err, ?params, "stream couldn't be created");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        })?;
+
     match AudioRealtimeChannel::create(
         SocketAddr::new(local_addr.ip(), 0),
         SocketAddr::new(local_addr.ip(), 0),
@@ -356,25 +366,33 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
         return Err(StatusCode::BAD_REQUEST.into_response());
     };
 
-    let cipher = {
-        let Ok(key) = <[u8; AudioBufferedCipher::KEY_LEN]>::try_from(shared_key.as_ref()) else {
+    let cipher = AudioBufferedCipher::new(
+        <[u8; AudioBufferedCipher::KEY_LEN]>::try_from(shared_key.as_ref()).map_err(|err| {
             tracing::error!(
                 len = shared_key.len(),
                 "insufficient length of key for buffered audio's decryption"
             );
-            return Err(StatusCode::BAD_REQUEST.into_response());
-        };
-        AudioBufferedCipher::new(key)
-    };
+            StatusCode::BAD_REQUEST.into_response()
+        })?,
+    );
 
     let shared_data = Arc::new(SharedData::default());
-    let stream = state.cfg.audio.device.create(
-        AudioParams {
-            samples_per_frame,
-            codec,
-        },
-        Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
-    );
+    let params = AudioParams {
+        samples_per_frame,
+        codec,
+    };
+    let stream = state
+        .cfg
+        .audio
+        .device
+        .create(
+            params,
+            Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
+        )
+        .map_err(|err| {
+            tracing::error!(%err, ?params, "stream couldn't be created");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        })?;
 
     match AudioBufferedChannel::create(
         SocketAddr::new(local_addr.ip(), 0),
@@ -419,10 +437,19 @@ async fn setup_video<A, V: VideoDevice>(
     let cipher = VideoCipher::new(*state.ekey.lock().unwrap(), stream_connection_id as u64);
 
     let shared_data = Arc::new(SharedData::default());
-    let stream = state.cfg.video.device.create(
-        VideoParams {},
-        Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
-    );
+    let params = VideoParams {};
+    let stream = state
+        .cfg
+        .video
+        .device
+        .create(
+            VideoParams {},
+            Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
+        )
+        .map_err(|err| {
+            tracing::error!(%err, ?params, "stream couldn't be created");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        })?;
 
     match VideoChannel::create(
         SocketAddr::new(local_addr.ip(), 0),

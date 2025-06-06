@@ -7,8 +7,13 @@ pub mod video;
 pub trait Device: Send + Sync + 'static {
     type Params;
     type Stream: Stream;
+    type Error: Error;
 
-    fn create(&self, params: Self::Params, handle: Weak<dyn ChannelHandle>) -> Self::Stream;
+    fn create(
+        &self,
+        params: Self::Params,
+        handle: Weak<dyn ChannelHandle>,
+    ) -> Result<Self::Stream, Self::Error>;
 }
 
 pub trait ChannelHandle: Send + Sync + 'static {

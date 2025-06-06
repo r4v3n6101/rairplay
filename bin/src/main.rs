@@ -1,4 +1,5 @@
 use std::{
+    convert::Infallible,
     error::Error,
     fs::File,
     path::PathBuf,
@@ -61,8 +62,13 @@ pub struct PipeDevice {
 impl Device for PipeDevice {
     type Params = VideoParams;
     type Stream = PipeStream<VideoPacket>;
+    type Error = Infallible;
 
-    fn create(&self, _: Self::Params, handle: Weak<dyn ChannelHandle>) -> Self::Stream {
+    fn create(
+        &self,
+        _: Self::Params,
+        handle: Weak<dyn ChannelHandle>,
+    ) -> Result<Self::Stream, Self::Error> {
         let (tx, rx) = mpsc::channel();
         let path_buf = self.output.clone();
         thread::spawn(move || {
@@ -74,10 +80,10 @@ impl Device for PipeDevice {
             }
         });
 
-        PipeStream {
+        Ok(PipeStream {
             id: "ffmpeg_file_pipe",
             tx,
-        }
+        })
     }
 }
 

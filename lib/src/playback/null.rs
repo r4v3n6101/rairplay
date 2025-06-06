@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, marker::PhantomData, sync::Weak};
+use std::{convert::Infallible, error::Error, fmt, marker::PhantomData, sync::Weak};
 
 use super::{ChannelHandle, Device, Stream};
 
@@ -44,9 +44,14 @@ where
 {
     type Params = P;
     type Stream = NullStream<C>;
+    type Error = Infallible;
 
-    fn create(&self, params: Self::Params, _: Weak<dyn ChannelHandle>) -> Self::Stream {
+    fn create(
+        &self,
+        params: Self::Params,
+        _: Weak<dyn ChannelHandle>,
+    ) -> Result<Self::Stream, Self::Error> {
         tracing::info!(?params, "created null stream");
-        NullStream(PhantomData)
+        Ok(NullStream(PhantomData))
     }
 }
