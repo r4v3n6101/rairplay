@@ -210,32 +210,28 @@ async fn setup_info<A, V>(
     let mut lock = state.event_channel.lock().await;
     let event_channel = match &mut *lock {
         Some(chan) => chan,
-        event_channel @ None => {
-            match EventChannel::create(SocketAddr::new(local_addr.ip(), 0)).await {
-                Ok(chan) => event_channel.insert(chan),
-                Err(err) => {
-                    tracing::error!(%err, "failed creating event listener");
-                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
-                }
-            }
-        }
+        event_channel @ None => EventChannel::create(SocketAddr::new(local_addr.ip(), 0))
+            .await
+            .inspect_err(|err| tracing::error!(%err, "failed creating event listener"))
+            .map(|chan| event_channel.insert(chan))
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
     };
 
     let Ok(eiv) = AesIv128::try_from(eiv.as_ref()) else {
-        tracing::error!("invalid length of passed iv");
+        tracing::error!(len=%eiv.len(), "invalid length of passed iv");
         return Err(StatusCode::BAD_REQUEST);
     };
 
-    if let Some(shared_secret) = state.pairing.lock().unwrap().shared_secret() {
-        let aes_key = fairplay::decrypt_key(state.fp_last_msg.lock().unwrap().as_ref(), ekey);
-        let aes_digest = hash_aes_key(aes_key, shared_secret);
-
-        *state.ekey.lock().unwrap() = aes_digest;
-        *state.eiv.lock().unwrap() = eiv;
-    } else {
+    let Some(shared_secret) = state.pairing.lock().unwrap().shared_secret() else {
         tracing::error!("must be paired before setup call");
         return Err(StatusCode::FORBIDDEN);
-    }
+    };
+
+    let aes_key = fairplay::decrypt_key(state.fp_last_msg.lock().unwrap().as_ref(), ekey);
+    let aes_digest = hash_aes_key(aes_key, shared_secret);
+
+    *state.ekey.lock().unwrap() = aes_digest;
+    *state.eiv.lock().unwrap() = eiv;
 
     // TODO : log more info from SenderInfo
 
@@ -305,12 +301,10 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
             params,
             Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
         )
-        .map_err(|err| {
-            tracing::error!(%err, ?params, "stream couldn't be created");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        })?;
+        .inspect_err(|err| tracing::error!(%err, ?params, "stream couldn't be created"))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
 
-    match AudioRealtimeChannel::create(
+    AudioRealtimeChannel::create(
         SocketAddr::new(local_addr.ip(), 0),
         SocketAddr::new(local_addr.ip(), 0),
         state.cfg.audio.buf_size,
@@ -319,27 +313,20 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         stream,
     )
     .await
-    {
-        Ok(chan) => {
-            let local_data_port = chan.local_data_addr.port();
-            let local_control_port = chan.local_control_addr.port();
-            state
-                .audio_realtime_channels
-                .lock()
-                .unwrap()
-                .insert(id, shared_data);
-
-            Ok(StreamResponse::AudioRealtime {
-                id,
-                local_data_port,
-                local_control_port,
-            })
-        }
-        Err(err) => {
-            tracing::error!(%err, "realtime audio listener not created");
-            Err(StatusCode::INTERNAL_SERVER_ERROR.into_response())
-        }
-    }
+    .inspect(|_| {
+        state
+            .audio_realtime_channels
+            .lock()
+            .unwrap()
+            .insert(id, shared_data);
+    })
+    .inspect_err(|err| tracing::error!(%err, "realtime audio listener not created"))
+    .map(|chan| StreamResponse::AudioRealtime {
+        id,
+        local_data_port: chan.local_data_addr.port(),
+        local_control_port: chan.local_control_addr.port(),
+    })
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
 async fn setup_buffered_audio<A: AudioDevice, V>(
@@ -367,13 +354,14 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
     };
 
     let cipher = AudioBufferedCipher::new(
-        <[u8; AudioBufferedCipher::KEY_LEN]>::try_from(shared_key.as_ref()).map_err(|err| {
-            tracing::error!(
-                len = shared_key.len(),
-                "insufficient length of key for buffered audio's decryption"
-            );
-            StatusCode::BAD_REQUEST.into_response()
-        })?,
+        <[u8; AudioBufferedCipher::KEY_LEN]>::try_from(shared_key.as_ref())
+            .inspect_err(|_| {
+                tracing::error!(
+                    len = shared_key.len(),
+                    "insufficient length of key for buffered audio's decryption"
+                );
+            })
+            .map_err(|_| StatusCode::BAD_REQUEST.into_response())?,
     );
 
     let shared_data = Arc::new(SharedData::default());
@@ -389,12 +377,10 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
             params,
             Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
         )
-        .map_err(|err| {
-            tracing::error!(%err, ?params, "stream couldn't be created");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        })?;
+        .inspect_err(|err| tracing::error!(%err, ?params, "stream couldn't be created"))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
 
-    match AudioBufferedChannel::create(
+    AudioBufferedChannel::create(
         SocketAddr::new(local_addr.ip(), 0),
         state.cfg.audio.buf_size,
         shared_data.clone(),
@@ -402,27 +388,20 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
         stream,
     )
     .await
-    {
-        Ok(chan) => {
-            let local_data_port = chan.local_addr.port();
-            let audio_buffer_size = chan.audio_buf_size;
-            state
-                .audio_buffered_channels
-                .lock()
-                .unwrap()
-                .insert(id, shared_data);
-
-            Ok(StreamResponse::AudioBuffered {
-                id,
-                local_data_port,
-                audio_buffer_size,
-            })
-        }
-        Err(err) => {
-            tracing::error!(%err, "buffered audio listener not created");
-            Err(StatusCode::INTERNAL_SERVER_ERROR.into_response())
-        }
-    }
+    .inspect(|_| {
+        state
+            .audio_buffered_channels
+            .lock()
+            .unwrap()
+            .insert(id, shared_data);
+    })
+    .inspect_err(|err| tracing::error!(%err, "buffered audio listener not created"))
+    .map(|chan| StreamResponse::AudioBuffered {
+        id,
+        local_data_port: chan.local_addr.port(),
+        audio_buffer_size: chan.audio_buf_size,
+    })
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
 async fn setup_video<A, V: VideoDevice>(
@@ -434,6 +413,8 @@ async fn setup_video<A, V: VideoDevice>(
     }: VideoRequest,
     id: u64,
 ) -> Result<StreamResponse, Response> {
+    // This must work like that
+    #[allow(clippy::cast_sign_loss)]
     let cipher = VideoCipher::new(*state.ekey.lock().unwrap(), stream_connection_id as u64);
 
     let shared_data = Arc::new(SharedData::default());
@@ -446,12 +427,10 @@ async fn setup_video<A, V: VideoDevice>(
             VideoParams {},
             Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
         )
-        .map_err(|err| {
-            tracing::error!(%err, ?params, "stream couldn't be created");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        })?;
+        .inspect_err(|err| tracing::error!(%err, ?params, "stream couldn't be created"))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
 
-    match VideoChannel::create(
+    VideoChannel::create(
         SocketAddr::new(local_addr.ip(), 0),
         state.cfg.video.buf_size,
         shared_data.clone(),
@@ -459,20 +438,13 @@ async fn setup_video<A, V: VideoDevice>(
         stream,
     )
     .await
-    {
-        Ok(chan) => {
-            let local_data_port = chan.local_addr.port();
-
-            state.video_channels.lock().unwrap().insert(id, shared_data);
-
-            Ok(StreamResponse::Video {
-                id,
-                local_data_port,
-            })
-        }
-        Err(err) => {
-            tracing::error!(%err, "video listener not created");
-            Err(StatusCode::INTERNAL_SERVER_ERROR.into_response())
-        }
-    }
+    .inspect(|_| {
+        state.video_channels.lock().unwrap().insert(id, shared_data);
+    })
+    .inspect_err(|err| tracing::error!(%err, "video listener not created"))
+    .map(|chan| StreamResponse::Video {
+        id,
+        local_data_port: chan.local_addr.port(),
+    })
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
