@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["lib", "bin"]
+members = ["rairplay", "examples/*"]
 
 # TODO : temporarily, because of unsupported int enum tags
 [patch.crates-io]

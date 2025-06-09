@@ -18,27 +18,9 @@
         overlays = [ rust-overlay.overlays.default ];
         pkgs = import nixpkgs { inherit system overlays; };
         rustVersion = pkgs.rust-bin.stable.latest.default;
-        rustPlatform = pkgs.makeRustPlatform {
-          cargo = rustVersion;
-          rustc = rustVersion;
-        };
-        manifest = (pkgs.lib.importTOML ./bin/Cargo.toml).package;
       in
       {
         formatter = pkgs.nixpkgs-fmt;
-
-        packages.default = rustPlatform.buildRustPackage {
-          pname = manifest.name;
-          version = manifest.version;
-          src = pkgs.lib.cleanSource ./.;
-          cargoLock = {
-            lockFile = ./Cargo.lock;
-            allowBuiltinFetchGit = true;
-          };
-          nativeBuildInputs = [ pkgs.libiconv ];
-
-          FAIRPLAY3_SRC = "${shairplay}/src/lib/playfair";
-        };
 
         devShells.default = pkgs.mkShell {
           buildInputs = [
@@ -46,7 +28,7 @@
               extensions = [ "rust-src" "rust-analyzer" ];
             })
             (
-              pkgs.writeShellScriptBin "ffplay_res" ''
+              pkgs.writeShellScriptBin "ffplay_video" ''
                 ${pkgs.ffmpeg-full}/bin/ffplay -f rawvideo -pixel_format yuvj420p -color_range 2 -video_size 498x1080 -framerate 30 $1
               ''
             )
