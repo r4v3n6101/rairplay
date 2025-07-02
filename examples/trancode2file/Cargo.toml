@@ -1,13 +1,18 @@
 [package]
-name = "rairplay-bin"
+name = "example-transcode2file"
 version = "0.1.0"
 edition = "2021"
+publish = false
+
+[[bin]]
+name = "rairplay-transcode2file"
+path = "src/main.rs"
 
 [dependencies]
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 mdns-sd = "0.11.5"
-rairplay = { path = "../lib" }
+rairplay = { path = "../../rairplay/" }
 
 httparse = "1"
 pin-project-lite = "0.2"
@@ -16,5 +21,6 @@ hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 tokio = { version = "1.41.1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec", "io"] }
-ffmpeg-next = "7.1.0"
 clap = { version = "4.5.39", features = ["derive"] }
+gstreamer = "0.23.6"
+gstreamer-app = "0.23.5"

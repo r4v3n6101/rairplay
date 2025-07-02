@@ -298,6 +298,7 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         .audio
         .device
         .create(
+            id,
             params,
             Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
         )
@@ -374,6 +375,7 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
         .audio
         .device
         .create(
+            id,
             params,
             Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
         )
@@ -424,6 +426,7 @@ async fn setup_video<A, V: VideoDevice>(
         .video
         .device
         .create(
+            id,
             VideoParams {},
             Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
         )
