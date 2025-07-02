@@ -1,6 +1,6 @@
 {
   description =
-    "A server that process audio and video sent by AirPlay protocol";
+    "A server processes an audio and a video stream sent by the AirPlay protocol";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -28,6 +28,7 @@
               extensions = [ "rust-src" "rust-analyzer" ];
             })
           ];
+
           nativeBuildInputs = with pkgs; [
             pkg-config
             gst_all_1.gstreamer
@@ -38,8 +39,8 @@
             gst_all_1.gst-libav
           ];
 
-          FAIRPLAY3_SRC = "${shairplay}/src/lib/playfair";
           RUST_BACKTRACE = "full";
+          FAIRPLAY3_SRC = "${shairplay}/src/lib/playfair";
         };
       });
 }
