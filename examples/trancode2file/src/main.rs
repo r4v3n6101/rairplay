@@ -1,13 +1,10 @@
 use std::{
     convert::Infallible,
     error::Error,
-    fs::File,
-    path::PathBuf,
     sync::{mpsc, Weak},
     thread,
 };
 
-use clap::Parser;
 use rairplay::playback::{
     null::NullDevice,
     video::{VideoDevice, VideoPacket, VideoParams},
@@ -20,13 +17,6 @@ mod discovery;
 mod transport;
 mod video;
 
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    #[arg(short, long)]
-    video_output: PathBuf,
-}
-
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -34,18 +24,14 @@ async fn main() {
         .pretty()
         .init();
 
-    ffmpeg_next::init().unwrap();
-
-    let args = Args::parse();
+    gstreamer::init().expect("gstreamer initialization");
 
     let svc_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
     discovery::mdns_broadcast();
 
     let cfg = rairplay::config::Config::<NullDevice<_, _>, PipeDevice> {
         video: rairplay::config::Video {
-            device: PipeDevice {
-                output: args.video_output,
-            },
+            device: PipeDevice,
             ..Default::default()
         },
         ..Default::default()
@@ -55,9 +41,7 @@ async fn main() {
 }
 
 #[derive(Debug, Default)]
-pub struct PipeDevice {
-    output: PathBuf,
-}
+pub struct PipeDevice;
 
 impl Device for PipeDevice {
     type Params = VideoParams;
@@ -66,14 +50,14 @@ impl Device for PipeDevice {
 
     fn create(
         &self,
+        id: u64,
         _: Self::Params,
         handle: Weak<dyn ChannelHandle>,
     ) -> Result<Self::Stream, Self::Error> {
         let (tx, rx) = mpsc::channel();
-        let path_buf = self.output.clone();
         thread::spawn(move || {
-            if let Err(err) = video::transcode(rx, File::create(path_buf).expect("opened file")) {
-                tracing::error!(%err, "ffmpeg error during transcoding video");
+            if let Err(err) = video::transcode(rx, id) {
+                tracing::error!(%err, "error during transcoding video");
             }
             if let Some(handle) = handle.upgrade() {
                 handle.close();
@@ -81,7 +65,7 @@ impl Device for PipeDevice {
         });
 
         Ok(PipeStream {
-            id: "ffmpeg_file_pipe",
+            id: format!("transcode_video_stream_{id}"),
             tx,
         })
     }
@@ -91,7 +75,7 @@ impl VideoDevice for PipeDevice {}
 
 /// Stream that just pipes packets through channel
 pub struct PipeStream<T> {
-    id: &'static str,
+    id: String,
     tx: mpsc::Sender<T>,
 }
 
@@ -106,10 +90,10 @@ where
     }
 
     fn on_ok(self) {
-        tracing::info!(id=%self.id, "stream successfully closed");
+        tracing::info!(id=%self.id, "pipe stream successfully closed");
     }
 
     fn on_err(self, err: Box<dyn Error>) {
-        tracing::error!(%err, id=%self.id, "stream closed with an error");
+        tracing::error!(%err, id=%self.id, "pipe stream ended with an error");
     }
 }

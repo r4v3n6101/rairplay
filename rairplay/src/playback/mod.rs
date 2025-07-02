@@ -11,6 +11,7 @@ pub trait Device: Send + Sync + 'static {
 
     fn create(
         &self,
+        id: u64,
         params: Self::Params,
         handle: Weak<dyn ChannelHandle>,
     ) -> Result<Self::Stream, Self::Error>;

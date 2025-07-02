@@ -27,13 +27,16 @@
             (rustVersion.override {
               extensions = [ "rust-src" "rust-analyzer" ];
             })
-            (
-              pkgs.writeShellScriptBin "ffplay_video" ''
-                ${pkgs.ffmpeg-full}/bin/ffplay -f rawvideo -pixel_format yuvj420p -color_range 2 -video_size 498x1080 -framerate 30 $1
-              ''
-            )
           ];
-          nativeBuildInputs = [ pkgs.pkg-config pkgs.ffmpeg-full.dev ];
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+            gst_all_1.gstreamer
+            gst_all_1.gst-plugins-base
+            gst_all_1.gst-plugins-good
+            gst_all_1.gst-plugins-bad
+            gst_all_1.gst-plugins-ugly
+            gst_all_1.gst-libav
+          ];
 
           FAIRPLAY3_SRC = "${shairplay}/src/lib/playfair";
           RUST_BACKTRACE = "full";

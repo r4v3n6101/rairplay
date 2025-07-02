@@ -48,10 +48,11 @@ where
 
     fn create(
         &self,
+        id: u64,
         params: Self::Params,
         _: Weak<dyn ChannelHandle>,
     ) -> Result<Self::Stream, Self::Error> {
-        tracing::info!(?params, "created null stream");
+        tracing::info!(?params, %id, "created null stream");
         Ok(NullStream(PhantomData))
     }
 }
