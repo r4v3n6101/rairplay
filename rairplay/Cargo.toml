@@ -15,17 +15,19 @@ bytes = { version = "1", features = ["serde"] }
 bitflags = { version = "2", features = ["serde"] }
 plist = "1"
 
-ring = "0.17"
+sha2 = "0.10"
 aes = "0.8"
 ctr = "0.9"
+cbc = "0.1.2"
+x25519-dalek = { version = "2.0.1", features = ["getrandom"] }
+ed25519-dalek = "2"
+chacha20poly1305 = "0.10"
 
 http = "1"
 tower = "0.5.2"
 tower-http = { version = "0.6.2", features = ["propagate-header"] }
 tokio = { version = "1.44", features = ["rt", "net", "io-util"] }
 axum = { version = "0.8.1", default-features = false, features = ["tokio"] }
-want = "0.3.1"
-cbc = "0.1.2"
 
 [build-dependencies]
 glob = "0.3.1"

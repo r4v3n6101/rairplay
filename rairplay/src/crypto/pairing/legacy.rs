@@ -1,12 +1,11 @@
 use std::mem;
 
-use aes::cipher::{KeyIvInit, StreamCipher};
-use ring::{
-    agreement, digest,
-    rand::{self},
-    signature::{self, KeyPair},
-};
+use aes::cipher::StreamCipher;
+use ed25519_dalek::{ed25519::signature::SignerMut as _, Signature, SigningKey, VerifyingKey};
 use thiserror::Error;
+use x25519_dalek::{EphemeralSecret, PublicKey};
+
+use crate::crypto::cipher_with_hashed_aes_iv;
 
 use super::super::AesCtr128BE;
 
@@ -16,15 +15,16 @@ pub const SIGNATURE_LENGTH: usize = 64;
 pub type X25519Key = [u8; X25519_KEY_LEN];
 pub type Ed25519Key = [u8; X25519_KEY_LEN];
 pub type SharedSecret = [u8; 32];
+pub type Response = [u8; X25519_KEY_LEN + SIGNATURE_LENGTH];
 
 #[derive(Default)]
 enum Inner {
     #[default]
     Empty,
     Established {
-        verify_their: signature::UnparsedPublicKey<Ed25519Key>,
-        pubkey_their: agreement::UnparsedPublicKey<X25519Key>,
-        pubkey_our: agreement::PublicKey,
+        verify_their: VerifyingKey,
+        pubkey_their: PublicKey,
+        pubkey_our: PublicKey,
         shared_secret: SharedSecret,
     },
     Verified {
@@ -34,46 +34,42 @@ enum Inner {
 
 pub struct State {
     state: Inner,
-    keypair: signature::Ed25519KeyPair,
+    signing_our: SigningKey,
 }
 
 impl State {
     pub fn from_signing_privkey(privkey: Ed25519Key) -> Self {
         Self {
             state: Inner::default(),
-            keypair: signature::Ed25519KeyPair::from_seed_unchecked(&privkey).unwrap(),
+            signing_our: SigningKey::from_bytes(&privkey),
         }
     }
 
     pub fn verifying_key(&self) -> Ed25519Key {
-        self.keypair.public_key().as_ref().try_into().unwrap()
+        self.signing_our.verifying_key().to_bytes()
     }
 
     pub fn establish_agreement(
         &mut self,
         pubkey_their: X25519Key,
         verify_their: Ed25519Key,
-    ) -> Result<[u8; X25519_KEY_LEN + SIGNATURE_LENGTH], Error> {
-        let rng = rand::SystemRandom::new();
-        let pubkey_their = agreement::UnparsedPublicKey::new(&agreement::X25519, pubkey_their);
-        let verify_their = signature::UnparsedPublicKey::new(&signature::ED25519, verify_their);
-        let privkey_our = agreement::EphemeralPrivateKey::generate(&agreement::X25519, &rng)
-            .map_err(|_| Error::Cryptography("ECDH private key generation"))?;
-        let pubkey_our = privkey_our
-            .compute_public_key()
-            .map_err(|_| Error::Cryptography("ECDH public key computation"))?;
-        let shared_secret = agreement::agree_ephemeral(privkey_our, &pubkey_their, |x| {
-            SharedSecret::try_from(x).unwrap()
-        })
-        .map_err(|_| Error::Cryptography("ECDH agreement"))?;
+    ) -> Result<Response, Error> {
+        let verify_their = VerifyingKey::from_bytes(&verify_their)
+            .map_err(|_| Error::Cryptography("invalid verification key"))?;
+        let pubkey_their = PublicKey::from(pubkey_their);
 
-        let mut signature: [u8; SIGNATURE_LENGTH] = {
+        let ephemeral = EphemeralSecret::random();
+        let pubkey_our = PublicKey::from(&ephemeral);
+        let shared_secret = ephemeral.diffie_hellman(&pubkey_their).to_bytes();
+
+        let mut signature = {
             let mut buf = [0u8; 2 * X25519_KEY_LEN];
             buf[..X25519_KEY_LEN].copy_from_slice(pubkey_our.as_ref());
             buf[X25519_KEY_LEN..].copy_from_slice(pubkey_their.as_ref());
 
-            self.keypair.sign(&buf).as_ref().try_into().unwrap()
+            self.signing_our.sign(&buf).to_bytes()
         };
+
         let mut cipher = cipher(&shared_secret);
         cipher.apply_keystream(&mut signature);
 
@@ -111,7 +107,7 @@ impl State {
         message[X25519_KEY_LEN..].copy_from_slice(pubkey_our.as_ref());
 
         verify_their
-            .verify(&message, &signature)
+            .verify_strict(&message, &Signature::from_bytes(&signature))
             .map_err(|_| Error::Verification)
             .inspect(|()| {
                 self.state = Inner::Verified { shared_secret };
@@ -143,17 +139,7 @@ pub enum Error {
 }
 
 fn cipher(shared_secret: &[u8]) -> AesCtr128BE {
-    let mut aes = digest::Context::new(&digest::SHA512);
-    aes.update(b"Pair-Verify-AES-Key");
-    aes.update(shared_secret);
-    let aes = aes.finish();
-
-    let mut iv = digest::Context::new(&digest::SHA512);
-    iv.update(b"Pair-Verify-AES-IV");
-    iv.update(shared_secret);
-    let iv = iv.finish();
-
-    AesCtr128BE::new(aes.as_ref()[..16].into(), iv.as_ref()[..16].into())
+    cipher_with_hashed_aes_iv(b"Pair-Verify-AES-Key", b"Pair-Verify-AES-IV", shared_secret)
 }
 
 #[cfg(test)]
