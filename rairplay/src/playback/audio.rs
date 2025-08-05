@@ -1,5 +1,3 @@
-use std::fmt;
-
 use bytes::BytesMut;
 
 use super::{null::NullDevice, Device, Stream};
@@ -47,105 +45,247 @@ pub enum CodecKind {
 
 #[derive(Debug)]
 pub struct AudioPacket {
-    pub rtp: RtpPacket,
+    pub rtp: BytesMut,
 }
 
-#[derive(Debug)]
-pub struct RtpPacket {
-    pub(crate) inner: BytesMut,
+impl AudioPacket {
+    /// Just RTP header
+    pub const HEADER_LEN: usize = 12;
+    /// Used for decryption of buffered stream
+    /// Won't be stored in Self
+    pub const TRAILER_LEN: usize = 24;
 }
 
-impl RtpPacket {
-    pub fn header(&self) -> RtpHeader {
-        RtpHeader(
-            (self.inner[..RtpHeader::SIZE])
-                .try_into()
-                // TODO
-                .expect("rtp packet must be at least 12 bytes"),
-        )
-    }
-
-    pub fn payload(&self) -> &[u8] {
-        &self.inner[RtpHeader::SIZE..]
-    }
-
-    pub fn payload_mut(&mut self) -> &mut [u8] {
-        &mut self.inner[RtpHeader::SIZE..]
-    }
-}
-
-impl AsRef<[u8]> for RtpPacket {
-    fn as_ref(&self) -> &[u8] {
-        self.inner.as_ref()
-    }
-}
-
-impl AsMut<[u8]> for RtpPacket {
-    fn as_mut(&mut self) -> &mut [u8] {
-        self.inner.as_mut()
-    }
-}
-
-pub struct RtpHeader([u8; Self::SIZE]);
-
-impl fmt::Debug for RtpHeader {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RtpHeader")
-            .field("version", &self.version())
-            .field("padding", &self.padding())
-            .field("extension", &self.extension())
-            .field("csrc_count", &self.csrc_count())
-            .field("marker", &self.marker())
-            .field("payload_type", &self.payload_type())
-            .field("seqnum", &self.seqnum())
-            .field("timestamp", &self.timestamp())
-            .field("ssrc", &self.ssrc())
-            .finish()
-    }
-}
-
-impl RtpHeader {
-    pub const SIZE: usize = 12;
-
-    pub fn version(&self) -> u8 {
-        (self.0[0] & 0b1100_0000) >> 6
-    }
-
-    pub fn padding(&self) -> u8 {
-        (self.0[0] & 0b0010_0000) >> 5
-    }
-
-    pub fn extension(&self) -> u8 {
-        (self.0[0] & 0b0001_0000) >> 4
-    }
-
-    pub fn csrc_count(&self) -> u8 {
-        self.0[0] & 0b0000_1111
-    }
-
-    pub fn marker(&self) -> bool {
-        (self.0[1] & 0b1000_0000) >> 7 == 1
-    }
-
-    pub fn payload_type(&self) -> u8 {
-        self.0[1] & 0b0111_1111
-    }
-
-    pub fn seqnum(&self) -> u16 {
-        let mut seqnum = [0; 2];
-        seqnum.copy_from_slice(&self.0[2..][..2]);
-        u16::from_be_bytes(seqnum)
-    }
-
-    pub fn timestamp(&self) -> u32 {
-        let mut timestamp = [0; 4];
-        timestamp.copy_from_slice(&self.0[4..][..4]);
-        u32::from_be_bytes(timestamp)
-    }
-
-    pub fn ssrc(&self) -> u32 {
-        let mut ssrc = [0; 4];
-        ssrc.copy_from_slice(&self.0[8..][..4]);
-        u32::from_be_bytes(ssrc)
-    }
-}
+pub static AUDIO_FORMATS: [Codec; 33] = [
+    // 0    Dummy
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 0,
+        sample_rate: 0,
+        channels: 0,
+    },
+    // 1    Dummy
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 0,
+        sample_rate: 0,
+        channels: 0,
+    },
+    // 2	0x4	PCM/8000/16/1
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 16,
+        sample_rate: 8000,
+        channels: 1,
+    },
+    // 3	0x8	PCM/8000/16/2
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 16,
+        sample_rate: 8000,
+        channels: 2,
+    },
+    // 4	0x10	PCM/16000/16/1
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 16,
+        sample_rate: 16000,
+        channels: 1,
+    },
+    // 5	0x20	PCM/16000/16/2
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 16,
+        sample_rate: 16000,
+        channels: 2,
+    },
+    // 6	0x40	PCM/24000/16/1
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 16,
+        sample_rate: 24000,
+        channels: 1,
+    },
+    // 7	0x80	PCM/24000/16/2
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 16,
+        sample_rate: 24000,
+        channels: 2,
+    },
+    // 8	0x100	PCM/32000/16/1
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 16,
+        sample_rate: 32000,
+        channels: 1,
+    },
+    // 9	0x200	PCM/32000/16/2
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 16,
+        sample_rate: 32000,
+        channels: 2,
+    },
+    // 10	0x400	PCM/44100/16/1
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 16,
+        sample_rate: 44100,
+        channels: 1,
+    },
+    // 11	0x800	PCM/44100/16/2
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 16,
+        sample_rate: 44100,
+        channels: 2,
+    },
+    // 12	0x1000	PCM/44100/24/1
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 24,
+        sample_rate: 44100,
+        channels: 1,
+    },
+    // 13	0x2000	PCM/44100/24/2
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 24,
+        sample_rate: 44100,
+        channels: 2,
+    },
+    // 14	0x4000	PCM/48000/16/1
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 16,
+        sample_rate: 48000,
+        channels: 1,
+    },
+    // 15	0x8000	PCM/48000/16/2
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 16,
+        sample_rate: 48000,
+        channels: 2,
+    },
+    // 16	0x10000	PCM/48000/24/1
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 24,
+        sample_rate: 48000,
+        channels: 1,
+    },
+    // 17	0x20000	PCM/48000/24/2
+    Codec {
+        kind: CodecKind::Pcm,
+        bits_per_sample: 24,
+        sample_rate: 48000,
+        channels: 2,
+    },
+    // 18	0x40000	ALAC/44100/16/2
+    Codec {
+        kind: CodecKind::Alac,
+        bits_per_sample: 16,
+        sample_rate: 44100,
+        channels: 2,
+    },
+    // 19	0x80000	ALAC/44100/24/2
+    Codec {
+        kind: CodecKind::Alac,
+        bits_per_sample: 24,
+        sample_rate: 44100,
+        channels: 2,
+    },
+    // 20	0x100000	ALAC/48000/16/2
+    Codec {
+        kind: CodecKind::Alac,
+        bits_per_sample: 16,
+        sample_rate: 48000,
+        channels: 2,
+    },
+    // 21	0x200000	ALAC/48000/24/2
+    Codec {
+        kind: CodecKind::Alac,
+        bits_per_sample: 24,
+        sample_rate: 48000,
+        channels: 2,
+    },
+    // 22	0x400000	AAC-LC/44100/2
+    Codec {
+        kind: CodecKind::Aac,
+        bits_per_sample: 0,
+        sample_rate: 44100,
+        channels: 2,
+    },
+    // 23	0x800000	AAC-LC/48000/2
+    Codec {
+        kind: CodecKind::Aac,
+        bits_per_sample: 0,
+        sample_rate: 48000,
+        channels: 2,
+    },
+    // 24	0x1000000	AAC-ELD/44100/2
+    Codec {
+        kind: CodecKind::Aac,
+        bits_per_sample: 0,
+        sample_rate: 44100,
+        channels: 2,
+    },
+    // 25	0x2000000	AAC-ELD/48000/2
+    Codec {
+        kind: CodecKind::Aac,
+        bits_per_sample: 0,
+        sample_rate: 48000,
+        channels: 2,
+    },
+    // 26	0x4000000	AAC-ELD/16000/1
+    Codec {
+        kind: CodecKind::Aac,
+        bits_per_sample: 0,
+        sample_rate: 16000,
+        channels: 1,
+    },
+    // 27	0x8000000	AAC-ELD/24000/1
+    Codec {
+        kind: CodecKind::Aac,
+        bits_per_sample: 0,
+        sample_rate: 24000,
+        channels: 1,
+    },
+    // 28	0x10000000	OPUS/16000/1
+    Codec {
+        kind: CodecKind::Opus,
+        bits_per_sample: 0,
+        sample_rate: 16000,
+        channels: 1,
+    },
+    // 29	0x20000000	OPUS/24000/1
+    Codec {
+        kind: CodecKind::Opus,
+        bits_per_sample: 0,
+        sample_rate: 24000,
+        channels: 1,
+    },
+    // 30	0x40000000	OPUS/48000/1
+    Codec {
+        kind: CodecKind::Opus,
+        bits_per_sample: 0,
+        sample_rate: 48000,
+        channels: 1,
+    },
+    // 31	0x80000000	AAC-ELD/44100/1
+    Codec {
+        kind: CodecKind::Aac,
+        bits_per_sample: 0,
+        sample_rate: 44100,
+        channels: 1,
+    },
+    // 32	0x100000000	AAC-ELD/48000/1
+    Codec {
+        kind: CodecKind::Aac,
+        bits_per_sample: 0,
+        sample_rate: 48000,
+        channels: 1,
+    },
+];
