@@ -11,14 +11,13 @@ use crate::{
         AesIv128,
     },
     playback::{
-        audio::{AudioDevice, AudioParams},
+        audio::{AudioDevice, AudioParams, AUDIO_FORMATS},
         video::{VideoDevice, VideoParams},
         ChannelHandle,
     },
     streaming::{
         AudioBufferedChannel, AudioRealtimeChannel, EventChannel, SharedData, VideoChannel,
     },
-    util::constants,
 };
 
 use axum::{
@@ -278,7 +277,7 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
     }: AudioRealtimeRequest,
     id: u64,
 ) -> Result<StreamResponse, Response> {
-    let Some(codec) = constants::AUDIO_FORMATS
+    let Some(codec) = AUDIO_FORMATS
         .get(audio_format.trailing_zeros() as usize)
         .copied()
     else {
@@ -342,7 +341,7 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
     }: AudioBufferedRequest,
     id: u64,
 ) -> Result<StreamResponse, Response> {
-    let Some(codec) = constants::AUDIO_FORMATS
+    let Some(codec) = AUDIO_FORMATS
         .get(audio_format_index.map_or_else(|| audio_format.trailing_zeros() as usize, usize::from))
         .copied()
     else {

@@ -75,9 +75,6 @@ pub struct SenderInfo {
 
     #[serde(flatten)]
     pub timing_proto: TimingProtocol,
-
-    #[serde(flatten)]
-    pub content: plist::Value,
 }
 
 #[derive(Deserialize)]

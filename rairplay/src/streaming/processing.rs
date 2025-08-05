@@ -8,7 +8,7 @@ use tokio::{
 use crate::{
     crypto::streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
     playback::{
-        audio::{AudioPacket, AudioStream, RtpHeader, RtpPacket},
+        audio::{AudioPacket, AudioStream},
         video::{PacketKind, VideoPacket, VideoStream},
     },
     util::memory,
@@ -40,16 +40,14 @@ pub async fn audio_buffered_processor(
         // 2 is pkt_len field size itself
         let pkt_len: usize = pkt_len.saturating_sub(2).into();
 
-        if pkt_len < RtpHeader::SIZE + TRAILER_LEN {
+        if pkt_len < AudioPacket::HEADER_LEN + AudioPacket::TRAILER_LEN {
             return Err(io::Error::other("malformed buffered stream"));
         }
 
         // rtp pkt length w/o encryption data
         let pkt_len = pkt_len - TRAILER_LEN;
-        let mut rtp = RtpPacket {
-            inner: audio_buf.allocate_buf(pkt_len),
-        };
-        tcp_stream.read_exact(rtp.as_mut()).await?;
+        let mut rtp = audio_buf.allocate_buf(pkt_len);
+        tcp_stream.read_exact(&mut rtp).await?;
 
         let mut tag = [0u8; AudioBufferedCipher::TAG_LEN];
         let mut nonce = [0u8; AudioBufferedCipher::NONCE_LEN];
@@ -62,10 +60,10 @@ pub async fn audio_buffered_processor(
 
         // TODO : offload to thread pool
         if cipher
-            .open_in_place(nonce, aad, tag, rtp.payload_mut())
+            .open_in_place(nonce, aad, tag, &mut rtp[AudioPacket::HEADER_LEN..])
             .is_err()
         {
-            tracing::warn!(rtp=?rtp.header(), payload_len=%rtp.payload().len(), "packet can't be decrypted, skipping it");
+            // TODO : logging
             continue;
         }
 
@@ -86,18 +84,16 @@ pub async fn audio_realtime_processor(
     loop {
         let pkt_len = socket.recv(&mut pkt_buf).await?;
 
-        if pkt_len < RtpHeader::SIZE {
+        if pkt_len < AudioPacket::HEADER_LEN {
             tracing::warn!(%pkt_len, "malformed realtime rtp packet");
             continue;
         }
 
-        let mut rtp = RtpPacket {
-            inner: audio_buf.allocate_buf(pkt_len),
-        };
-        rtp.as_mut().copy_from_slice(&pkt_buf[..pkt_len]);
+        let mut rtp = audio_buf.allocate_buf(pkt_len);
+        rtp.copy_from_slice(&pkt_buf[..pkt_len]);
 
         // TODO : offload data
-        cipher.decrypt(rtp.payload_mut());
+        cipher.decrypt(&mut rtp[AudioPacket::HEADER_LEN..]);
 
         stream.on_data(AudioPacket { rtp });
     }

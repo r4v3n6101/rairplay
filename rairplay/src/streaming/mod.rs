@@ -8,7 +8,7 @@ use tokio::{
 use crate::{
     crypto::streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
     playback::{audio::AudioStream, video::VideoStream, ChannelHandle},
-    util::{io::remap_io_error_if_needed, sync::CancellationHandle},
+    util::sync::CancellationHandle,
 };
 
 mod processing;
@@ -187,5 +187,22 @@ impl Drop for EventChannel {
 impl ChannelHandle for SharedData {
     fn close(&self) {
         self.handle.close();
+    }
+}
+
+fn remap_io_error_if_needed(res: io::Result<()>) -> io::Result<()> {
+    match res {
+        Ok(()) => Ok(()),
+        Err(err)
+            if matches!(
+                err.kind(),
+                io::ErrorKind::UnexpectedEof
+                    | io::ErrorKind::ConnectionAborted
+                    | io::ErrorKind::ConnectionReset
+            ) =>
+        {
+            Ok(())
+        }
+        Err(err) => Err(err),
     }
 }
