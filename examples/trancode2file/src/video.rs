@@ -5,9 +5,13 @@ use gstreamer::{
     MessageType, MessageView, Pipeline, State,
 };
 use gstreamer_app::AppSrc;
-use rairplay::playback::video::{PacketKind, VideoPacket};
+use rairplay::playback::video::{PacketKind, VideoPacket, VideoParams};
 
-pub fn transcode(rx: mpsc::Receiver<VideoPacket>, id: u64) -> Result<(), Box<dyn Error>> {
+pub fn transcode(
+    id: u64,
+    _params: VideoParams,
+    rx: mpsc::Receiver<VideoPacket>,
+) -> Result<(), Box<dyn Error>> {
     let mut ctx = None;
     loop {
         if let Ok(VideoPacket { kind, payload, .. }) = rx.recv() {
