@@ -36,6 +36,13 @@
             gst_all_1.gst-plugins-good
             gst_all_1.gst-plugins-bad
             gst_all_1.gst-plugins-ugly
+            (gst_all_1.gst-plugins-rs.overrideAttrs (final: prev: {
+              doCheck = false;
+              doInstallCheck = false;
+              patches = prev.patches or [ ] ++ [
+                ./rtpmp4gdepay_fix_constantduration_condition.patch
+              ];
+            }))
             gst_all_1.gst-libav
           ];
 
