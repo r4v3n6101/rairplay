@@ -1,5 +1,6 @@
 use tokio::net::TcpListener;
-use tracing::Level;
+use tracing_chrome::ChromeLayerBuilder;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod audio;
 mod discovery;
@@ -9,10 +10,8 @@ mod video;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .pretty()
-        .init();
+    let (chrome_layer, _guard) = ChromeLayerBuilder::new().build();
+    tracing_subscriber::registry().with(chrome_layer).init();
 
     gstreamer::init().expect("gstreamer initialization");
 

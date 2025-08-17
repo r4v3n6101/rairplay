@@ -115,11 +115,11 @@ pub async fn fp_setup<A, V>(
     State(state): State<SharedState<A, V>>,
     body: Bytes,
 ) -> impl IntoResponse {
-    fairplay::decode_buf(body.clone())
+    fairplay::decode_buf(&body)
         .inspect(|_| {
             // Magic number somehow. Hate em.
             if body.len() == 164 {
-                *state.fp_last_msg.lock().unwrap() = body.clone();
+                *state.fp_last_msg.lock().unwrap() = body;
             }
         })
         .inspect_err(|err| tracing::error!(%err, "failed to decode fairplay"))
@@ -145,7 +145,7 @@ pub async fn get_parameter<A: AudioDevice, V>(
     }
 }
 
-pub async fn set_parameter(body: Bytes) {}
+pub async fn set_parameter(_body: Bytes) {}
 
 pub async fn teardown<A, V>(
     State(state): State<SharedState<A, V>>,
@@ -192,8 +192,8 @@ pub async fn setup<A: AudioDevice, V: VideoDevice>(
     BinaryPlist(req): BinaryPlist<SetupRequest>,
 ) -> impl IntoResponse {
     match req {
-        SetupRequest::SenderInfo { info } => {
-            setup_info(state, connect_info, info).await.into_response()
+        SetupRequest::SenderInfo(info) => {
+            setup_info(state, connect_info, *info).await.into_response()
         }
         SetupRequest::Streams { requests } => setup_streams(state, connect_info, requests)
             .await
@@ -249,13 +249,13 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice>(
     for stream in requests {
         let id = state.last_stream_id.fetch_add(1, Ordering::AcqRel);
         match match stream {
-            StreamRequest::AudioRealtime { request } => {
+            StreamRequest::AudioRealtime(request) => {
                 setup_realtime_audio(state.clone(), local_addr, request, id).await
             }
-            StreamRequest::AudioBuffered { request } => {
+            StreamRequest::AudioBuffered(request) => {
                 setup_buffered_audio(state.clone(), local_addr, request, id).await
             }
-            StreamRequest::Video { request } => {
+            StreamRequest::Video(request) => {
                 setup_video(state.clone(), local_addr, request, id).await
             }
         } {
