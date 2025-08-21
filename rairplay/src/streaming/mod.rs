@@ -1,21 +1,18 @@
 use std::{io, net::SocketAddr, sync::Arc};
 
-use tokio::{
-    net::{TcpListener, ToSocketAddrs, UdpSocket},
-    sync::Notify,
-};
+use tokio::net::{TcpListener, ToSocketAddrs, UdpSocket};
 
 use crate::{
     crypto::streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
     playback::{audio::AudioStream, video::VideoStream, ChannelHandle},
-    util::sync::CancellationHandle,
+    util::sync::WakerFlag,
 };
 
 mod processing;
 
 pub struct EventChannel {
     local_addr: SocketAddr,
-    shutdown: Arc<Notify>,
+    waker_flag: Arc<WakerFlag>,
 }
 
 pub struct AudioRealtimeChannel {
@@ -34,19 +31,19 @@ pub struct VideoChannel {
 
 #[derive(Default)]
 pub struct SharedData {
-    pub handle: CancellationHandle,
+    pub waker_flag: WakerFlag,
 }
 
 impl EventChannel {
     pub async fn create(bind_addr: impl ToSocketAddrs) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;
-        let notify = Arc::new(Notify::new());
+        let waker_flag = Arc::new(WakerFlag::default());
 
-        let notify1 = Arc::clone(&notify);
+        let wf = Arc::clone(&waker_flag);
         tokio::spawn(async move {
             tokio::select! {
-                () = notify1.notified() => {}
+                () = &*wf => {}
                 () = processing::event_processor(listener, local_addr) => {}
             };
             tracing::info!("event listener done");
@@ -54,7 +51,7 @@ impl EventChannel {
 
         Ok(EventChannel {
             local_addr,
-            shutdown: notify,
+            waker_flag,
         })
     }
 
@@ -92,11 +89,12 @@ impl AudioRealtimeChannel {
                 first.or(second)
             };
 
-            // tokio will handle it with boxing
-            #[allow(clippy::large_futures)]
-            match remap_io_error_if_needed(shared_data.handle.wrap_task(task).await) {
-                Ok(()) => stream.on_ok(),
-                Err(err) => stream.on_err(err.into()),
+            tokio::select! {
+                () = &shared_data.waker_flag => {},
+                res = task => match remap_io_error_if_needed(res) {
+                    Ok(()) => stream.on_ok(),
+                    Err(err) => stream.on_err(err.into()),
+                }
             }
         });
 
@@ -134,9 +132,12 @@ impl AudioBufferedChannel {
                 }
             };
 
-            match remap_io_error_if_needed(shared_data.handle.wrap_task(task).await) {
-                Ok(()) => stream.on_ok(),
-                Err(err) => stream.on_err(err.into()),
+            tokio::select! {
+                () = &shared_data.waker_flag => {},
+                res = task => match remap_io_error_if_needed(res) {
+                    Ok(()) => stream.on_ok(),
+                    Err(err) => stream.on_err(err.into()),
+                }
             }
         });
 
@@ -168,9 +169,13 @@ impl VideoChannel {
                     Err(err) => Err(err),
                 }
             };
-            match remap_io_error_if_needed(shared_data.handle.wrap_task(task).await) {
-                Ok(()) => stream.on_ok(),
-                Err(err) => stream.on_err(err.into()),
+
+            tokio::select! {
+                () = &shared_data.waker_flag => {},
+                res = task => match remap_io_error_if_needed(res) {
+                    Ok(()) => stream.on_ok(),
+                    Err(err) => stream.on_err(err.into()),
+                }
             }
         });
 
@@ -180,13 +185,13 @@ impl VideoChannel {
 
 impl Drop for EventChannel {
     fn drop(&mut self) {
-        self.shutdown.notify_waiters();
+        self.waker_flag.set_and_wake();
     }
 }
 
 impl ChannelHandle for SharedData {
     fn close(&self) {
-        self.handle.close();
+        self.waker_flag.set_and_wake();
     }
 }
 

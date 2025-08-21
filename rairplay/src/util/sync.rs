@@ -1,35 +1,46 @@
-use std::future::Future;
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::atomic::{AtomicBool, Ordering},
+    task::{Context, Poll},
+};
 
-use tokio::sync::Semaphore;
+use futures::task::AtomicWaker;
 
-pub struct CancellationHandle {
-    sem: Semaphore,
+pub struct WakerFlag {
+    waker: AtomicWaker,
+    flag: AtomicBool,
 }
 
-impl Default for CancellationHandle {
+impl Default for WakerFlag {
     fn default() -> Self {
         Self {
-            sem: Semaphore::new(0),
+            waker: AtomicWaker::new(),
+            flag: AtomicBool::new(false),
         }
     }
 }
 
-impl CancellationHandle {
-    pub async fn wrap_task<F, Err>(&self, task: F) -> Result<(), Err>
-    where
-        F: Future<Output = Result<(), Err>>,
-    {
-        let res = tokio::select! {
-            res = task => res,
-            _ = self.sem.acquire() => Ok(()),
-        };
-        self.sem.close();
-        res
+impl WakerFlag {
+    pub fn set_and_wake(&self) {
+        self.flag.store(true, Ordering::Release);
+        self.waker.wake();
     }
+}
 
-    pub fn close(&self) {
-        if !self.sem.is_closed() {
-            self.sem.add_permits(1);
+// We've got this behind ref
+impl Future for &WakerFlag {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if self.flag.load(Ordering::Acquire) {
+            return Poll::Ready(());
+        }
+        self.waker.register(cx.waker());
+        if self.flag.load(Ordering::Acquire) {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
         }
     }
 }

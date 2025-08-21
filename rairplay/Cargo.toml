@@ -28,6 +28,7 @@ tower = "0.5.2"
 tower-http = { version = "0.6.2", features = ["propagate-header"] }
 tokio = { version = "1.44", features = ["rt", "net", "io-util"] }
 axum = { version = "0.8.1", default-features = false, features = ["tokio"] }
+futures = { version = "0.3.31", default-features = false, features = ["std"] }
 
 [build-dependencies]
 glob = "0.3.1"
