@@ -1,6 +1,6 @@
 use bytes::BytesMut;
 
-use super::{null::NullDevice, Device, Stream};
+use super::{Device, Stream};
 
 pub trait AudioDevice: Device<Params = AudioParams, Stream: AudioStream> {
     fn get_volume(&self) -> f32;
@@ -9,17 +9,6 @@ pub trait AudioDevice: Device<Params = AudioParams, Stream: AudioStream> {
 
 pub trait AudioStream: Stream<Content = AudioPacket> {}
 impl<T> AudioStream for T where T: Stream<Content = AudioPacket> {}
-
-impl AudioDevice for NullDevice<AudioParams, AudioPacket> {
-    fn get_volume(&self) -> f32 {
-        tracing::debug!("volume requested for null stream");
-        0.0
-    }
-
-    fn set_volume(&self, value: f32) {
-        tracing::debug!(%value, "volume changed for null stream");
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 pub struct AudioParams {

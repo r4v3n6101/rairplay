@@ -1,13 +1,11 @@
 use bytes::BytesMut;
 
-use super::{null::NullDevice, Device, Stream};
+use super::{Device, Stream};
 
 pub trait VideoDevice: Device<Params = VideoParams, Stream: VideoStream> {}
 
 pub trait VideoStream: Stream<Content = VideoPacket> {}
 impl<T> VideoStream for T where T: Stream<Content = VideoPacket> {}
-
-impl VideoDevice for NullDevice<VideoParams, VideoPacket> {}
 
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]

@@ -68,7 +68,7 @@ impl VideoCipher {
         Self {
             aesctr: cipher_with_hashed_aes_iv(
                 format!("AirPlayStreamKey{stream_connection_id}"),
-                format!("AirPlayStreamIV{stream_connection_id}").as_bytes(),
+                format!("AirPlayStreamIV{stream_connection_id}"),
                 key,
             ),
             og: [0; 16],
@@ -169,7 +169,7 @@ mod tests {
             244, 147, 183, 57, 16, 194, 217,
         ];
 
-        let mut input = (0..1025usize).map(|x| (x % 255) as u8).collect::<Vec<_>>();
+        let mut input = (0..1025usize).map(|x| (x & 0xFF) as u8).collect::<Vec<_>>();
         let mut cipher = VideoCipher::new([1; 16], 1000);
 
         cipher.decrypt(&mut input);

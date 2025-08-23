@@ -1,8 +1,10 @@
 #![warn(clippy::pedantic)]
 
 pub mod config;
-mod crypto;
 pub mod playback;
 pub mod rtsp;
-mod streaming;
-mod util;
+
+pub(crate) mod crypto;
+// TODO : pub(crate) mod rtsp;
+pub(crate) mod streaming;
+pub(crate) mod util;
