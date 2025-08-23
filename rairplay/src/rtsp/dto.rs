@@ -1,3 +1,5 @@
+#![allow(unused_variables, dead_code)]
+
 use bytes::Bytes;
 use macaddr::MacAddr6;
 use serde::{Deserialize, Serialize};
@@ -44,10 +46,7 @@ pub struct Display {
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum SetupRequest {
-    SenderInfo {
-        #[serde(flatten)]
-        info: SenderInfo,
-    },
+    SenderInfo(Box<SenderInfo>),
     Streams {
         #[serde(rename = "streams")]
         requests: Vec<StreamRequest>,
@@ -98,20 +97,11 @@ pub enum TimingProtocol {
 #[serde(tag = "type")]
 pub enum StreamRequest {
     #[serde(rename = 96)]
-    AudioRealtime {
-        #[serde(flatten)]
-        request: AudioRealtimeRequest,
-    },
+    AudioRealtime(AudioRealtimeRequest),
     #[serde(rename = 103)]
-    AudioBuffered {
-        #[serde(flatten)]
-        request: AudioBufferedRequest,
-    },
+    AudioBuffered(AudioBufferedRequest),
     #[serde(rename = 110)]
-    Video {
-        #[serde(flatten)]
-        request: VideoRequest,
-    },
+    Video(VideoRequest),
 }
 
 #[derive(Deserialize)]

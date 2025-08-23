@@ -44,7 +44,7 @@ impl EventChannel {
         tokio::spawn(async move {
             tokio::select! {
                 () = &*wf => {}
-                () = processing::event_processor(listener, local_addr) => {}
+                () = processing::event_processor(listener) => {}
             };
             tracing::info!("event listener done");
         });

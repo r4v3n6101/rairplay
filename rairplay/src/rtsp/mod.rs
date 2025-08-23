@@ -38,12 +38,12 @@ impl RouterService {
             .route("/command", post(()))
             // General info about server
             .route("/info", get(handlers::info))
-            // Legacy pairing (shared secret via ecdh)
+            // Pairing
             .route("/pair-setup", post(handlers::pair_setup))
             .route("/pair-verify", post(handlers::pair_verify))
-            // Fair play, but seems like it isn't working correct
+            // Fair play, for additional encryption of keys
             .route("/fp-setup", post(handlers::fp_setup))
-            // Unknown handlers, just trace response
+            // Unknown handlers' response will be just traced
             .fallback(handlers::generic)
             // State cloned here, because it will be moved below
             .with_state(state.clone())

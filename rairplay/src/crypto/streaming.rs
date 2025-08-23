@@ -68,7 +68,7 @@ impl VideoCipher {
         Self {
             aesctr: cipher_with_hashed_aes_iv(
                 format!("AirPlayStreamKey{stream_connection_id}"),
-                format!("AirPlayStreamIV{stream_connection_id}").as_bytes(),
+                format!("AirPlayStreamIV{stream_connection_id}"),
                 key,
             ),
             og: [0; 16],

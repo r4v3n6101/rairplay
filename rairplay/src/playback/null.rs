@@ -1,30 +1,10 @@
 use std::{convert::Infallible, error::Error, fmt, marker::PhantomData, sync::Weak};
 
-use super::{ChannelHandle, Device, Stream};
-
-pub struct NullStream<C>(PhantomData<C>);
-
-unsafe impl<C> Send for NullStream<C> {}
-unsafe impl<C> Sync for NullStream<C> {}
-
-impl<C> Stream for NullStream<C>
-where
-    C: fmt::Debug + 'static,
-{
-    type Content = C;
-
-    fn on_data(&self, content: Self::Content) {
-        tracing::trace!(?content, "stream feed with content");
-    }
-
-    fn on_ok(self) {
-        tracing::info!("null stream finished successfully");
-    }
-
-    fn on_err(self, err: Box<dyn Error>) {
-        tracing::error!(%err, "null stream finished with an error");
-    }
-}
+use super::{
+    audio::{AudioDevice, AudioPacket, AudioParams},
+    video::{VideoDevice, VideoPacket, VideoParams},
+    ChannelHandle, Device, Stream,
+};
 
 pub struct NullDevice<Params, Content>(PhantomData<(Params, Content)>);
 
@@ -54,5 +34,42 @@ where
     ) -> Result<Self::Stream, Self::Error> {
         tracing::info!(?params, %id, "created null stream");
         Ok(NullStream(PhantomData))
+    }
+}
+
+impl AudioDevice for NullDevice<AudioParams, AudioPacket> {
+    fn get_volume(&self) -> f32 {
+        tracing::debug!("volume requested for null stream");
+        0.0
+    }
+
+    fn set_volume(&self, value: f32) {
+        tracing::debug!(%value, "volume changed for null stream");
+    }
+}
+
+impl VideoDevice for NullDevice<VideoParams, VideoPacket> {}
+
+pub struct NullStream<C>(PhantomData<C>);
+
+unsafe impl<C> Send for NullStream<C> {}
+unsafe impl<C> Sync for NullStream<C> {}
+
+impl<C> Stream for NullStream<C>
+where
+    C: fmt::Debug + 'static,
+{
+    type Content = C;
+
+    fn on_data(&self, content: Self::Content) {
+        tracing::trace!(?content, "stream feed with content");
+    }
+
+    fn on_ok(self) {
+        tracing::info!("null stream finished successfully");
+    }
+
+    fn on_err(self, err: Box<dyn Error>) {
+        tracing::error!(%err, "null stream finished with an error");
     }
 }
