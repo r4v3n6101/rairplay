@@ -92,7 +92,7 @@ pub async fn pair_verify<A, V>(
             .pairing
             .lock()
             .unwrap()
-            .establish_agreement(pubkey_their, verify_their)
+            .establish_agreement(pubkey_their, verify_their, rand::rng())
             .inspect_err(|err| tracing::error!(%err, "legacy pairing establishment failed"))
             .map(IntoResponse::into_response)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)

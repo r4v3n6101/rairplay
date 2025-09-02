@@ -2,8 +2,9 @@ use std::mem;
 
 use aes::cipher::StreamCipher;
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey, ed25519::signature::SignerMut as _};
+use rand::{CryptoRng, Rng, RngCore};
 use thiserror::Error;
-use x25519_dalek::{EphemeralSecret, PublicKey};
+use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::crypto::cipher_with_hashed_aes_iv;
 
@@ -49,16 +50,24 @@ impl State {
         self.signing_our.verifying_key().to_bytes()
     }
 
-    pub fn establish_agreement(
+    pub fn establish_agreement<R>(
         &mut self,
         pubkey_their: X25519Key,
         verify_their: Ed25519Key,
-    ) -> Result<Response, Error> {
+        mut rand: R,
+    ) -> Result<Response, Error>
+    where
+        R: RngCore + CryptoRng,
+    {
         let verify_their = VerifyingKey::from_bytes(&verify_their)
             .map_err(|_| Error::Cryptography("invalid verification key"))?;
         let pubkey_their = PublicKey::from(pubkey_their);
 
-        let ephemeral = EphemeralSecret::random();
+        // Workaround for old version of rand_core
+        let ephemeral = {
+            let buf: [u8; _] = rand.random();
+            StaticSecret::from(buf)
+        };
         let pubkey_our = PublicKey::from(&ephemeral);
         let shared_secret = ephemeral.diffie_hellman(&pubkey_their).to_bytes();
 

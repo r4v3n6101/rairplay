@@ -12,7 +12,6 @@ use axum::{
     routing::{any, get, post},
     serve::{IncomingStream, Listener},
 };
-use state::SharedState;
 use tower::Service;
 use tower_http::propagate_header::PropagateHeaderLayer;
 
@@ -20,6 +19,7 @@ use crate::{
     config::Config,
     playback::{audio::AudioDevice, video::VideoDevice},
 };
+use state::SharedState;
 
 mod dto;
 mod extractor;
