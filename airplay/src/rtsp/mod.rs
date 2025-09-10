@@ -1,73 +1,83 @@
-use std::{
-    net::SocketAddr,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::{convert::Infallible, sync::Arc};
 
 use axum::{
     Router,
-    extract::{Request, connect_info::IntoMakeServiceWithConnectInfo},
+    extract::Request,
     handler::Handler,
     http::HeaderName,
+    response::Response,
     routing::{any, get, post},
-    serve::{IncomingStream, Listener},
+    serve::IncomingStream,
 };
-use tower::Service;
+use tower::{Service, service_fn};
 use tower_http::propagate_header::PropagateHeaderLayer;
 
 use crate::{
-    config::Config,
+    config::{Config, Pairing},
+    pairing,
     playback::{audio::AudioDevice, video::VideoDevice},
 };
-use state::SharedState;
+
+pub use transport::TcpListenerWithRtspRemap as Listener;
 
 mod dto;
 mod extractor;
 mod handlers;
 mod state;
+mod transport;
 
-pub struct RtspService<A, V> {
-    pub config: Arc<Config<A, V>>,
-}
-
-impl<L, A, V> Service<IncomingStream<'_, L>> for RtspService<A, V>
+pub fn service_factory<A, V>(
+    config: Arc<Config<A, V>>,
+) -> impl for<'a> Service<
+    IncomingStream<'a, Listener>,
+    Response = impl Service<
+        Request,
+        Response = Response,
+        Error = Infallible,
+        Future = impl Future + Send + use<A, V>,
+    > + Send
+               + Clone
+               + use<A, V>,
+    Error = Infallible,
+    Future = impl Future + Send + use<A, V>,
+>
 where
-    L: Listener<Addr = SocketAddr>,
     A: AudioDevice,
     V: VideoDevice,
 {
-    type Response =
-        <IntoMakeServiceWithConnectInfo<Router<()>, SocketAddr> as Service<SocketAddr>>::Response;
-    type Error =
-        <IntoMakeServiceWithConnectInfo<Router<()>, SocketAddr> as Service<SocketAddr>>::Error;
-    type Future =
-        <IntoMakeServiceWithConnectInfo<Router<()>, SocketAddr> as Service<SocketAddr>>::Future;
+    service_fn(move |_: IncomingStream<'_, Listener>| {
+        let config = Arc::clone(&config);
+        async {
+            let state = Arc::new(state::ServiceState::new(config));
+            let mut router = Router::new()
+                // Heartbeat
+                .route("/feedback", post(()))
+                // I guess it will never be used
+                .route("/command", post(()))
+                // General info about server
+                .route("/info", get(handlers::info))
+                // Fair play, for additional encryption of keys
+                .route("/fp-setup", post(handlers::fp_setup))
+                // Unknown handlers' response will be just traced
+                .fallback(handlers::generic)
+                // State cloned here, because it will be moved below
+                .with_state(Arc::clone(&state));
 
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, req: IncomingStream<'_, L>) -> Self::Future {
-        let state = SharedState::with_config(Arc::clone(&self.config));
-
-        Router::new()
-            // Heartbeat
-            .route("/feedback", post(()))
-            // I guess it will never be used
-            .route("/command", post(()))
-            // General info about server
-            .route("/info", get(handlers::info))
             // Pairing
-            .route("/pair-setup", post(handlers::pair_setup))
-            .route("/pair-verify", post(handlers::pair_verify))
-            // Fair play, for additional encryption of keys
-            .route("/fp-setup", post(handlers::fp_setup))
-            // Unknown handlers' response will be just traced
-            .fallback(handlers::generic)
-            // State cloned here, because it will be moved below
-            .with_state(state.clone())
+            match state.config.pairing {
+                Pairing::Legacy { pairing_key } => {
+                    router = router.merge(pairing::legacy::router(
+                        Arc::clone(&state) as Arc<dyn pairing::SessionKeyHolder>,
+                        pairing_key,
+                    ));
+                }
+                _ => {
+                    // TODO
+                }
+            }
+
             // Custom RTSP methods
-            .route(
+            router = router.route(
                 "/{media_id}",
                 any(|req: Request| async move {
                     match req.method().as_str() {
@@ -83,10 +93,12 @@ where
                         }
                     }
                 }),
-            )
+            );
+
             // CSeq is required for RTSP protocol
-            .layer(PropagateHeaderLayer::new(HeaderName::from_static("cseq")))
-            .into_make_service_with_connect_info()
-            .call(*req.remote_addr())
-    }
+            router = router.layer(PropagateHeaderLayer::new(HeaderName::from_static("cseq")));
+
+            Ok(router)
+        }
+    })
 }

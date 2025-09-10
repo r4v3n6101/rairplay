@@ -2,27 +2,24 @@ use std::net::SocketAddr;
 
 use axum::serve::Listener;
 use tokio::{
-    io::{Join, ReadHalf, Result, WriteHalf, join, split},
+    io::Result,
     net::{TcpListener, TcpStream},
 };
 use tokio_util::{
-    codec::{Decoder, FramedRead, FramedWrite},
+    codec::{Decoder, Framed},
     io::{SinkWriter, StreamReader},
 };
 
-use crate::transport::codec::Rtsp2Http;
-
 mod codec;
 
-pub struct RtspListener {
+pub struct TcpListenerWithRtspRemap {
     pub tcp_listener: TcpListener,
 }
 
-impl Listener for RtspListener {
+impl Listener for TcpListenerWithRtspRemap {
     // TODO : TAIT upon it
-    type Io = Join<
-        StreamReader<FramedRead<ReadHalf<TcpStream>, Rtsp2Http>, <Rtsp2Http as Decoder>::Item>,
-        SinkWriter<FramedWrite<WriteHalf<TcpStream>, Rtsp2Http>>,
+    type Io = SinkWriter<
+        StreamReader<Framed<TcpStream, codec::Rtsp2Http>, <codec::Rtsp2Http as Decoder>::Item>,
     >;
     type Addr = SocketAddr;
 
@@ -35,12 +32,7 @@ impl Listener for RtspListener {
                     continue;
                 }
             };
-
-            let (rx, tx) = split(stream);
-            let io = join(
-                StreamReader::new(FramedRead::new(rx, Rtsp2Http)),
-                SinkWriter::new(FramedWrite::new(tx, Rtsp2Http)),
-            );
+            let io = SinkWriter::new(StreamReader::new(Framed::new(stream, codec::Rtsp2Http)));
 
             return (io, remote_addr);
         }

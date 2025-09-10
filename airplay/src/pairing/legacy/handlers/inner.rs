@@ -6,9 +6,7 @@ use rand::{CryptoRng, Rng, RngCore};
 use thiserror::Error;
 use x25519_dalek::{PublicKey, StaticSecret};
 
-use crate::crypto::cipher_with_hashed_aes_iv;
-
-use super::super::AesCtr128BE;
+use crate::crypto::{AesCtr128BE, cipher_with_hashed_aes_iv};
 
 pub const X25519_KEY_LEN: usize = 32;
 pub const SIGNATURE_LENGTH: usize = 64;
@@ -126,11 +124,9 @@ impl State {
     pub fn shared_secret(&self) -> Option<SharedSecret> {
         match self.state {
             // Who tf knows when second verify ain't called?
-            Inner::Established { shared_secret, .. } => {
-                tracing::warn!("computed shared secret isn't verified by counterparty");
+            Inner::Established { shared_secret, .. } | Inner::Verified { shared_secret } => {
                 Some(shared_secret)
             }
-            Inner::Verified { shared_secret } => Some(shared_secret),
             Inner::Empty => None,
         }
     }

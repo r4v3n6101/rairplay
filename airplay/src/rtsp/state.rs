@@ -1,61 +1,64 @@
-use std::{
-    ops::Deref,
-    sync::{Arc, Mutex, Weak, atomic::AtomicU64},
-};
+use std::sync::{Arc, Mutex, Weak, atomic::AtomicU64};
 
 use bytes::Bytes;
-use derivative::Derivative;
 use tokio::sync::Mutex as AsyncMutex;
 use weak_table::WeakValueHashMap;
 
 use crate::{
     config::Config,
-    crypto::{AesIv128, AesKey128, pairing::legacy::State as LegacyPairing},
-    streaming::{EventChannel, SharedData},
+    crypto::{AesIv128, AesKey128},
+    pairing::SessionKeyHolder,
+    playback::ChannelHandle,
+    streaming::EventChannel,
 };
 
-pub struct State<ADev, VDev> {
+pub struct ServiceState<ADev, VDev> {
     pub last_stream_id: AtomicU64,
-    pub pairing: Mutex<LegacyPairing>,
     pub fp_last_msg: Mutex<Bytes>,
+    pub session_key: Mutex<Option<Bytes>>,
     pub ekey: Mutex<AesKey128>,
     pub eiv: Mutex<AesIv128>,
     pub event_channel: AsyncMutex<Option<EventChannel>>,
-    pub audio_realtime_channels: Mutex<WeakValueHashMap<u64, Weak<SharedData>>>,
-    pub audio_buffered_channels: Mutex<WeakValueHashMap<u64, Weak<SharedData>>>,
-    pub video_channels: Mutex<WeakValueHashMap<u64, Weak<SharedData>>>,
+    pub stream_channels: Mutex<WeakValueHashMap<(u64, u32), Weak<dyn ChannelHandle>>>,
 
     pub config: Arc<Config<ADev, VDev>>,
 }
 
-#[derive(Derivative)]
-#[derivative(Clone(bound = ""))]
-pub struct SharedState<ADev, VDev>(Arc<State<ADev, VDev>>);
-
-impl<A, V> Deref for SharedState<A, V> {
-    type Target = State<A, V>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<A, V> SharedState<A, V> {
-    pub fn with_config(config: Arc<Config<A, V>>) -> Self {
-        Self(Arc::new(State {
+impl<A, V> ServiceState<A, V> {
+    pub fn new(config: Arc<Config<A, V>>) -> Self {
+        Self {
             last_stream_id: AtomicU64::default(),
-            pairing: Mutex::new(LegacyPairing::from_signing_privkey(
-                config.pairing.legacy_pairing_key,
-            )),
             fp_last_msg: Mutex::default(),
+            session_key: Mutex::default(),
             ekey: Mutex::default(),
             eiv: Mutex::default(),
             event_channel: AsyncMutex::default(),
-            audio_realtime_channels: Mutex::default(),
-            audio_buffered_channels: Mutex::default(),
-            video_channels: Mutex::default(),
+            stream_channels: Mutex::default(),
 
             config,
-        }))
+        }
+    }
+}
+
+impl<A, V> SessionKeyHolder for ServiceState<A, V>
+where
+    A: Send + Sync,
+    V: Send + Sync,
+{
+    fn set_session_key(&self, key: Bytes) {
+        if !key.is_empty() {
+            let _ = self.session_key.lock().unwrap().insert(key);
+        }
+    }
+}
+
+impl<A, V> Drop for ServiceState<A, V> {
+    fn drop(&mut self) {
+        // Just in case if the service is dropped, but channels still remain
+        self.stream_channels
+            .lock()
+            .unwrap()
+            .drain()
+            .for_each(|(_, chan)| chan.close());
     }
 }
