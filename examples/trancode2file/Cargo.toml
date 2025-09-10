@@ -13,7 +13,7 @@ tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 tracing-chrome = "0.7.2"
 mdns-sd = "0.11.5"
-rairplay = { path = "../../rairplay/" }
+airplay = { path = "../../airplay/" }
 
 httparse = "1"
 pin-project-lite = "0.2"

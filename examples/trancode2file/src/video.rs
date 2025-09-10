@@ -1,11 +1,11 @@
 use std::{error::Error, sync::mpsc};
 
+use airplay::playback::video::{PacketKind, VideoPacket, VideoParams};
 use gstreamer::{
     event::Eos, glib::GString, prelude::*, Buffer, Caps, Element, ElementFactory, Format,
     MessageType, MessageView, Pipeline, State,
 };
 use gstreamer_app::AppSrc;
-use rairplay::playback::video::{PacketKind, VideoPacket, VideoParams};
 
 pub fn transcode(
     id: u64,

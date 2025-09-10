@@ -18,14 +18,14 @@ async fn main() {
     let svc_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
     discovery::mdns_broadcast();
 
-    let cfg = rairplay::config::Config::<_, _> {
-        video: rairplay::config::Video {
+    let cfg = airplay::config::Config::<_, _> {
+        video: airplay::config::Video {
             device: playback::PipeDevice {
                 callback: video::transcode,
             },
             ..Default::default()
         },
-        audio: rairplay::config::Audio {
+        audio: airplay::config::Audio {
             device: playback::PipeDevice {
                 callback: audio::transcode,
             },
@@ -34,5 +34,5 @@ async fn main() {
         ..Default::default()
     };
 
-    transport::serve_with_rtsp_remap(svc_listener, rairplay::rtsp::RouterService::serve(cfg)).await;
+    transport::serve_with_rtsp_remap(svc_listener, airplay::rtsp::RouterService::serve(cfg)).await;
 }
