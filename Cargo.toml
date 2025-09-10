@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["airplay", "examples/*"]
+members = ["airplay", "homekit", "examples/*"]
 
 # TODO : temporarily, because of unsupported int enum tags
 [patch.crates-io]
