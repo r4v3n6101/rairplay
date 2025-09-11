@@ -1,6 +1,7 @@
 use std::{
     convert::Infallible,
     error::Error,
+    future::Future,
     sync::{mpsc, Weak},
     thread,
 };
@@ -41,7 +42,7 @@ where
         id: u64,
         params: Self::Params,
         handle: Weak<dyn ChannelHandle>,
-    ) -> Result<Self::Stream, Self::Error> {
+    ) -> impl Future<Output = Result<Self::Stream, Self::Error>> + Send {
         let (tx, rx) = mpsc::channel();
         let callback = self.callback;
         thread::spawn(move || {
@@ -53,10 +54,12 @@ where
             }
         });
 
-        Ok(PipeStream {
-            id: format!("stream_{id}"),
-            tx,
-        })
+        async move {
+            Ok(PipeStream {
+                id: format!("stream_{id}"),
+                tx,
+            })
+        }
     }
 }
 

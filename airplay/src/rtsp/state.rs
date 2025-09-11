@@ -4,6 +4,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use derivative::Derivative;
 use tokio::sync::Mutex as AsyncMutex;
 use weak_table::WeakValueHashMap;
 
@@ -27,13 +28,9 @@ pub struct State<ADev, VDev> {
     pub cfg: Config<ADev, VDev>,
 }
 
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""))]
 pub struct SharedState<ADev, VDev>(Arc<State<ADev, VDev>>);
-
-impl<A, V> Clone for SharedState<A, V> {
-    fn clone(&self) -> Self {
-        Self(Arc::clone(&self.0))
-    }
-}
 
 impl<A, V> Deref for SharedState<A, V> {
     type Target = State<A, V>;

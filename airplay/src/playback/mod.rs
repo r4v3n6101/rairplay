@@ -1,4 +1,4 @@
-use std::{error::Error, sync::Weak};
+use std::{error::Error, future::Future, sync::Weak};
 
 pub mod audio;
 pub mod null;
@@ -14,7 +14,7 @@ pub trait Device: Send + Sync + 'static {
         id: u64,
         params: Self::Params,
         handle: Weak<dyn ChannelHandle>,
-    ) -> Result<Self::Stream, Self::Error>;
+    ) -> impl Future<Output = Result<Self::Stream, Self::Error>> + Send;
 }
 
 pub trait ChannelHandle: Send + Sync + 'static {

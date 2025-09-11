@@ -301,6 +301,7 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
             params,
             Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
         )
+        .await
         .inspect_err(|err| tracing::error!(%err, ?params, "stream couldn't be created"))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
 
@@ -378,6 +379,7 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
             params,
             Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
         )
+        .await
         .inspect_err(|err| tracing::error!(%err, ?params, "stream couldn't be created"))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
 
@@ -429,6 +431,7 @@ async fn setup_video<A, V: VideoDevice>(
             VideoParams {},
             Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
         )
+        .await
         .inspect_err(|err| tracing::error!(%err, ?params, "stream couldn't be created"))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
 

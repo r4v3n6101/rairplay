@@ -1,4 +1,6 @@
-use std::{convert::Infallible, error::Error, fmt, marker::PhantomData, sync::Weak};
+use std::{
+    convert::Infallible, error::Error, fmt, future::Future, marker::PhantomData, sync::Weak,
+};
 
 use super::{
     audio::{AudioDevice, AudioPacket, AudioParams},
@@ -31,9 +33,9 @@ where
         id: u64,
         params: Self::Params,
         _: Weak<dyn ChannelHandle>,
-    ) -> Result<Self::Stream, Self::Error> {
+    ) -> impl Future<Output = Result<Self::Stream, Self::Error>> + Send {
         tracing::info!(?params, %id, "created null stream");
-        Ok(NullStream(PhantomData))
+        async { Ok(NullStream(PhantomData)) }
     }
 }
 
