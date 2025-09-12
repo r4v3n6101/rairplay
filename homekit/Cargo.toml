@@ -1,0 +1,19 @@
+[package]
+name = "homekit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+strum = { version = "0.27.2", features = ["derive"] }
+
+tracing = "0.1"
+thiserror = "1"
+
+bytes = "1"
+http = "1"
+
+axum = { version = "0.8.1", default-features = false, features = [] }
+
+[dev-dependencies]
+futures = { version = "0.3.31", default-features = false, features = ["std"] }
+tokio = { version = "1.47", features = ["full"] }

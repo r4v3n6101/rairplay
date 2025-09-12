@@ -1,5 +1,3 @@
-#![warn(clippy::pedantic)]
-
 pub mod config;
 pub mod playback;
 pub mod rtsp;
