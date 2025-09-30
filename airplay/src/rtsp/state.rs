@@ -1,6 +1,6 @@
 use std::{
     ops::Deref,
-    sync::{atomic::AtomicU64, Arc, Mutex, Weak},
+    sync::{Arc, Mutex, Weak, atomic::AtomicU64},
 };
 
 use bytes::Bytes;
@@ -10,7 +10,7 @@ use weak_table::WeakValueHashMap;
 
 use crate::{
     config::Config,
-    crypto::{pairing::legacy::State as LegacyPairing, AesIv128, AesKey128},
+    crypto::{AesIv128, AesKey128, pairing::legacy::State as LegacyPairing},
     streaming::{EventChannel, SharedData},
 };
 

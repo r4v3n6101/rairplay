@@ -3,9 +3,9 @@ use std::{
 };
 
 use super::{
+    ChannelHandle, Device, Stream,
     audio::{AudioDevice, AudioPacket, AudioParams},
     video::{VideoDevice, VideoPacket, VideoParams},
-    ChannelHandle, Device, Stream,
 };
 
 pub struct NullDevice<Params, Content>(PhantomData<(Params, Content)>);

@@ -99,7 +99,7 @@ pub fn decode_buf(buf: impl AsRef<[u8]>) -> Result<Vec<u8>, DecodingError> {
 }
 
 pub fn decrypt_key(message: impl AsRef<[u8]>, encrypted_aes_key: impl AsRef<[u8]>) -> AesKey128 {
-    extern "C" {
+    unsafe extern "C" {
         fn playfair_decrypt(msg: *const u8, cipher_text: *const u8, out: *mut u8);
     }
 
@@ -149,7 +149,7 @@ mod tests {
         "RlBMWQECAQAAAAA8AAAAAIjmTgsqA3VwKaeIUhu2e9AAAAAQ6cgKehFnMIsTuTGM1EER0X8aVol3EC8gEbIyfAeyUFdCBUMB",
     ];
 
-    const MESSAGE3_HEX: &[&str]= &[
+    const MESSAGE3_HEX: &[&str] = &[
         "46504c590301030000000098008f1a9ca548fdd57560a52926ff399f2eb154d0a7a0fffc997f58e27e00499eb9f310110d019e550e328047aea54308ab71b647041406878af96e06cf74127ae35941dceb58931b5543b39903f9f76a376248ee52e3656b561e1c1a0106ec6608df0ab4f2df528e65db6d622d3892d5b49c6c025606a574f19ebea7d93500bdd69db23333f22edcb3ccf7a6acde7389f2facabfa61b0b50",
         "46504c590301030000000098018f1a9c144a77fb15383f69cf6ba6ae3504582d489a121c644dac40bfb382388d758b294841cbe51bb4feea983f9157a1fb2e57765d1bfc7262053ca6f75c90c82794a43b8d844637aa018c28619a43da6727c7faf81b911a92f317d6ac7a3e1a7b923fe693cffb37317159be8904556862d81ed4f794957dc330b7e681e5a0067f596a0f3f936dd761f5afa2d69ab77938328bb1fcd92e",
         "46504c590301030000000098028f1a9c049ae04d1691802802c75b3ced9204acbeb5482b582f4faf3c008d7dd3675a37967e3bee3079bec95b8bfeea69aaec8233c7ab3b7df283e8f9a50b8ecdcc53e3ee2e5ee1d78421378fdf8cfa1e1c04995d3c6f14b47e9487f3458cc6e4727fe1e3ad2b1db60afdb590c14da5011404ab0972c15ab14ad6a71ebd8cab10098bc1b1822b14dd3e496fe13bfcca8fd399eee52581d4",

@@ -1,7 +1,7 @@
 use std::mem;
 
 use aes::cipher::StreamCipher;
-use ed25519_dalek::{ed25519::signature::SignerMut as _, Signature, SigningKey, VerifyingKey};
+use ed25519_dalek::{Signature, SigningKey, VerifyingKey, ed25519::signature::SignerMut as _};
 use thiserror::Error;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 

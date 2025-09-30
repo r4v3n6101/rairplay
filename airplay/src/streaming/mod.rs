@@ -4,7 +4,7 @@ use tokio::net::{TcpListener, ToSocketAddrs, UdpSocket};
 
 use crate::{
     crypto::streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
-    playback::{audio::AudioStream, video::VideoStream, ChannelHandle},
+    playback::{ChannelHandle, audio::AudioStream, video::VideoStream},
     util::sync::WakerFlag,
 };
 

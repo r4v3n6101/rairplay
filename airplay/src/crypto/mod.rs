@@ -42,7 +42,7 @@ fn sha512_two_step(x: impl AsRef<[u8]>, y: impl AsRef<[u8]>) -> [u8; 16] {
 
 #[cfg(test)]
 mod tests {
-    use super::{hash_aes_key, AesKey128};
+    use super::{AesKey128, hash_aes_key};
 
     #[test]
     fn test_hashing_aes_key() {

@@ -1,13 +1,13 @@
 use std::ops::Deref;
 
 use axum::{
-    extract::{rejection::BytesRejection, FromRequest, Request},
+    extract::{FromRequest, Request, rejection::BytesRejection},
     http::HeaderValue,
     response::{IntoResponse, Response},
 };
 use bytes::{BufMut, Bytes, BytesMut};
 use http::{header::CONTENT_TYPE, status::StatusCode};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
 const APPLE_BPLIST_MIME: &str = "application/x-apple-binary-plist";

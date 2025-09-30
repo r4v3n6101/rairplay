@@ -1,19 +1,18 @@
 use std::{
     net::SocketAddr,
-    sync::{atomic::Ordering, Arc, Weak},
+    sync::{Arc, Weak, atomic::Ordering},
 };
 
 use crate::{
     crypto::{
-        fairplay, hash_aes_key,
+        AesIv128, fairplay, hash_aes_key,
         pairing::legacy::{SIGNATURE_LENGTH, X25519_KEY_LEN},
         streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
-        AesIv128,
     },
     playback::{
-        audio::{AudioDevice, AudioParams, AUDIO_FORMATS},
-        video::{VideoDevice, VideoParams},
         ChannelHandle,
+        audio::{AUDIO_FORMATS, AudioDevice, AudioParams},
+        video::{VideoDevice, VideoParams},
     },
     streaming::{
         AudioBufferedChannel, AudioRealtimeChannel, EventChannel, SharedData, VideoChannel,
