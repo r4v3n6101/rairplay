@@ -1395,7 +1395,7 @@ checksum = "56e6fa9c48d24d85fb3de5ad847117517440f6beceb7798af16b4a87d616b8d0"
 [[package]]
 name = "serde"
 version = "1.0.208"
-source = "git+https://github.com/Astavie/serde.git?branch=integer-tags-for-enums#e210c70417fb37d0b63d27ea435b90874701247d"
+source = "git+https://github.com/r4v3n6101/serde.git?branch=integer-tags-for-enums#e210c70417fb37d0b63d27ea435b90874701247d"
 dependencies = [
  "serde_derive",
 ]
@@ -1403,7 +1403,7 @@ dependencies = [
 [[package]]
 name = "serde_derive"
 version = "1.0.208"
-source = "git+https://github.com/Astavie/serde.git?branch=integer-tags-for-enums#e210c70417fb37d0b63d27ea435b90874701247d"
+source = "git+https://github.com/r4v3n6101/serde.git?branch=integer-tags-for-enums#e210c70417fb37d0b63d27ea435b90874701247d"
 dependencies = [
  "proc-macro2",
  "quote",

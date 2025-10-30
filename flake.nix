@@ -2,7 +2,7 @@
   description = "A server processes an audio and a video stream sent by the AirPlay protocol";
 
   inputs = {
-    nixpkgs.url = "github:r4v3n6101/nixpkgs/gst-plugins-rs-0.14.2";
+    nixpkgs.url = "github:nixos/nixpkgs/master";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     shairplay = {
@@ -12,12 +12,12 @@
   };
 
   outputs =
-    {
-      self,
-      nixpkgs,
-      flake-utils,
-      rust-overlay,
-      shairplay,
+    { self
+    , nixpkgs
+    , flake-utils
+    , rust-overlay
+    , shairplay
+    ,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:

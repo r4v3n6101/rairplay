@@ -4,4 +4,4 @@ members = ["airplay", "examples/*"]
 
 # TODO : temporarily, because of unsupported int enum tags
 [patch.crates-io]
-serde = { git = "https://github.com/Astavie/serde.git", branch = "integer-tags-for-enums" }
+serde = { git = "https://github.com/r4v3n6101/serde.git", branch = "integer-tags-for-enums" }
