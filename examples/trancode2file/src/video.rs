@@ -2,8 +2,8 @@ use std::{error::Error, sync::mpsc};
 
 use airplay::playback::video::{PacketKind, VideoPacket, VideoParams};
 use gstreamer::{
-    event::Eos, glib::GString, prelude::*, Buffer, Caps, Element, ElementFactory, Format,
-    MessageType, MessageView, Pipeline, State,
+    Buffer, Caps, Element, ElementFactory, Format, MessageType, MessageView, Pipeline, State,
+    event::Eos, glib::GString, prelude::*,
 };
 use gstreamer_app::AppSrc;
 

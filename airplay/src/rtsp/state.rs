@@ -25,7 +25,7 @@ pub struct State<ADev, VDev> {
     pub audio_buffered_channels: Mutex<WeakValueHashMap<u64, Weak<SharedData>>>,
     pub video_channels: Mutex<WeakValueHashMap<u64, Weak<SharedData>>>,
 
-    pub cfg: Config<ADev, VDev>,
+    pub config: Arc<Config<ADev, VDev>>,
 }
 
 #[derive(Derivative)]
@@ -41,11 +41,11 @@ impl<A, V> Deref for SharedState<A, V> {
 }
 
 impl<A, V> SharedState<A, V> {
-    pub fn with_config(cfg: Config<A, V>) -> Self {
+    pub fn with_config(config: Arc<Config<A, V>>) -> Self {
         Self(Arc::new(State {
             last_stream_id: AtomicU64::default(),
             pairing: Mutex::new(LegacyPairing::from_signing_privkey(
-                cfg.pairing.legacy_pairing_key,
+                config.pairing.legacy_pairing_key,
             )),
             fp_last_msg: Mutex::default(),
             ekey: Mutex::default(),
@@ -55,7 +55,7 @@ impl<A, V> SharedState<A, V> {
             audio_buffered_channels: Mutex::default(),
             video_channels: Mutex::default(),
 
-            cfg,
+            config,
         }))
     }
 }

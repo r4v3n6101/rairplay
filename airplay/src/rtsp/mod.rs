@@ -1,5 +1,6 @@
 use std::{
     net::SocketAddr,
+    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -24,14 +25,30 @@ mod extractor;
 mod handlers;
 mod state;
 
-pub struct RouterService {
-    inner: IntoMakeServiceWithConnectInfo<Router<()>, SocketAddr>,
+pub struct RtspService<A, V> {
+    pub config: Arc<Config<A, V>>,
 }
 
-impl RouterService {
-    pub fn serve<ADev: AudioDevice, VDev: VideoDevice>(cfg: Config<ADev, VDev>) -> Self {
-        let state = SharedState::with_config(cfg);
-        let inner = Router::new()
+impl<A, V> Service<SocketAddr> for RtspService<A, V>
+where
+    A: AudioDevice,
+    V: VideoDevice,
+{
+    type Response =
+        <IntoMakeServiceWithConnectInfo<Router<()>, SocketAddr> as Service<SocketAddr>>::Response;
+    type Error =
+        <IntoMakeServiceWithConnectInfo<Router<()>, SocketAddr> as Service<SocketAddr>>::Error;
+    type Future =
+        <IntoMakeServiceWithConnectInfo<Router<()>, SocketAddr> as Service<SocketAddr>>::Future;
+
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, client_addr: SocketAddr) -> Self::Future {
+        let state = SharedState::with_config(Arc::clone(&self.config));
+
+        let mut router = Router::new()
             // Heartbeat
             .route("/feedback", post(()))
             // I guess it will never be used
@@ -69,23 +86,6 @@ impl RouterService {
             .layer(PropagateHeaderLayer::new(HeaderName::from_static("cseq")))
             .into_make_service_with_connect_info::<SocketAddr>();
 
-        Self { inner }
-    }
-}
-
-impl Service<SocketAddr> for RouterService {
-    type Response =
-        <IntoMakeServiceWithConnectInfo<Router<()>, SocketAddr> as Service<SocketAddr>>::Response;
-    type Error =
-        <IntoMakeServiceWithConnectInfo<Router<()>, SocketAddr> as Service<SocketAddr>>::Error;
-    type Future =
-        <IntoMakeServiceWithConnectInfo<Router<()>, SocketAddr> as Service<SocketAddr>>::Future;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: SocketAddr) -> Self::Future {
-        self.inner.call(req)
+        router.call(client_addr)
     }
 }

@@ -1,10 +1,10 @@
 use std::{convert::Infallible, error::Error, future::poll_fn, net::SocketAddr};
 
 use hyper::{
+    Request, Response,
     body::{Body, Incoming},
     server::conn::http1,
     service::service_fn,
-    Request, Response,
 };
 use hyper_util::rt::TokioIo;
 use tokio::{io::split, net::TcpListener};
@@ -27,7 +27,6 @@ where
     S: Service<Request<Incoming>, Response = Response<B>> + Clone + Send + 'static,
     S::Future: Send,
     S::Error: Into<BoxStdError>,
-
     M: Service<SocketAddr, Response = S, Error = Infallible>,
 {
     loop {

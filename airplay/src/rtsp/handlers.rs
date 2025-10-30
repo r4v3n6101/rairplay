@@ -45,22 +45,22 @@ pub async fn info<A, V>(State(state): State<SharedState<A, V>>) -> impl IntoResp
     const SRCVERS: &str = "770.8.1";
 
     let response = InfoResponse {
-        device_id: state.cfg.mac_addr,
-        mac_addr: state.cfg.mac_addr,
-        features: state.cfg.features.bits(),
+        device_id: state.config.mac_addr,
+        mac_addr: state.config.mac_addr,
+        features: state.config.features.bits(),
         protocol_version: PROTOVERS.to_string(),
         source_version: SRCVERS.to_string(),
 
-        manufacturer: state.cfg.manufacturer.clone(),
-        model: state.cfg.model.clone(),
-        name: state.cfg.name.clone(),
+        manufacturer: state.config.manufacturer.clone(),
+        model: state.config.model.clone(),
+        name: state.config.name.clone(),
 
         // Seems like clients don't respect other displays and pick by maximum resolution
         displays: vec![Display {
-            width: state.cfg.video.width,
-            height: state.cfg.video.height,
-            uuid: format!("{}_display", state.cfg.name),
-            max_fps: state.cfg.video.fps,
+            width: state.config.video.width,
+            height: state.config.video.height,
+            uuid: format!("{}_display", state.config.name),
+            max_fps: state.config.video.fps,
             features: 2,
         }],
     };
@@ -131,7 +131,7 @@ pub async fn get_parameter<A: AudioDevice, V>(
 ) -> impl IntoResponse {
     match body.as_str() {
         "volume\r\n" => {
-            let volume = state.cfg.audio.device.get_volume();
+            let volume = state.config.audio.device.get_volume();
             Ok((
                 [(CONTENT_TYPE, "text/parameters")],
                 format!("volume: {volume}\r\n"),
@@ -292,7 +292,7 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         codec,
     };
     let stream = state
-        .cfg
+        .config
         .audio
         .device
         .create(
@@ -307,7 +307,7 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
     AudioRealtimeChannel::create(
         SocketAddr::new(local_addr.ip(), 0),
         SocketAddr::new(local_addr.ip(), 0),
-        state.cfg.audio.buf_size,
+        state.config.audio.buf_size,
         shared_data.clone(),
         cipher,
         stream,
@@ -370,7 +370,7 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
         codec,
     };
     let stream = state
-        .cfg
+        .config
         .audio
         .device
         .create(
@@ -384,7 +384,7 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
 
     AudioBufferedChannel::create(
         SocketAddr::new(local_addr.ip(), 0),
-        state.cfg.audio.buf_size,
+        state.config.audio.buf_size,
         shared_data.clone(),
         cipher,
         stream,
@@ -422,7 +422,7 @@ async fn setup_video<A, V: VideoDevice>(
     let shared_data = Arc::new(SharedData::default());
     let params = VideoParams {};
     let stream = state
-        .cfg
+        .config
         .video
         .device
         .create(
@@ -436,7 +436,7 @@ async fn setup_video<A, V: VideoDevice>(
 
     VideoChannel::create(
         SocketAddr::new(local_addr.ip(), 0),
-        state.cfg.video.buf_size,
+        state.config.video.buf_size,
         shared_data.clone(),
         cipher,
         stream,

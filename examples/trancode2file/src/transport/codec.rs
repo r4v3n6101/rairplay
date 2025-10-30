@@ -1,6 +1,6 @@
 use std::io;
 
-use httparse::{Request, Response, Status, EMPTY_HEADER};
+use httparse::{EMPTY_HEADER, Request, Response, Status};
 use hyper::Uri;
 use tokio_util::bytes::{BufMut, Bytes, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};

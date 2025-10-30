@@ -2,14 +2,14 @@ use std::{
     convert::Infallible,
     error::Error,
     future::Future,
-    sync::{mpsc, Weak},
+    sync::{Weak, mpsc},
     thread,
 };
 
 use airplay::playback::{
+    ChannelHandle, Device, Stream,
     audio::{AudioDevice, AudioPacket, AudioParams},
     video::{VideoDevice, VideoPacket, VideoParams},
-    ChannelHandle, Device, Stream,
 };
 
 pub type PipeCallback<Params, Packet> =

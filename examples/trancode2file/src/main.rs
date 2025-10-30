@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tokio::net::TcpListener;
 use tracing_chrome::ChromeLayerBuilder;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -18,7 +20,7 @@ async fn main() {
     let svc_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
     discovery::mdns_broadcast();
 
-    let cfg = airplay::config::Config::<_, _> {
+    let config = Arc::new(airplay::config::Config::<_, _> {
         video: airplay::config::Video {
             device: playback::PipeDevice {
                 callback: video::transcode,
@@ -32,7 +34,7 @@ async fn main() {
             ..Default::default()
         },
         ..Default::default()
-    };
+    });
 
-    transport::serve_with_rtsp_remap(svc_listener, airplay::rtsp::RouterService::serve(cfg)).await;
+    transport::serve_with_rtsp_remap(svc_listener, airplay::rtsp::RtspService { config }).await;
 }
