@@ -17,7 +17,6 @@ async fn main() {
 
     gstreamer::init().expect("gstreamer initialization");
 
-    let svc_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
     discovery::mdns_broadcast();
 
     let config = Arc::new(airplay::config::Config::<_, _> {
@@ -36,5 +35,11 @@ async fn main() {
         ..Default::default()
     });
 
-    transport::serve_with_rtsp_remap(svc_listener, airplay::rtsp::RtspService { config }).await;
+    let tcp_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
+    axum::serve(
+        transport::RtspListener { tcp_listener },
+        airplay::rtsp::RtspService { config },
+    )
+    .await
+    .unwrap();
 }

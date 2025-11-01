@@ -15,11 +15,12 @@ tracing-chrome = "0.7.2"
 mdns-sd = "0.11.5"
 airplay = { path = "../../airplay/" }
 
+http = "1.3"
 httparse = "1"
 pin-project-lite = "0.2"
 tower = "0.5.1"
-hyper = { version = "1", features = ["server", "http1"] }
-hyper-util = { version = "0.1", features = ["tokio"] }
+
+axum = { version = "0.8.6", default-features = false, features = ["http1", "http2"] }
 tokio = { version = "1.41.1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec", "io"] }
 clap = { version = "4.5.39", features = ["derive"] }

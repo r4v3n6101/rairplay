@@ -1,9 +1,11 @@
 use std::io;
 
+use http::Uri;
 use httparse::{EMPTY_HEADER, Request, Response, Status};
-use hyper::Uri;
-use tokio_util::bytes::{BufMut, Bytes, BytesMut};
-use tokio_util::codec::{Decoder, Encoder};
+use tokio_util::{
+    bytes::{BufMut, Bytes, BytesMut},
+    codec::{Decoder, Encoder},
+};
 
 const MAX_HEADERS: usize = 32;
 

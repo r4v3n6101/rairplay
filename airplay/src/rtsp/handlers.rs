@@ -20,7 +20,7 @@ use crate::{
 };
 
 use axum::{
-    extract::{ConnectInfo, State},
+    extract::State,
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
@@ -187,28 +187,22 @@ pub async fn teardown<A, V>(
 
 pub async fn setup<A: AudioDevice, V: VideoDevice>(
     state: State<SharedState<A, V>>,
-    connect_info: ConnectInfo<SocketAddr>,
     BinaryPlist(req): BinaryPlist<SetupRequest>,
 ) -> impl IntoResponse {
     match req {
-        SetupRequest::SenderInfo(info) => {
-            setup_info(state, connect_info, *info).await.into_response()
-        }
-        SetupRequest::Streams { requests } => setup_streams(state, connect_info, requests)
-            .await
-            .into_response(),
+        SetupRequest::SenderInfo(info) => setup_info(state, *info).await.into_response(),
+        SetupRequest::Streams { requests } => setup_streams(state, requests).await.into_response(),
     }
 }
 
 async fn setup_info<A, V>(
     State(state): State<SharedState<A, V>>,
-    ConnectInfo(local_addr): ConnectInfo<SocketAddr>,
     SenderInfo { ekey, eiv, .. }: SenderInfo,
 ) -> impl IntoResponse {
     let mut lock = state.event_channel.lock().await;
     let event_channel = match &mut *lock {
         Some(chan) => chan,
-        event_channel @ None => EventChannel::create(SocketAddr::new(local_addr.ip(), 0))
+        event_channel @ None => EventChannel::create(SocketAddr::new(state.config.bind_addr, 0))
             .await
             .inspect_err(|err| tracing::error!(%err, "failed creating event listener"))
             .map(|chan| event_channel.insert(chan))
@@ -241,7 +235,6 @@ async fn setup_info<A, V>(
 
 async fn setup_streams<A: AudioDevice, V: VideoDevice>(
     State(state): State<SharedState<A, V>>,
-    ConnectInfo(local_addr): ConnectInfo<SocketAddr>,
     requests: Vec<StreamRequest>,
 ) -> Response {
     let mut responses = Vec::with_capacity(requests.len());
@@ -249,14 +242,12 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice>(
         let id = state.last_stream_id.fetch_add(1, Ordering::AcqRel);
         match match stream {
             StreamRequest::AudioRealtime(request) => {
-                setup_realtime_audio(state.clone(), local_addr, request, id).await
+                setup_realtime_audio(state.clone(), request, id).await
             }
             StreamRequest::AudioBuffered(request) => {
-                setup_buffered_audio(state.clone(), local_addr, request, id).await
+                setup_buffered_audio(state.clone(), request, id).await
             }
-            StreamRequest::Video(request) => {
-                setup_video(state.clone(), local_addr, request, id).await
-            }
+            StreamRequest::Video(request) => setup_video(state.clone(), request, id).await,
         } {
             Ok(response) => responses.push(response),
             Err(err) => return err,
@@ -268,7 +259,6 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice>(
 
 async fn setup_realtime_audio<A: AudioDevice, V>(
     state: SharedState<A, V>,
-    local_addr: SocketAddr,
     AudioRealtimeRequest {
         audio_format,
         samples_per_frame,
@@ -305,8 +295,8 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
 
     AudioRealtimeChannel::create(
-        SocketAddr::new(local_addr.ip(), 0),
-        SocketAddr::new(local_addr.ip(), 0),
+        SocketAddr::new(state.config.bind_addr, 0),
+        SocketAddr::new(state.config.bind_addr, 0),
         state.config.audio.buf_size,
         shared_data.clone(),
         cipher,
@@ -331,7 +321,6 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
 
 async fn setup_buffered_audio<A: AudioDevice, V>(
     state: SharedState<A, V>,
-    local_addr: SocketAddr,
     AudioBufferedRequest {
         samples_per_frame,
         audio_format,
@@ -383,7 +372,7 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
 
     AudioBufferedChannel::create(
-        SocketAddr::new(local_addr.ip(), 0),
+        SocketAddr::new(state.config.bind_addr, 0),
         state.config.audio.buf_size,
         shared_data.clone(),
         cipher,
@@ -408,7 +397,6 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
 
 async fn setup_video<A, V: VideoDevice>(
     state: SharedState<A, V>,
-    local_addr: SocketAddr,
     VideoRequest {
         stream_connection_id,
         ..
@@ -435,7 +423,7 @@ async fn setup_video<A, V: VideoDevice>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
 
     VideoChannel::create(
-        SocketAddr::new(local_addr.ip(), 0),
+        SocketAddr::new(state.config.bind_addr, 0),
         state.config.video.buf_size,
         shared_data.clone(),
         cipher,

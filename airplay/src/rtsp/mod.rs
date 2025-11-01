@@ -10,6 +10,7 @@ use axum::{
     handler::Handler,
     http::HeaderName,
     routing::{any, get, post},
+    serve::{IncomingStream, Listener},
 };
 use state::SharedState;
 use tower::Service;
@@ -29,8 +30,9 @@ pub struct RtspService<A, V> {
     pub config: Arc<Config<A, V>>,
 }
 
-impl<A, V> Service<SocketAddr> for RtspService<A, V>
+impl<L, A, V> Service<IncomingStream<'_, L>> for RtspService<A, V>
 where
+    L: Listener<Addr = SocketAddr>,
     A: AudioDevice,
     V: VideoDevice,
 {
@@ -45,10 +47,10 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, client_addr: SocketAddr) -> Self::Future {
+    fn call(&mut self, req: IncomingStream<'_, L>) -> Self::Future {
         let state = SharedState::with_config(Arc::clone(&self.config));
 
-        let mut router = Router::new()
+        Router::new()
             // Heartbeat
             .route("/feedback", post(()))
             // I guess it will never be used
@@ -84,8 +86,7 @@ where
             )
             // CSeq is required for RTSP protocol
             .layer(PropagateHeaderLayer::new(HeaderName::from_static("cseq")))
-            .into_make_service_with_connect_info::<SocketAddr>();
-
-        router.call(client_addr)
+            .into_make_service_with_connect_info()
+            .call(*req.remote_addr())
     }
 }
