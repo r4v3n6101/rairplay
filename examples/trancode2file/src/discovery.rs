@@ -1,28 +1,32 @@
+use airplay::config::Config;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 
-pub fn mdns_broadcast() {
-    // TODO : remove hardcode
-    let mdns = ServiceDaemon::new().expect("Could not create service daemon");
-    let service_type = "_airplay._tcp.local.";
-    let instance_name = "whateva";
+const SERVICE_TYPE: &str = "_airplay._tcp.local.";
+const PROTOCOL_VERSION: &str = "1.1";
 
-    let my_addrs = "";
-    let service_hostname = format!("{}{}", instance_name, &service_type);
+pub fn mdns_broadcast<ADev, VDev>(config: &Config<ADev, VDev>) {
+    let mdns = ServiceDaemon::new().expect("Could not create service daemon");
+
+    let instance_name = config.name.as_str();
+    let service_hostname = format!("{}.local.", instance_name.replace(' ', "-"));
     let port = 5200;
 
+    let feature_txt = format_feature_bits(config.features.bits());
+    let device_id = config.mac_addr.to_string().to_uppercase();
+
     let properties = [
-        ("model", "rairplay"),
-        ("protovers", "1.1"),
+        ("model", "AppleTV3,2"),
+        ("protovers", PROTOCOL_VERSION),
         ("srcvers", "366.0"),
-        ("features", "0x405C4393,0x300"),
-        ("deviceid", "9F:D7:AF:1F:D3:CD"),
+        ("features", feature_txt.as_str()),
+        ("deviceid", device_id.as_str()),
     ];
 
     let service_info = ServiceInfo::new(
-        service_type,
+        SERVICE_TYPE,
         instance_name,
         &service_hostname,
-        my_addrs,
+        "",
         port,
         &properties[..],
     )
@@ -31,4 +35,10 @@ pub fn mdns_broadcast() {
 
     mdns.register(service_info)
         .expect("Failed to register mDNS service");
+}
+
+fn format_feature_bits(bits: u64) -> String {
+    let lower = bits as u32;
+    let upper = (bits >> 32) as u32;
+    format!("0x{lower:08X},0x{upper:X}")
 }
