@@ -23,6 +23,9 @@ async fn main() {
             device: playback::PipeDevice {
                 callback: video::transcode,
             },
+            width: 3840,
+            height: 2160,
+            fps: 60,
             ..Default::default()
         },
         audio: airplay::config::Audio {

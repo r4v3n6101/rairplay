@@ -160,5 +160,8 @@ impl Default for Features {
             | Self::BufferedAudio
             | Self::NTPClock
             | Self::PTPClock
+
+            // needed for h265 video support
+            | Self::ScreenMultiCodec
     }
 }
