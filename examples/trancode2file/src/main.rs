@@ -17,13 +17,15 @@ async fn main() {
 
     gstreamer::init().expect("gstreamer initialization");
 
-    discovery::mdns_broadcast();
-
     let config = Arc::new(airplay::config::Config::<_, _> {
+        name: "rairplay".to_string(),
         video: airplay::config::Video {
             device: playback::PipeDevice {
                 callback: video::transcode,
             },
+            width: 3840,
+            height: 2160,
+            fps: 60,
             ..Default::default()
         },
         audio: airplay::config::Audio {
@@ -34,6 +36,8 @@ async fn main() {
         },
         ..Default::default()
     });
+
+    discovery::mdns_broadcast(config.as_ref());
 
     let tcp_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
     axum::serve(

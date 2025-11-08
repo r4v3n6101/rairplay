@@ -2,3 +2,6 @@
 .DS_Store
 **/.DS_Store
 .direnv/
+.idea/
+trace-*.json
+video_*.mp4
