@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
-use tracing_chrome::ChromeLayerBuilder;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing::level_filters::LevelFilter;
 
 mod audio;
 mod discovery;
@@ -12,8 +11,9 @@ mod video;
 
 #[tokio::main]
 async fn main() {
-    let (chrome_layer, _guard) = ChromeLayerBuilder::new().build();
-    tracing_subscriber::registry().with(chrome_layer).init();
+    tracing_subscriber::fmt()
+        .with_max_level(LevelFilter::TRACE)
+        .init();
 
     gstreamer::init().expect("gstreamer initialization");
 
