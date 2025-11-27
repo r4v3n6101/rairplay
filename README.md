@@ -18,15 +18,14 @@
 ## Getting Started
 
 ```bash
+# Clone it locally
 git clone https://github.com/r4v3n6101/rairplay.git
 cd rairplay
 
-# Using `nix`
+# Set up dev environment via `nix`
 nix develop .
 
-# Or via direnv
-direnv allow
-
+# Run or `cargo build` if you need
 cargo run
 ```
 
