@@ -39,7 +39,8 @@ pub enum Pairing {
         pairing_key: [u8; 32],
     },
     HomeKit {
-        // TODO
+        // TODO : pk/pi
+        pin: Option<PinCode>,
     },
 }
 

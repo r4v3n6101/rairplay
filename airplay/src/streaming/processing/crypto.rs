@@ -1,7 +1,7 @@
 use aes::cipher::{BlockDecryptMut, KeyIvInit as _, StreamCipher as _, block_padding::NoPadding};
 use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, Key, KeyInit as _, Nonce, Tag};
 
-use super::{AesCbc128, AesCtr128BE, AesIv128, AesKey128, cipher_with_hashed_aes_iv};
+use crate::crypto::{AesCbc128, AesCtr128BE, AesIv128, AesKey128, cipher_with_hashed_aes_iv};
 
 pub struct AudioBufferedCipher {
     inner: ChaCha20Poly1305,

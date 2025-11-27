@@ -7,13 +7,15 @@ use tokio::{
 use tracing::Instrument;
 
 use crate::{
-    crypto::streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
+    crypto::{AesIv128, AesKey128, ChaCha20Poly1305Key},
     playback::{
         audio::{AudioPacket, AudioStream},
         video::{PacketKind, VideoPacket, VideoStream},
     },
     util::memory,
 };
+
+mod crypto;
 
 #[tracing::instrument]
 pub async fn event_processor(listener: TcpListener) {
@@ -27,16 +29,17 @@ pub async fn event_processor(listener: TcpListener) {
     }
 }
 
-#[tracing::instrument(skip(cipher, stream))]
+#[tracing::instrument(skip(stream))]
 pub async fn audio_buffered_processor(
     audio_buf_size: u32,
     mut tcp_stream: TcpStream,
-    cipher: AudioBufferedCipher,
+    key: ChaCha20Poly1305Key,
     stream: &impl AudioStream,
 ) -> io::Result<()> {
     const TRAILER_LEN: usize = 24;
 
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
+    let cipher = crypto::AudioBufferedCipher::new(key);
 
     loop {
         async {
@@ -53,9 +56,9 @@ pub async fn audio_buffered_processor(
             let mut rtp = audio_buf.allocate_buf(pkt_len);
             tcp_stream.read_exact(&mut rtp).await?;
 
-            let mut tag = [0u8; AudioBufferedCipher::TAG_LEN];
-            let mut nonce = [0u8; AudioBufferedCipher::NONCE_LEN];
-            let aad = (rtp.as_ref()[4..][..AudioBufferedCipher::AAD_LEN])
+            let mut tag = [0u8; crypto::AudioBufferedCipher::TAG_LEN];
+            let mut nonce = [0u8; crypto::AudioBufferedCipher::NONCE_LEN];
+            let aad = (rtp.as_ref()[4..][..crypto::AudioBufferedCipher::AAD_LEN])
                 .try_into()
                 .unwrap();
 
@@ -82,17 +85,20 @@ pub async fn audio_buffered_processor(
     }
 }
 
-#[tracing::instrument(skip(cipher, stream))]
+#[tracing::instrument(skip(stream))]
 pub async fn audio_realtime_processor(
     socket: UdpSocket,
     audio_buf_size: u32,
-    cipher: AudioRealtimeCipher,
+    key: AesKey128,
+    iv: AesIv128,
     stream: &impl AudioStream,
 ) -> io::Result<()> {
     const PKT_BUF_SIZE: usize = 16 * 1024;
 
     let mut pkt_buf = [0u8; PKT_BUF_SIZE];
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
+    let cipher = crypto::AudioRealtimeCipher::new(key, iv);
+
     loop {
         async {
             let pkt_len = socket.recv(&mut pkt_buf).await?;
@@ -128,16 +134,19 @@ pub async fn control_processor(socket: UdpSocket) -> io::Result<()> {
     }
 }
 
-#[tracing::instrument(skip(cipher, stream))]
+#[tracing::instrument(skip(stream))]
 pub async fn video_processor(
     video_buf_size: u32,
     mut tcp_stream: TcpStream,
-    mut cipher: VideoCipher,
+    key: AesKey128,
+    stream_connection_id: u64,
     stream: &impl VideoStream,
 ) -> io::Result<()> {
     const UNKNOWN_BYTES: usize = 112;
 
     let mut video_buf = memory::BytesHunk::new(video_buf_size as usize);
+    let mut cipher = crypto::VideoCipher::new(key, stream_connection_id);
+
     loop {
         async {
             let payload_len = tcp_stream.read_u32_le().await?;

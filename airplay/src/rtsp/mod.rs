@@ -50,6 +50,8 @@ where
         async {
             let state = Arc::new(state::ServiceState::new(config));
             let mut router = Router::new()
+                // CSeq is required for RTSP protocol
+                .layer(PropagateHeaderLayer::new(HeaderName::from_static("cseq")))
                 // Heartbeat
                 .route("/feedback", post(()))
                 // I guess it will never be used
@@ -71,9 +73,7 @@ where
                         pairing_key,
                     ));
                 }
-                _ => {
-                    // TODO
-                }
+                Pairing::HomeKit { pin } => router = router.merge(pairing::homekit::router(pin)),
             }
 
             // Custom RTSP methods
@@ -94,9 +94,6 @@ where
                     }
                 }),
             );
-
-            // CSeq is required for RTSP protocol
-            router = router.layer(PropagateHeaderLayer::new(HeaderName::from_static("cseq")));
 
             Ok(router)
         }

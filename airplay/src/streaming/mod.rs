@@ -3,7 +3,7 @@ use std::{io, net::SocketAddr, sync::Arc};
 use tokio::net::{TcpListener, ToSocketAddrs, UdpSocket};
 
 use crate::{
-    crypto::streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
+    crypto::{AesIv128, AesKey128, ChaCha20Poly1305Key},
     playback::{ChannelHandle, audio::AudioStream, video::VideoStream},
     util::sync::WakerFlag,
 };
@@ -66,7 +66,8 @@ impl AudioRealtimeChannel {
         control_bind_addr: impl ToSocketAddrs,
         audio_buf_size: u32,
         shared_data: Arc<SharedData>,
-        cipher: AudioRealtimeCipher,
+        key: AesKey128,
+        iv: AesIv128,
         stream: impl AudioStream,
     ) -> io::Result<Self> {
         let data_socket = UdpSocket::bind(data_bind_addr).await?;
@@ -80,7 +81,8 @@ impl AudioRealtimeChannel {
                 let data = processing::audio_realtime_processor(
                     data_socket,
                     audio_buf_size,
-                    cipher,
+                    key,
+                    iv,
                     &stream,
                 );
                 let control = processing::control_processor(control_socket);
@@ -110,7 +112,7 @@ impl AudioBufferedChannel {
         bind_addr: impl ToSocketAddrs,
         audio_buf_size: u32,
         shared_data: Arc<SharedData>,
-        cipher: AudioBufferedCipher,
+        key: ChaCha20Poly1305Key,
         stream: impl AudioStream,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
@@ -123,7 +125,7 @@ impl AudioBufferedChannel {
                         processing::audio_buffered_processor(
                             audio_buf_size,
                             tcp_stream,
-                            cipher,
+                            key,
                             &stream,
                         )
                         .await
@@ -153,7 +155,8 @@ impl VideoChannel {
         bind_addr: impl ToSocketAddrs,
         video_buf_size: u32,
         shared_data: Arc<SharedData>,
-        cipher: VideoCipher,
+        key: AesKey128,
+        stream_connection_id: u64,
         stream: impl VideoStream,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
@@ -163,8 +166,14 @@ impl VideoChannel {
             let task = async {
                 match listener.accept().await {
                     Ok((tcp_stream, _)) => {
-                        processing::video_processor(video_buf_size, tcp_stream, cipher, &stream)
-                            .await
+                        processing::video_processor(
+                            video_buf_size,
+                            tcp_stream,
+                            key,
+                            stream_connection_id,
+                            &stream,
+                        )
+                        .await
                     }
                     Err(err) => Err(err),
                 }

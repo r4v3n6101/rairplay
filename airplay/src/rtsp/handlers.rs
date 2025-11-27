@@ -4,10 +4,7 @@ use std::{
 };
 
 use crate::{
-    crypto::{
-        AesIv128, fairplay, hash_aes_key,
-        streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
-    },
+    crypto::{AesIv128, ChaCha20Poly1305Key, fairplay, hash_aes_key},
     playback::{
         ChannelHandle,
         audio::{AUDIO_FORMATS, AudioDevice, AudioParams},
@@ -219,7 +216,8 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         return Err(StatusCode::BAD_REQUEST.into_response());
     };
 
-    let cipher = AudioRealtimeCipher::new(*state.ekey.lock().unwrap(), *state.eiv.lock().unwrap());
+    let key = *state.ekey.lock().unwrap();
+    let iv = *state.eiv.lock().unwrap();
 
     let shared_data = Arc::new(SharedData::default());
     let params = AudioParams {
@@ -244,7 +242,8 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         SocketAddr::new(state.config.bind_addr, 0),
         state.config.audio.buf_size,
         shared_data.clone(),
-        cipher,
+        key,
+        iv,
         stream,
     )
     .await
@@ -287,16 +286,14 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
         return Err(StatusCode::BAD_REQUEST.into_response());
     };
 
-    let cipher = AudioBufferedCipher::new(
-        <[u8; AudioBufferedCipher::KEY_LEN]>::try_from(shared_key.as_ref())
-            .inspect_err(|_| {
-                tracing::error!(
-                    len = shared_key.len(),
-                    "insufficient length of key for buffered audio's decryption"
-                );
-            })
-            .map_err(|_| StatusCode::BAD_REQUEST.into_response())?,
-    );
+    let key = ChaCha20Poly1305Key::try_from(shared_key.as_ref())
+        .inspect_err(|_| {
+            tracing::error!(
+                len = shared_key.len(),
+                "insufficient length of key for buffered audio's decryption"
+            );
+        })
+        .map_err(|_| StatusCode::BAD_REQUEST.into_response())?;
 
     let shared_data = Arc::new(SharedData::default());
     let params = AudioParams {
@@ -320,7 +317,7 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
         SocketAddr::new(state.config.bind_addr, 0),
         state.config.audio.buf_size,
         shared_data.clone(),
-        cipher,
+        key,
         stream,
     )
     .await
@@ -350,7 +347,8 @@ async fn setup_video<A, V: VideoDevice>(
 ) -> Result<StreamResponse, Response> {
     // This must work like that
     #[allow(clippy::cast_sign_loss)]
-    let cipher = VideoCipher::new(*state.ekey.lock().unwrap(), stream_connection_id as u64);
+    let stream_connection_id = stream_connection_id as u64;
+    let key = *state.ekey.lock().unwrap();
 
     let shared_data = Arc::new(SharedData::default());
     let params = VideoParams {};
@@ -371,7 +369,8 @@ async fn setup_video<A, V: VideoDevice>(
         SocketAddr::new(state.config.bind_addr, 0),
         state.config.video.buf_size,
         shared_data.clone(),
-        cipher,
+        key,
+        stream_connection_id,
         stream,
     )
     .await
