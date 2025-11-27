@@ -9,7 +9,7 @@ use crate::{
     crypto::{AesIv128, AesKey128},
     pairing::SessionKeyHolder,
     playback::ChannelHandle,
-    streaming::EventChannel,
+    streaming::{EventChannel, SharedData},
 };
 
 pub struct ServiceState<ADev, VDev> {
@@ -19,7 +19,7 @@ pub struct ServiceState<ADev, VDev> {
     pub ekey: Mutex<AesKey128>,
     pub eiv: Mutex<AesIv128>,
     pub event_channel: AsyncMutex<Option<EventChannel>>,
-    pub stream_channels: Mutex<WeakValueHashMap<(u64, u32), Weak<dyn ChannelHandle>>>,
+    pub stream_channels: Mutex<WeakValueHashMap<(u64, u32), Weak<SharedData>>>,
 
     pub config: Arc<Config<ADev, VDev>>,
 }
