@@ -6,7 +6,6 @@ use std::{
 use crate::{
     crypto::{
         AesIv128, fairplay, hash_aes_key,
-        pairing::legacy::{SIGNATURE_LENGTH, X25519_KEY_LEN},
         streaming::{AudioBufferedCipher, AudioRealtimeCipher, VideoCipher},
     },
     playback::{
@@ -29,18 +28,18 @@ use http::{header::CONTENT_TYPE, status::StatusCode};
 use super::{
     dto::{
         AudioBufferedRequest, AudioRealtimeRequest, Display, InfoResponse, SenderInfo,
-        SetupRequest, SetupResponse, StreamId, StreamRequest, StreamResponse, Teardown,
+        SetupRequest, SetupResponse, StreamRequest, StreamResponse, StreamType, Teardown,
         VideoRequest,
     },
     extractor::BinaryPlist,
-    state::SharedState,
+    state::ServiceState,
 };
 
 pub async fn generic(bytes: Bytes) {
     tracing::trace!(?bytes, "generic handler");
 }
 
-pub async fn info<A, V>(State(state): State<SharedState<A, V>>) -> impl IntoResponse {
+pub async fn info<A, V>(State(state): State<Arc<ServiceState<A, V>>>) -> impl IntoResponse {
     const PROTOVERS: &str = "1.1";
     const SRCVERS: &str = "770.8.1";
 
@@ -68,50 +67,8 @@ pub async fn info<A, V>(State(state): State<SharedState<A, V>>) -> impl IntoResp
     BinaryPlist(response)
 }
 
-/// Don't really need request body here, because it duplicates signing key of counterparty got in
-/// the second request.
-pub async fn pair_setup<A, V>(State(state): State<SharedState<A, V>>) -> impl IntoResponse {
-    state.pairing.lock().unwrap().verifying_key()
-}
-
-pub async fn pair_verify<A, V>(
-    State(state): State<SharedState<A, V>>,
-    body: Bytes,
-) -> impl IntoResponse {
-    if body.len() < 4 + 2 * X25519_KEY_LEN {
-        tracing::error!(len=%body.len(), "malformed data for legacy pairing");
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    let mode = body[0];
-    if mode > 0 {
-        let pubkey_their = body[4..][..X25519_KEY_LEN].try_into().unwrap();
-        let verify_their = body[36..][..X25519_KEY_LEN].try_into().unwrap();
-
-        state
-            .pairing
-            .lock()
-            .unwrap()
-            .establish_agreement(pubkey_their, verify_their)
-            .inspect_err(|err| tracing::error!(%err, "legacy pairing establishment failed"))
-            .map(IntoResponse::into_response)
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-    } else {
-        let signature = body[4..][..SIGNATURE_LENGTH].try_into().unwrap();
-
-        state
-            .pairing
-            .lock()
-            .unwrap()
-            .verify_agreement(signature)
-            .inspect_err(|err| tracing::error!(%err, "legacy pairing verification failed"))
-            .map(IntoResponse::into_response)
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-    }
-}
-
 pub async fn fp_setup<A, V>(
-    State(state): State<SharedState<A, V>>,
+    State(state): State<Arc<ServiceState<A, V>>>,
     body: Bytes,
 ) -> impl IntoResponse {
     fairplay::decode_buf(&body)
@@ -126,7 +83,7 @@ pub async fn fp_setup<A, V>(
 }
 
 pub async fn get_parameter<A: AudioDevice, V>(
-    State(state): State<SharedState<A, V>>,
+    State(state): State<Arc<ServiceState<A, V>>>,
     body: String,
 ) -> impl IntoResponse {
     match body.as_str() {
@@ -147,46 +104,34 @@ pub async fn get_parameter<A: AudioDevice, V>(
 pub async fn set_parameter(_body: Bytes) {}
 
 pub async fn teardown<A, V>(
-    State(state): State<SharedState<A, V>>,
+    State(state): State<Arc<ServiceState<A, V>>>,
     BinaryPlist(req): BinaryPlist<Teardown>,
 ) {
-    let mut audio_realtime_channels = state.audio_realtime_channels.lock().unwrap();
-    let mut audio_buffered_channels = state.audio_buffered_channels.lock().unwrap();
-    let mut video_channels = state.video_channels.lock().unwrap();
+    let mut stream_channels = state.stream_channels.lock().unwrap();
     if let Some(requests) = req.requests {
         for req in requests {
             if let Some(id) = req.id {
-                if let Some(chan) = audio_realtime_channels.remove(&id) {
-                    chan.close();
-                }
-                if let Some(chan) = audio_buffered_channels.remove(&id) {
-                    chan.close();
-                }
-                if let Some(chan) = video_channels.remove(&id) {
-                    chan.close();
-                }
+                stream_channels
+                    .iter()
+                    .filter(|((i, _), _)| *i == id)
+                    .for_each(|(_, chan)| chan.close());
+                stream_channels.retain(|(i, _), _| *i != id);
             } else {
-                match req.ty {
-                    StreamId::AUDIO_REALTIME => {
-                        audio_realtime_channels.drain().for_each(|(_, c)| c.close());
-                    }
-                    StreamId::AUDIO_BUFFERED => {
-                        audio_buffered_channels.drain().for_each(|(_, c)| c.close());
-                    }
-                    StreamId::VIDEO => video_channels.drain().for_each(|(_, c)| c.close()),
-                    _ => {}
-                }
+                stream_channels
+                    .iter()
+                    .filter(|((_, ty), _)| *ty == req.ty)
+                    .for_each(|(_, chan)| chan.close());
+                stream_channels.retain(|(_, ty), _| *ty != req.ty);
             }
         }
     } else {
-        audio_realtime_channels.drain().for_each(|(_, c)| c.close());
-        audio_buffered_channels.drain().for_each(|(_, c)| c.close());
-        video_channels.drain().for_each(|(_, c)| c.close());
+        stream_channels.iter().for_each(|(_, chan)| chan.close());
+        stream_channels.clear();
     }
 }
 
 pub async fn setup<A: AudioDevice, V: VideoDevice>(
-    state: State<SharedState<A, V>>,
+    state: State<Arc<ServiceState<A, V>>>,
     BinaryPlist(req): BinaryPlist<SetupRequest>,
 ) -> impl IntoResponse {
     match req {
@@ -196,7 +141,7 @@ pub async fn setup<A: AudioDevice, V: VideoDevice>(
 }
 
 async fn setup_info<A, V>(
-    State(state): State<SharedState<A, V>>,
+    State(state): State<Arc<ServiceState<A, V>>>,
     SenderInfo { ekey, eiv, .. }: SenderInfo,
 ) -> impl IntoResponse {
     let mut lock = state.event_channel.lock().await;
@@ -214,13 +159,13 @@ async fn setup_info<A, V>(
         return Err(StatusCode::BAD_REQUEST);
     };
 
-    let Some(shared_secret) = state.pairing.lock().unwrap().shared_secret() else {
+    let Some(session_key) = state.session_key.lock().unwrap().clone() else {
         tracing::error!("must be paired before setup call");
         return Err(StatusCode::FORBIDDEN);
     };
 
     let aes_key = fairplay::decrypt_key(state.fp_last_msg.lock().unwrap().as_ref(), ekey);
-    let aes_digest = hash_aes_key(aes_key, shared_secret);
+    let aes_digest = hash_aes_key(aes_key, session_key);
 
     *state.ekey.lock().unwrap() = aes_digest;
     *state.eiv.lock().unwrap() = eiv;
@@ -234,7 +179,7 @@ async fn setup_info<A, V>(
 }
 
 async fn setup_streams<A: AudioDevice, V: VideoDevice>(
-    State(state): State<SharedState<A, V>>,
+    State(state): State<Arc<ServiceState<A, V>>>,
     requests: Vec<StreamRequest>,
 ) -> Response {
     let mut responses = Vec::with_capacity(requests.len());
@@ -242,12 +187,12 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice>(
         let id = state.last_stream_id.fetch_add(1, Ordering::AcqRel);
         match match stream {
             StreamRequest::AudioRealtime(request) => {
-                setup_realtime_audio(state.clone(), request, id).await
+                setup_realtime_audio(&state, request, id).await
             }
             StreamRequest::AudioBuffered(request) => {
-                setup_buffered_audio(state.clone(), request, id).await
+                setup_buffered_audio(&state, request, id).await
             }
-            StreamRequest::Video(request) => setup_video(state.clone(), request, id).await,
+            StreamRequest::Video(request) => setup_video(&state, request, id).await,
         } {
             Ok(response) => responses.push(response),
             Err(err) => return err,
@@ -258,7 +203,7 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice>(
 }
 
 async fn setup_realtime_audio<A: AudioDevice, V>(
-    state: SharedState<A, V>,
+    state: &ServiceState<A, V>,
     AudioRealtimeRequest {
         audio_format,
         samples_per_frame,
@@ -305,10 +250,10 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
     .await
     .inspect(|_| {
         state
-            .audio_realtime_channels
+            .stream_channels
             .lock()
             .unwrap()
-            .insert(id, shared_data);
+            .insert((id, StreamType::AUDIO_REALTIME), shared_data);
     })
     .inspect_err(|err| tracing::error!(%err, "realtime audio listener not created"))
     .map(|chan| StreamResponse::AudioRealtime {
@@ -320,7 +265,7 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
 }
 
 async fn setup_buffered_audio<A: AudioDevice, V>(
-    state: SharedState<A, V>,
+    state: &ServiceState<A, V>,
     AudioBufferedRequest {
         samples_per_frame,
         audio_format,
@@ -381,10 +326,10 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
     .await
     .inspect(|_| {
         state
-            .audio_buffered_channels
+            .stream_channels
             .lock()
             .unwrap()
-            .insert(id, shared_data);
+            .insert((id, StreamType::AUDIO_BUFFERED), shared_data);
     })
     .inspect_err(|err| tracing::error!(%err, "buffered audio listener not created"))
     .map(|chan| StreamResponse::AudioBuffered {
@@ -396,7 +341,7 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
 }
 
 async fn setup_video<A, V: VideoDevice>(
-    state: SharedState<A, V>,
+    state: &ServiceState<A, V>,
     VideoRequest {
         stream_connection_id,
         ..
@@ -431,7 +376,11 @@ async fn setup_video<A, V: VideoDevice>(
     )
     .await
     .inspect(|_| {
-        state.video_channels.lock().unwrap().insert(id, shared_data);
+        state
+            .stream_channels
+            .lock()
+            .unwrap()
+            .insert((id, StreamType::VIDEO), shared_data);
     })
     .inspect_err(|err| tracing::error!(%err, "video listener not created"))
     .map(|chan| StreamResponse::Video {

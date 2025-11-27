@@ -1,10 +1,8 @@
 pub mod fairplay;
-pub mod pairing;
 pub mod streaming;
 
-type AesCtr128BE = ctr::Ctr128BE<aes::Aes128>;
-type AesCbc128 = cbc::Decryptor<aes::Aes128>;
-
+pub type AesCtr128BE = ctr::Ctr128BE<aes::Aes128>;
+pub type AesCbc128 = cbc::Decryptor<aes::Aes128>;
 pub type AesKey128 = [u8; 16];
 pub type AesIv128 = [u8; 16];
 
@@ -13,7 +11,7 @@ pub fn hash_aes_key(aes_key: AesKey128, shared_secret: impl AsRef<[u8]>) -> AesK
     sha512_two_step(aes_key, shared_secret)
 }
 
-pub(super) fn cipher_with_hashed_aes_iv(
+pub fn cipher_with_hashed_aes_iv(
     key_text: impl AsRef<[u8]>,
     iv_text: impl AsRef<[u8]>,
     secret: impl AsRef<[u8]>,

@@ -4,6 +4,9 @@ use bitflags::bitflags;
 use derivative::Derivative;
 
 pub use macaddr::MacAddr6;
+pub use pin::{PinCode, PinError};
+
+mod pin;
 
 #[derive(Debug, Derivative)]
 #[derivative(Default)]
@@ -20,7 +23,7 @@ pub struct Config<ADev, VDev> {
     pub fw_version: String,
     pub pairing: Pairing,
     /// Address for binding opened streams.
-    /// By default they're binded to all interfaces (i.e. the address if `0.0.0.0`)
+    /// By default they're binded to `0.0.0.0`.
     #[derivative(Default(value = "IpAddr::from(Ipv4Addr::UNSPECIFIED)"))]
     pub bind_addr: IpAddr,
     pub audio: Audio<ADev>,
@@ -29,9 +32,15 @@ pub struct Config<ADev, VDev> {
 
 #[derive(Derivative)]
 #[derivative(Debug, Default)]
-pub struct Pairing {
-    #[derivative(Debug = "ignore", Default(value = "[5; 32]"))]
-    pub legacy_pairing_key: [u8; 32],
+pub enum Pairing {
+    #[derivative(Default)]
+    Legacy {
+        #[derivative(Default(value = "[5; 32]"))]
+        pairing_key: [u8; 32],
+    },
+    HomeKit {
+        // TODO
+    },
 }
 
 #[derive(Derivative)]
@@ -137,8 +146,6 @@ impl Default for Features {
             | Self::AirPlayAudio
             | Self::LegacyPairing
 
-            // TODO : | Self::AudioRedundant
-
             // Seems like not mandatory
             | Self::AudioMetaCovers
             | Self::AudioMetaTxtDAAP
@@ -150,8 +157,7 @@ impl Default for Features {
 
             // A glitch whether /fp-setup is called, but the audio/video data is clear
             | Self::MFiSoft_FairPlay
-            | Self::AudioUnencrypted
-            // TODO : require stream type130 | Self::AirPlayVideoV2
+            // | Self::AudioUnencrypted
 
             // Seems like needed for a GET /info call
             | Self::UnifiedAdvertisingInfo

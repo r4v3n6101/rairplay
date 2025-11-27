@@ -4,9 +4,9 @@ use bytes::Bytes;
 use macaddr::MacAddr6;
 use serde::{Deserialize, Serialize};
 
-pub struct StreamId;
+pub struct StreamType;
 
-impl StreamId {
+impl StreamType {
     pub const AUDIO_REALTIME: u32 = 96;
     pub const AUDIO_BUFFERED: u32 = 103;
     pub const VIDEO: u32 = 110;

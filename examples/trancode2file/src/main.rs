@@ -6,13 +6,12 @@ use tracing::level_filters::LevelFilter;
 mod audio;
 mod discovery;
 mod playback;
-mod transport;
 mod video;
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
+        .with_max_level(LevelFilter::INFO)
         .init();
 
     gstreamer::init().expect("gstreamer initialization");
@@ -37,8 +36,8 @@ async fn main() {
 
     let tcp_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
     axum::serve(
-        transport::RtspListener { tcp_listener },
-        airplay::rtsp::RtspService { config },
+        airplay::rtsp::Listener { tcp_listener },
+        airplay::rtsp::service_factory(config),
     )
     .await
     .unwrap();
