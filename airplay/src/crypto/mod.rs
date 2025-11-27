@@ -1,5 +1,3 @@
-pub mod fairplay;
-
 pub type AesCtr128BE = ctr::Ctr128BE<aes::Aes128>;
 pub type AesCbc128 = cbc::Decryptor<aes::Aes128>;
 pub type AesKey128 = [u8; 16];

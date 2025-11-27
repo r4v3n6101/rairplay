@@ -17,7 +17,7 @@ use crate::{
 
 mod crypto;
 
-#[tracing::instrument]
+#[tracing::instrument(level = "DEBUG")]
 pub async fn event_processor(listener: TcpListener) {
     const BUF_SIZE: usize = 16 * 1024;
 
@@ -29,7 +29,7 @@ pub async fn event_processor(listener: TcpListener) {
     }
 }
 
-#[tracing::instrument(skip(stream))]
+#[tracing::instrument(level = "DEBUG", err, skip(stream))]
 pub async fn audio_buffered_processor(
     audio_buf_size: u32,
     mut tcp_stream: TcpStream,
@@ -80,12 +80,12 @@ pub async fn audio_buffered_processor(
 
             Ok(())
         }
-        .instrument(tracing::trace_span!("buffered packet"))
+        .instrument(tracing::debug_span!("packet.buffered"))
         .await?;
     }
 }
 
-#[tracing::instrument(skip(stream))]
+#[tracing::instrument(level = "DEBUG", err, skip(stream))]
 pub async fn audio_realtime_processor(
     socket: UdpSocket,
     audio_buf_size: u32,
@@ -119,12 +119,12 @@ pub async fn audio_realtime_processor(
 
             io::Result::Ok(())
         }
-        .instrument(tracing::trace_span!("realtime packet"))
+        .instrument(tracing::debug_span!("packet.realtime"))
         .await?;
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(level = "DEBUG", err)]
 pub async fn control_processor(socket: UdpSocket) -> io::Result<()> {
     const BUF_SIZE: usize = 16 * 1024;
 
@@ -134,7 +134,7 @@ pub async fn control_processor(socket: UdpSocket) -> io::Result<()> {
     }
 }
 
-#[tracing::instrument(skip(stream))]
+#[tracing::instrument(level = "DEBUG", err, skip(stream))]
 pub async fn video_processor(
     video_buf_size: u32,
     mut tcp_stream: TcpStream,
@@ -179,7 +179,7 @@ pub async fn video_processor(
 
             io::Result::Ok(())
         }
-        .instrument(tracing::trace_span!("video packet"))
+        .instrument(tracing::debug_span!("packet.video"))
         .await?;
     }
 }

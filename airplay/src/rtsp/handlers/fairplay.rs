@@ -5,7 +5,7 @@
 
 use thiserror::Error;
 
-use super::AesKey128;
+use crate::crypto::AesKey128;
 
 const MESSAGES: [&[u8]; 4] = [
     &[
@@ -120,7 +120,7 @@ pub fn decrypt_key(message: impl AsRef<[u8]>, encrypted_aes_key: impl AsRef<[u8]
 
 #[cfg(test)]
 mod tests {
-    //! The test and its data are taken from [aireplay2-receiver](https://github.com/openairplay/airplay2-receiver).
+    //! The test and its data are taken from [airplay2-receiver](https://github.com/openairplay/airplay2-receiver).
 
     use base64::Engine;
 

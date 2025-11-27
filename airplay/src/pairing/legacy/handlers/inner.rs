@@ -24,20 +24,17 @@ enum Inner {
         pubkey_our: PublicKey,
         shared_secret: SharedSecret,
     },
-    Verified {
-        shared_secret: SharedSecret,
-    },
 }
 
 pub struct State {
-    state: Inner,
+    state: Box<Inner>,
     signing_our: SigningKey,
 }
 
 impl State {
     pub fn from_signing_privkey(privkey: Ed25519Key) -> Self {
         Self {
-            state: Inner::default(),
+            state: Box::default(),
             signing_our: SigningKey::from_bytes(&privkey),
         }
     }
@@ -51,7 +48,7 @@ impl State {
         pubkey_their: X25519Key,
         verify_their: Ed25519Key,
         mut rand: R,
-    ) -> Result<Response, Error>
+    ) -> Result<(Response, SharedSecret), Error>
     where
         R: RngCore + CryptoRng,
     {
@@ -82,14 +79,14 @@ impl State {
         response[..X25519_KEY_LEN].copy_from_slice(pubkey_our.as_ref());
         response[X25519_KEY_LEN..].copy_from_slice(&signature);
 
-        self.state = Inner::Established {
+        self.state = Box::new(Inner::Established {
             verify_their,
             pubkey_our,
             pubkey_their,
             shared_secret,
-        };
+        });
 
-        Ok(response)
+        Ok((response, shared_secret))
     }
 
     pub fn verify_agreement(&mut self, mut signature: [u8; SIGNATURE_LENGTH]) -> Result<(), Error> {
@@ -98,7 +95,7 @@ impl State {
             pubkey_their,
             pubkey_our,
             shared_secret,
-        } = mem::take(&mut self.state)
+        } = mem::take(&mut *self.state)
         else {
             return Err(Error::WrongState);
         };
@@ -115,18 +112,8 @@ impl State {
             .verify_strict(&message, &Signature::from_bytes(&signature))
             .map_err(|_| Error::Verification)
             .inspect(|()| {
-                self.state = Inner::Verified { shared_secret };
+                self.state = Box::new(Inner::Empty);
             })
-    }
-
-    pub fn shared_secret(&self) -> Option<SharedSecret> {
-        match self.state {
-            // Who tf knows when second verify ain't called?
-            Inner::Established { shared_secret, .. } | Inner::Verified { shared_secret } => {
-                Some(shared_secret)
-            }
-            Inner::Empty => None,
-        }
     }
 }
 

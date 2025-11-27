@@ -1,5 +1,6 @@
 use std::{io, net::SocketAddr, sync::Arc};
 
+use derivative::Derivative;
 use tokio::net::{TcpListener, ToSocketAddrs, UdpSocket};
 
 use crate::{
@@ -10,21 +11,27 @@ use crate::{
 
 mod processing;
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct EventChannel {
     local_addr: SocketAddr,
+    #[derivative(Debug = "ignore")]
     waker_flag: Arc<WakerFlag>,
 }
 
+#[derive(Debug)]
 pub struct AudioRealtimeChannel {
     pub local_data_addr: SocketAddr,
     pub local_control_addr: SocketAddr,
 }
 
+#[derive(Debug)]
 pub struct AudioBufferedChannel {
     pub local_addr: SocketAddr,
     pub audio_buf_size: u32,
 }
 
+#[derive(Debug)]
 pub struct VideoChannel {
     pub local_addr: SocketAddr,
 }
@@ -35,6 +42,7 @@ pub struct SharedData {
 }
 
 impl EventChannel {
+    #[tracing::instrument(ret, err, skip(bind_addr))]
     pub async fn create(bind_addr: impl ToSocketAddrs) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;
@@ -61,14 +69,15 @@ impl EventChannel {
 }
 
 impl AudioRealtimeChannel {
+    #[tracing::instrument(ret, err, skip(data_bind_addr, control_bind_addr, shared_data, stream))]
     pub async fn create(
         data_bind_addr: impl ToSocketAddrs,
         control_bind_addr: impl ToSocketAddrs,
-        audio_buf_size: u32,
         shared_data: Arc<SharedData>,
+        stream: impl AudioStream,
+        audio_buf_size: u32,
         key: AesKey128,
         iv: AesIv128,
-        stream: impl AudioStream,
     ) -> io::Result<Self> {
         let data_socket = UdpSocket::bind(data_bind_addr).await?;
         let control_socket = UdpSocket::bind(control_bind_addr).await?;
@@ -108,12 +117,13 @@ impl AudioRealtimeChannel {
 }
 
 impl AudioBufferedChannel {
+    #[tracing::instrument(ret, err, skip(bind_addr, shared_data, stream))]
     pub async fn create(
         bind_addr: impl ToSocketAddrs,
-        audio_buf_size: u32,
         shared_data: Arc<SharedData>,
-        key: ChaCha20Poly1305Key,
         stream: impl AudioStream,
+        audio_buf_size: u32,
+        key: ChaCha20Poly1305Key,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;
@@ -151,13 +161,14 @@ impl AudioBufferedChannel {
 }
 
 impl VideoChannel {
+    #[tracing::instrument(ret, err, skip(bind_addr, shared_data, stream))]
     pub async fn create(
         bind_addr: impl ToSocketAddrs,
-        video_buf_size: u32,
         shared_data: Arc<SharedData>,
+        stream: impl VideoStream,
+        video_buf_size: u32,
         key: AesKey128,
         stream_connection_id: u64,
-        stream: impl VideoStream,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;

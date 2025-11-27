@@ -12,7 +12,7 @@ impl StreamType {
     pub const VIDEO: u32 = 110;
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct InfoResponse {
     #[serde(rename = "deviceid")]
     pub device_id: MacAddr6,
@@ -31,7 +31,7 @@ pub struct InfoResponse {
     pub displays: Vec<Display>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct Display {
     #[serde(rename = "widthPixels")]
     pub width: u32,
@@ -43,7 +43,7 @@ pub struct Display {
     pub features: u32,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum SetupRequest {
     SenderInfo(Box<SenderInfo>),
@@ -53,7 +53,7 @@ pub enum SetupRequest {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct SenderInfo {
     pub name: String,
     pub model: String,
@@ -76,7 +76,7 @@ pub struct SenderInfo {
     pub timing_proto: TimingProtocol,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "timingProtocol")]
 pub enum TimingProtocol {
     #[serde(rename = "PTP")]
@@ -93,7 +93,7 @@ pub enum TimingProtocol {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum StreamRequest {
     #[serde(rename = 96)]
@@ -104,7 +104,7 @@ pub enum StreamRequest {
     Video(VideoRequest),
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct AudioRealtimeRequest {
     #[serde(rename = "ct")]
     pub content_type: u8,
@@ -122,7 +122,7 @@ pub struct AudioRealtimeRequest {
     pub remote_control_port: u16,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct AudioBufferedRequest {
     #[serde(rename = "ct")]
     pub content_type: u8,
@@ -138,7 +138,7 @@ pub struct AudioBufferedRequest {
     pub client_id: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct VideoRequest {
     #[serde(rename = "streamConnectionID")]
     pub stream_connection_id: i64,
@@ -146,7 +146,7 @@ pub struct VideoRequest {
     pub latency_ms: u32,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum SetupResponse {
     Info {
@@ -164,7 +164,7 @@ pub enum SetupResponse {
     },
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(tag = "type")]
 pub enum StreamResponse {
     #[serde(rename = 96)]
@@ -194,13 +194,13 @@ pub enum StreamResponse {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Teardown {
     #[serde(rename = "streams")]
     pub requests: Option<Vec<TeardownRequest>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct TeardownRequest {
     #[serde(rename = "streamID")]
     pub id: Option<u64>,

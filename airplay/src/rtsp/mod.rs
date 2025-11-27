@@ -50,8 +50,6 @@ where
         async {
             let state = Arc::new(state::ServiceState::new(config));
             let mut router = Router::new()
-                // CSeq is required for RTSP protocol
-                .layer(PropagateHeaderLayer::new(HeaderName::from_static("cseq")))
                 // Heartbeat
                 .route("/feedback", post(()))
                 // I guess it will never be used
@@ -94,6 +92,9 @@ where
                     }
                 }),
             );
+
+            // CSeq is required for RTSP protocol
+            router = router.layer(PropagateHeaderLayer::new(HeaderName::from_static("cseq")));
 
             Ok(router)
         }
