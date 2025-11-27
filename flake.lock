@@ -20,11 +20,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1764246921,
-        "narHash": "sha256-tqXeP6Wk/+wJ0s5VKp7vgLirCBzIVUUGV05VGwvhdFM=",
+        "lastModified": 1764269924,
+        "narHash": "sha256-0gOFdPvJ8sVNzWePw09jeWuy3YXSj1+kTbA0WHy5Kaw=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "baa76d3aadee5b749399b9f7b19728c8836fa7ee",
+        "rev": "e6cdde424a9bc21cac063acba7bf5dbfe5fa3f86",
         "type": "github"
       },
       "original": {
@@ -81,13 +81,13 @@
       "locked": {
         "lastModified": 1535103783,
         "narHash": "sha256-SvMUW/oaMcR1n+fhiXd5cpC9U+Llf5gRxOumQ1Vqsws=",
-        "owner": "juhovh",
+        "owner": "r4v3n6101",
         "repo": "shairplay",
         "rev": "096b61ad14c90169f438e690d096e3fcf87e504e",
         "type": "github"
       },
       "original": {
-        "owner": "juhovh",
+        "owner": "r4v3n6101",
         "repo": "shairplay",
         "type": "github"
       }

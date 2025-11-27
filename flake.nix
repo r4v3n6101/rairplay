@@ -6,7 +6,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     shairplay = {
-      url = "github:juhovh/shairplay";
+      url = "github:r4v3n6101/shairplay";
       flake = false;
     };
   };
