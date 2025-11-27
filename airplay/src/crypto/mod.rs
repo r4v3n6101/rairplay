@@ -4,6 +4,8 @@ pub type AesCtr128BE = ctr::Ctr128BE<aes::Aes128>;
 pub type AesCbc128 = cbc::Decryptor<aes::Aes128>;
 pub type AesKey128 = [u8; 16];
 pub type AesIv128 = [u8; 16];
+pub type X25519Key = [u8; 32];
+pub type Ed25519Key = [u8; 32];
 pub type ChaCha20Poly1305Key = [u8; 32];
 
 /// Additionally hash AES key with shared secret from pairing

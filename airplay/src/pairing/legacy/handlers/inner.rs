@@ -6,13 +6,11 @@ use rand::{CryptoRng, Rng, RngCore};
 use thiserror::Error;
 use x25519_dalek::{PublicKey, StaticSecret};
 
-use crate::crypto::{AesCtr128BE, cipher_with_hashed_aes_iv};
+use crate::crypto::{AesCtr128BE, Ed25519Key, X25519Key, cipher_with_hashed_aes_iv};
 
 pub const X25519_KEY_LEN: usize = 32;
 pub const SIGNATURE_LENGTH: usize = 64;
 
-pub type X25519Key = [u8; X25519_KEY_LEN];
-pub type Ed25519Key = [u8; X25519_KEY_LEN];
 pub type SharedSecret = [u8; 32];
 pub type Response = [u8; X25519_KEY_LEN + SIGNATURE_LENGTH];
 

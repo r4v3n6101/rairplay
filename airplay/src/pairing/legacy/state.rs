@@ -1,6 +1,8 @@
 use std::sync::Mutex;
 
-use super::handlers::inner::{Ed25519Key, State as InnerState};
+use crate::crypto::Ed25519Key;
+
+use super::handlers::inner::State as InnerState;
 
 // TODO : better naming
 pub struct ServiceState {

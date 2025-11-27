@@ -6,6 +6,8 @@ use derivative::Derivative;
 pub use macaddr::MacAddr6;
 pub use pin::{PinCode, PinError};
 
+use crate::crypto::Ed25519Key;
+
 mod pin;
 
 #[derive(Debug, Derivative)]
@@ -36,7 +38,7 @@ pub enum Pairing {
     #[derivative(Default)]
     Legacy {
         #[derivative(Default(value = "[5; 32]"))]
-        pairing_key: [u8; 32],
+        pairing_key: Ed25519Key,
     },
     HomeKit {
         // TODO : pk/pi

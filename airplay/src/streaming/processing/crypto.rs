@@ -1,19 +1,20 @@
 use aes::cipher::{BlockDecryptMut, KeyIvInit as _, StreamCipher as _, block_padding::NoPadding};
 use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, Key, KeyInit as _, Nonce, Tag};
 
-use crate::crypto::{AesCbc128, AesCtr128BE, AesIv128, AesKey128, cipher_with_hashed_aes_iv};
+use crate::crypto::{
+    AesCbc128, AesCtr128BE, AesIv128, AesKey128, ChaCha20Poly1305Key, cipher_with_hashed_aes_iv,
+};
 
 pub struct AudioBufferedCipher {
     inner: ChaCha20Poly1305,
 }
 
 impl AudioBufferedCipher {
-    pub const KEY_LEN: usize = 32;
     pub const AAD_LEN: usize = 8;
     pub const TAG_LEN: usize = 16;
     pub const NONCE_LEN: usize = 12;
 
-    pub fn new(key: [u8; Self::KEY_LEN]) -> Self {
+    pub fn new(key: ChaCha20Poly1305Key) -> Self {
         Self {
             inner: ChaCha20Poly1305::new(Key::from_slice(&key)),
         }
