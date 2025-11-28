@@ -11,8 +11,9 @@
 - [x] Legacy pairing (using **X25519**, **ED25519** and **DH**)
 - [x] FairPlay (v3) using [shairplay](https://github.com/juhovh/shairplay)
 - [ ] HomeKit pairing (**WIP**)  
-- [x] Example implementation using **GStreamer** library to pipe stream data into a file  
 - [x] "DJ mode" for managing many devices at once
+- [x] Example implementation using **GStreamer** library to pipe stream data into a file  
+- [ ] **GStreamer** plugin creating streams according to **rairplay**'s API.
 
 
 ## Getting Started
@@ -28,6 +29,7 @@ nix develop .
 # Run or `cargo build` if you need
 cargo run
 ```
+
 
 ## Used resources
 - [Old AirPlay1 protocol specification](https://nto.github.io/AirPlay)
