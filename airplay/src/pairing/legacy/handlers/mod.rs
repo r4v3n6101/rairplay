@@ -14,12 +14,12 @@ pub mod inner;
 
 /// Don't really need request body here, because it duplicates signing key of counterparty got in
 /// the second request.
-#[tracing::instrument(level = "DEBUG", ret(level = "DEBUG"), skip(state))]
+#[tracing::instrument(level = "DEBUG", ret, skip(state))]
 pub async fn pair_setup(State(state): State<Arc<ServiceState>>) -> Ed25519Key {
     state.pairing.lock().unwrap().verifying_key()
 }
 
-#[tracing::instrument(level = "DEBUG", ret(level = "DEBUG"), err, skip(state, key_holder))]
+#[tracing::instrument(level = "DEBUG", ret, err, skip(state, key_holder))]
 pub async fn pair_verify(
     State(state): State<Arc<ServiceState>>,
     Extension(key_holder): Extension<Arc<dyn SessionKeyHolder>>,

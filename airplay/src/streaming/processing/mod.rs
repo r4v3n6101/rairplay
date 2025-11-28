@@ -29,7 +29,7 @@ pub async fn event_processor(listener: TcpListener) {
     }
 }
 
-#[tracing::instrument(level = "DEBUG", err, skip(stream))]
+#[tracing::instrument(level = "DEBUG", skip(stream))]
 pub async fn audio_buffered_processor(
     audio_buf_size: u32,
     mut tcp_stream: TcpStream,
@@ -85,7 +85,7 @@ pub async fn audio_buffered_processor(
     }
 }
 
-#[tracing::instrument(level = "DEBUG", err, skip(stream))]
+#[tracing::instrument(level = "DEBUG", skip(stream))]
 pub async fn audio_realtime_processor(
     socket: UdpSocket,
     audio_buf_size: u32,
@@ -134,7 +134,7 @@ pub async fn control_processor(socket: UdpSocket) -> io::Result<()> {
     }
 }
 
-#[tracing::instrument(level = "DEBUG", err, skip(stream))]
+#[tracing::instrument(level = "DEBUG", skip(stream))]
 pub async fn video_processor(
     video_buf_size: u32,
     mut tcp_stream: TcpStream,
