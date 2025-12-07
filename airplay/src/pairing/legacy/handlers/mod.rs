@@ -51,7 +51,7 @@ pub async fn pair_verify(
             .verify_agreement(signature)
             .inspect(|_| tracing::info!("agreement verified"))
             .inspect_err(|err| tracing::warn!(%err, "agreement verification failed"))
-            .map(|_| ().into_response())
+            .map(|()| ().into_response())
             .map_err(|_| StatusCode::OK)
     }
 }

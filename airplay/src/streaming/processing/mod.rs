@@ -66,7 +66,6 @@ pub async fn audio_buffered_processor(
             tcp_stream.read_exact(&mut nonce[4..]).await?;
             tracing::trace!(%pkt_len, "packet read");
 
-            // TODO : offload to thread pool
             if cipher
                 .open_in_place(nonce, aad, tag, &mut rtp[AudioPacket::HEADER_LEN..])
                 .is_err()
@@ -77,6 +76,7 @@ pub async fn audio_buffered_processor(
 
                 stream.on_data(AudioPacket { rtp });
             }
+            tokio::task::consume_budget().await;
 
             Ok(())
         }
@@ -110,11 +110,11 @@ pub async fn audio_realtime_processor(
                 rtp.copy_from_slice(&pkt_buf[..pkt_len]);
                 tracing::trace!(%pkt_len, "packet read");
 
-                // TODO : offload data
                 cipher.decrypt(&mut rtp[AudioPacket::HEADER_LEN..]);
                 tracing::trace!("packet decrypted");
 
                 stream.on_data(AudioPacket { rtp });
+                tokio::task::consume_budget().await;
             }
 
             io::Result::Ok(())
@@ -170,12 +170,12 @@ pub async fn video_processor(
             // Only payload need to be decrypted
             // TODO: Other(_) too?
             if matches!(kind, PacketKind::Payload) {
-                // TODO : Offload to thread
                 cipher.decrypt(&mut pkt.payload);
                 tracing::trace!("packet decrypted");
             }
 
             stream.on_data(pkt);
+            tokio::task::consume_budget().await;
 
             io::Result::Ok(())
         }
