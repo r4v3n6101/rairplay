@@ -1,3 +1,4 @@
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
@@ -36,7 +37,9 @@ async fn main() {
 
     discovery::mdns_broadcast(config.as_ref());
 
-    let tcp_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
+    let tcp_listener = TcpListener::bind(
+        SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 5200)
+    ).await.unwrap();
     axum::serve(
         airplay::rtsp::Listener { tcp_listener },
         airplay::rtsp::service_factory(config),
