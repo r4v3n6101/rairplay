@@ -152,7 +152,11 @@ async fn setup_info<A, V>(
     let mut lock = state.event_channel.lock().await;
     let event_channel = match &mut *lock {
         Some(chan) => chan,
-        event_channel @ None => EventChannel::create(SocketAddr::new(state.config.bind_addr, 0))
+        event_channel @ None => EventChannel::create(crate::net::bind_addr_with_scope_id(
+            state.config.bind_addr,
+            0,
+            state.config.bind_scope_id,
+        ))
             .await
             .map(|chan| event_channel.insert(chan))
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
@@ -255,8 +259,16 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     AudioRealtimeChannel::create(
-        SocketAddr::new(state.config.bind_addr, 0),
-        SocketAddr::new(state.config.bind_addr, 0),
+        crate::net::bind_addr_with_scope_id(
+            state.config.bind_addr,
+            0,
+            state.config.bind_scope_id,
+        ),
+        crate::net::bind_addr_with_scope_id(
+            state.config.bind_addr,
+            0,
+            state.config.bind_scope_id,
+        ),
         shared_data.clone(),
         stream,
         state.config.audio.buf_size,
@@ -333,7 +345,11 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     AudioBufferedChannel::create(
-        SocketAddr::new(state.config.bind_addr, 0),
+        crate::net::bind_addr_with_scope_id(
+            state.config.bind_addr,
+            0,
+            state.config.bind_scope_id,
+        ),
         shared_data.clone(),
         stream,
         state.config.audio.buf_size,
@@ -386,7 +402,11 @@ async fn setup_video<A, V: VideoDevice>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     VideoChannel::create(
-        SocketAddr::new(state.config.bind_addr, 0),
+        crate::net::bind_addr_with_scope_id(
+            state.config.bind_addr,
+            0,
+            state.config.bind_scope_id,
+        ),
         shared_data.clone(),
         stream,
         state.config.video.buf_size,
