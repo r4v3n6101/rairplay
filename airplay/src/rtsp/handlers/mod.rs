@@ -152,10 +152,9 @@ async fn setup_info<A, V>(
     let mut lock = state.event_channel.lock().await;
     let event_channel = match &mut *lock {
         Some(chan) => chan,
-        event_channel @ None => EventChannel::create(crate::net::bind_addr_with_scope_id(
+        event_channel @ None => EventChannel::create(crate::net::bind_addr(
             state.config.bind_addr,
-            0,
-            state.config.bind_scope_id,
+            0
         ))
             .await
             .map(|chan| event_channel.insert(chan))
@@ -259,15 +258,13 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     AudioRealtimeChannel::create(
-        crate::net::bind_addr_with_scope_id(
+        crate::net::bind_addr(
             state.config.bind_addr,
             0,
-            state.config.bind_scope_id,
         ),
-        crate::net::bind_addr_with_scope_id(
+        crate::net::bind_addr(
             state.config.bind_addr,
             0,
-            state.config.bind_scope_id,
         ),
         shared_data.clone(),
         stream,
@@ -345,10 +342,9 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     AudioBufferedChannel::create(
-        crate::net::bind_addr_with_scope_id(
+        crate::net::bind_addr(
             state.config.bind_addr,
             0,
-            state.config.bind_scope_id,
         ),
         shared_data.clone(),
         stream,
@@ -402,10 +398,9 @@ async fn setup_video<A, V: VideoDevice>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     VideoChannel::create(
-        crate::net::bind_addr_with_scope_id(
+        crate::net::bind_addr(
             state.config.bind_addr,
             0,
-            state.config.bind_scope_id,
         ),
         shared_data.clone(),
         stream,

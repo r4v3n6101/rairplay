@@ -4,10 +4,10 @@ use std::net::{IpAddr, SocketAddr, SocketAddrV6};
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::{lookup_host, TcpListener, ToSocketAddrs, UdpSocket};
 
-pub fn bind_addr_with_scope_id(ip: IpAddr, port: u16, scope_id: u32) -> SocketAddr {
+pub fn bind_addr(ip: IpAddr, port: u16) -> SocketAddr {
     match ip {
         IpAddr::V4(ipv4) => SocketAddr::new(IpAddr::V4(ipv4), port),
-        IpAddr::V6(ipv6) => SocketAddr::V6(SocketAddrV6::new(ipv6, port, 0, scope_id)),
+        IpAddr::V6(ipv6) => SocketAddr::new(IpAddr::V6(ipv6), port),
     }
 }
 

@@ -28,9 +28,6 @@ pub struct Config<ADev, VDev> {
     /// By default they're binded to `::`.
     #[derivative(Default(value = "IpAddr::from(Ipv6Addr::UNSPECIFIED)"))]
     pub bind_addr: IpAddr,
-    /// Scope ID used for IPv6 link-local binding (macOS requires this for fe80::).
-    #[derivative(Default(value = "0"))]
-    pub bind_scope_id: u32,
     pub audio: Audio<ADev>,
     pub video: Video<VDev>,
 }
