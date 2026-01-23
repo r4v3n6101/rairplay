@@ -36,7 +36,9 @@ mod fairplay;
 pub async fn generic(bytes: Bytes) {}
 
 #[tracing::instrument(level = "DEBUG", ret, skip(state))]
-pub async fn info<A, V>(State(state): State<Arc<ServiceState<A, V>>>) -> BinaryPlist<InfoResponse> {
+pub async fn info<A, V, K>(
+    State(state): State<Arc<ServiceState<A, V, K>>>,
+) -> BinaryPlist<InfoResponse> {
     const PROTOVERS: &str = "1.1";
     const SRCVERS: &str = "770.8.1";
 
@@ -65,8 +67,8 @@ pub async fn info<A, V>(State(state): State<Arc<ServiceState<A, V>>>) -> BinaryP
 }
 
 #[tracing::instrument(level = "DEBUG", ret(level = "TRACE"), err, skip(state))]
-pub async fn fp_setup<A, V>(
-    State(state): State<Arc<ServiceState<A, V>>>,
+pub async fn fp_setup<A, V, K>(
+    State(state): State<Arc<ServiceState<A, V, K>>>,
     body: Bytes,
 ) -> Result<Vec<u8>, StatusCode> {
     fairplay::decode_buf(&body)
@@ -82,8 +84,8 @@ pub async fn fp_setup<A, V>(
 }
 
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
-pub async fn get_parameter<A: AudioDevice, V>(
-    State(state): State<Arc<ServiceState<A, V>>>,
+pub async fn get_parameter<A: AudioDevice, V, K>(
+    State(state): State<Arc<ServiceState<A, V, K>>>,
     body: String,
 ) -> Result<impl IntoResponse, StatusCode> {
     match body.as_str() {
@@ -104,8 +106,8 @@ pub async fn get_parameter<A: AudioDevice, V>(
 pub async fn set_parameter(_body: Bytes) {}
 
 #[tracing::instrument(level = "DEBUG", skip(state))]
-pub async fn teardown<A, V>(
-    State(state): State<Arc<ServiceState<A, V>>>,
+pub async fn teardown<A, V, K>(
+    State(state): State<Arc<ServiceState<A, V, K>>>,
     BinaryPlist(req): BinaryPlist<Teardown>,
 ) {
     let mut stream_channels = state.stream_channels.lock().unwrap();
@@ -135,8 +137,8 @@ pub async fn teardown<A, V>(
     }
 }
 
-pub async fn setup<A: AudioDevice, V: VideoDevice>(
-    state: State<Arc<ServiceState<A, V>>>,
+pub async fn setup<A: AudioDevice, V: VideoDevice, K>(
+    state: State<Arc<ServiceState<A, V, K>>>,
     connect_info: ConnectInfo<Addresses>,
     BinaryPlist(req): BinaryPlist<SetupRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
@@ -147,8 +149,8 @@ pub async fn setup<A: AudioDevice, V: VideoDevice>(
 }
 
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
-async fn setup_info<A, V>(
-    State(state): State<Arc<ServiceState<A, V>>>,
+async fn setup_info<A, V, K>(
+    State(state): State<Arc<ServiceState<A, V, K>>>,
     ConnectInfo(addrs): ConnectInfo<Addresses>,
     SenderInfo { ekey, eiv, .. }: SenderInfo,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
@@ -180,7 +182,7 @@ async fn setup_info<A, V>(
         "aes key decrypted with fairplay"
     );
 
-    *state.ekey.lock().unwrap() = hash_aes_key(aes_key, session_key);
+    *state.ekey.lock().unwrap() = hash_aes_key(aes_key, &session_key);
     *state.eiv.lock().unwrap() = eiv;
 
     // TODO : log more info from SenderInfo
@@ -192,8 +194,8 @@ async fn setup_info<A, V>(
 }
 
 #[tracing::instrument(level = "DEBUG", skip_all)]
-async fn setup_streams<A: AudioDevice, V: VideoDevice>(
-    State(state): State<Arc<ServiceState<A, V>>>,
+async fn setup_streams<A: AudioDevice, V: VideoDevice, K>(
+    State(state): State<Arc<ServiceState<A, V, K>>>,
     connect_info: ConnectInfo<Addresses>,
     requests: Vec<StreamRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
@@ -218,8 +220,8 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice>(
 }
 
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
-async fn setup_realtime_audio<A: AudioDevice, V>(
-    state: &ServiceState<A, V>,
+async fn setup_realtime_audio<A: AudioDevice, V, K>(
+    state: &ServiceState<A, V, K>,
     ConnectInfo(addrs): ConnectInfo<Addresses>,
     AudioRealtimeRequest {
         audio_format,
@@ -285,8 +287,8 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
 }
 
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
-async fn setup_buffered_audio<A: AudioDevice, V>(
-    state: &ServiceState<A, V>,
+async fn setup_buffered_audio<A: AudioDevice, V, K>(
+    state: &ServiceState<A, V, K>,
     ConnectInfo(addrs): ConnectInfo<Addresses>,
     AudioBufferedRequest {
         samples_per_frame,
@@ -363,8 +365,8 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
 }
 
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
-async fn setup_video<A, V: VideoDevice>(
-    state: &ServiceState<A, V>,
+async fn setup_video<A, V: VideoDevice, K>(
+    state: &ServiceState<A, V, K>,
     ConnectInfo(addrs): ConnectInfo<Addresses>,
     VideoRequest {
         stream_connection_id,

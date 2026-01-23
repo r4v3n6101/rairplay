@@ -4,7 +4,7 @@ use mdns_sd::{ServiceDaemon, ServiceInfo};
 const SERVICE_TYPE: &str = "_airplay._tcp.local.";
 const PROTOCOL_VERSION: &str = "1.1";
 
-pub fn mdns_broadcast<ADev, VDev>(config: &Config<ADev, VDev>) {
+pub fn mdns_broadcast<ADev, VDev, KC>(config: &Config<ADev, VDev, KC>) {
     let mdns = ServiceDaemon::new().expect("Could not create service daemon");
 
     let instance_name = config.name.as_str();

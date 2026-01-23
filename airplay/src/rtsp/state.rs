@@ -5,14 +5,14 @@ use tokio::sync::Mutex as AsyncMutex;
 use weak_table::WeakValueHashMap;
 
 use crate::{
-    config::Config,
+    config::{Config, Keychain},
     crypto::{AesIv128, AesKey128},
-    pairing::SessionKeyHolder,
+    pairing::{KeychainHolder, SessionKeyHolder},
     playback::ChannelHandle,
     streaming::{EventChannel, SharedData},
 };
 
-pub struct ServiceState<ADev, VDev> {
+pub struct ServiceState<ADev, VDev, Id> {
     pub last_stream_id: AtomicU64,
     pub fp_last_msg: Mutex<Bytes>,
     pub session_key: Mutex<Option<Bytes>>,
@@ -21,11 +21,11 @@ pub struct ServiceState<ADev, VDev> {
     pub event_channel: AsyncMutex<Option<EventChannel>>,
     pub stream_channels: Mutex<WeakValueHashMap<(u64, u32), Weak<SharedData>>>,
 
-    pub config: Arc<Config<ADev, VDev>>,
+    pub config: Arc<Config<ADev, VDev, Id>>,
 }
 
-impl<A, V> ServiceState<A, V> {
-    pub fn new(config: Arc<Config<A, V>>) -> Self {
+impl<A, V, I> ServiceState<A, V, I> {
+    pub fn new(config: Arc<Config<A, V, I>>) -> Self {
         Self {
             last_stream_id: AtomicU64::default(),
             fp_last_msg: Mutex::default(),
@@ -40,10 +40,11 @@ impl<A, V> ServiceState<A, V> {
     }
 }
 
-impl<A, V> SessionKeyHolder for ServiceState<A, V>
+impl<A, V, I> SessionKeyHolder for ServiceState<A, V, I>
 where
     A: Send + Sync,
     V: Send + Sync,
+    I: Send + Sync,
 {
     fn set_session_key(&self, key: Bytes) {
         if !key.is_empty() {
@@ -52,7 +53,21 @@ where
     }
 }
 
-impl<A, V> Drop for ServiceState<A, V> {
+impl<A, V, K> KeychainHolder for ServiceState<A, V, K>
+where
+    A: Send + Sync,
+    V: Send + Sync,
+    K: Send + Sync,
+    K: Keychain,
+{
+    type Keychain = K;
+
+    fn keychain(&self) -> &Self::Keychain {
+        &self.config.keychain
+    }
+}
+
+impl<A, V, I> Drop for ServiceState<A, V, I> {
     fn drop(&mut self) {
         // Just in case if the service is dropped, but channels still remain
         self.stream_channels

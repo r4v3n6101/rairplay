@@ -13,7 +13,7 @@ use tower::{Service, service_fn};
 use tower_http::propagate_header::PropagateHeaderLayer;
 
 use crate::{
-    config::{Config, Pairing},
+    config::{Config, Keychain, Pairing},
     pairing,
     playback::{audio::AudioDevice, video::VideoDevice},
 };
@@ -26,24 +26,25 @@ mod handlers;
 mod state;
 mod transport;
 
-pub fn service_factory<A, V>(
-    config: Arc<Config<A, V>>,
+pub fn service_factory<A, V, K>(
+    config: Arc<Config<A, V, K>>,
 ) -> impl for<'a> Service<
     IncomingStream<'a, Listener>,
     Response = impl Service<
         Request,
         Response = Response,
         Error = Infallible,
-        Future = impl Future + Send + use<A, V>,
+        Future = impl Future + Send + use<A, V, K>,
     > + Send
                + Clone
-               + use<A, V>,
+               + use<A, V, K>,
     Error = Infallible,
-    Future = impl Future + Send + use<A, V>,
+    Future = impl Future + Send + use<A, V, K>,
 >
 where
     A: AudioDevice,
     V: VideoDevice,
+    K: Keychain,
 {
     service_fn(move |incoming: IncomingStream<'_, Listener>| {
         let config = Arc::clone(&config);
@@ -64,15 +65,20 @@ where
                 // State cloned here, because it will be moved below
                 .with_state(Arc::clone(&state));
 
-            // Pairing
+            // TODO : Pairing
             match state.config.pairing {
-                Pairing::Legacy { pairing_key } => {
+                Pairing::Legacy => {
                     router = router.merge(pairing::legacy::router(
+                        Arc::clone(&state) as Arc<dyn pairing::KeychainHolder<Keychain = K>>,
                         Arc::clone(&state) as Arc<dyn pairing::SessionKeyHolder>,
-                        pairing_key,
                     ));
                 }
-                Pairing::HomeKit { pin } => router = router.merge(pairing::homekit::router(pin)),
+                Pairing::HomeKit => {
+                    router = router.merge(pairing::homekit::router(
+                        Arc::clone(&state) as Arc<dyn pairing::KeychainHolder<Keychain = K>>,
+                        state.config.pin,
+                    ))
+                }
             }
 
             // Custom RTSP methods

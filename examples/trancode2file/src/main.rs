@@ -19,22 +19,24 @@ async fn main() {
 
     gstreamer::init().expect("gstreamer initialization");
 
-    let config = Arc::new(airplay::config::Config::<_, _> {
-        name: "rairplay".to_string(),
-        video: airplay::config::Video {
-            device: playback::PipeDevice {
-                callback: video::transcode,
+    let config = Arc::new(
+        airplay::config::Config::<_, _, airplay::config::DefaultKeychain> {
+            name: "rairplay".to_string(),
+            video: airplay::config::Video {
+                device: playback::PipeDevice {
+                    callback: video::transcode,
+                },
+                ..Default::default()
+            },
+            audio: airplay::config::Audio {
+                device: playback::PipeDevice {
+                    callback: audio::transcode,
+                },
+                ..Default::default()
             },
             ..Default::default()
         },
-        audio: airplay::config::Audio {
-            device: playback::PipeDevice {
-                callback: audio::transcode,
-            },
-            ..Default::default()
-        },
-        ..Default::default()
-    });
+    );
 
     discovery::mdns_broadcast(config.as_ref());
 

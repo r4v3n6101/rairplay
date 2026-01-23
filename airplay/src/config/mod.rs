@@ -1,16 +1,16 @@
 use bitflags::bitflags;
 use derivative::Derivative;
 
+pub use keychain::{Keychain, default::DefaultKeychain};
 pub use macaddr::MacAddr6;
 pub use pin::{PinCode, PinError};
 
-use crate::crypto::Ed25519Key;
-
+mod keychain;
 mod pin;
 
 #[derive(Debug, Derivative)]
 #[derivative(Default)]
-pub struct Config<ADev, VDev> {
+pub struct Config<ADev, VDev, KC> {
     pub mac_addr: MacAddr6,
     pub features: Features,
     #[derivative(Default(value = "env!(\"CARGO_PKG_AUTHORS\").to_string()"))]
@@ -21,23 +21,19 @@ pub struct Config<ADev, VDev> {
     pub name: String,
     #[derivative(Default(value = "env!(\"CARGO_PKG_VERSION\").to_string()"))]
     pub fw_version: String,
+
+    pub pin: Option<PinCode>,
+    pub keychain: KC,
     pub pairing: Pairing,
     pub audio: Audio<ADev>,
     pub video: Video<VDev>,
 }
 
-#[derive(Derivative)]
-#[derivative(Debug, Default)]
+#[derive(Debug, Default)]
 pub enum Pairing {
-    #[derivative(Default)]
-    Legacy {
-        #[derivative(Default(value = "[5; 32]"))]
-        pairing_key: Ed25519Key,
-    },
-    HomeKit {
-        // TODO : pk/pi
-        pin: Option<PinCode>,
-    },
+    #[default]
+    Legacy,
+    HomeKit,
 }
 
 #[derive(Derivative)]
@@ -154,6 +150,7 @@ impl Default for Features {
 
             // A glitch whether /fp-setup is called, but the audio/video data is clear
             | Self::MFiSoft_FairPlay
+            | Self::HomeKitPairing
             // | Self::AudioUnencrypted
 
             // Seems like needed for a GET /info call

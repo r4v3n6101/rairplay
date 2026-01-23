@@ -1,3 +1,7 @@
+use aes::cipher::KeyIvInit as _;
+use hkdf::Hkdf;
+use sha2::Sha512;
+
 pub type AesCtr128BE = ctr::Ctr128BE<aes::Aes128>;
 pub type AesCbc128 = cbc::Decryptor<aes::Aes128>;
 pub type AesKey128 = [u8; 16];
@@ -5,27 +9,30 @@ pub type AesIv128 = [u8; 16];
 pub type X25519Key = [u8; 32];
 pub type Ed25519Key = [u8; 32];
 pub type ChaCha20Poly1305Key = [u8; 32];
+pub type HkdfOutput = [u8; 32];
 
 /// Additionally hash AES key with shared secret from pairing
-pub fn hash_aes_key(aes_key: AesKey128, shared_secret: impl AsRef<[u8]>) -> AesKey128 {
-    sha512_two_step(aes_key, shared_secret)
+pub fn hash_aes_key(aes_key: AesKey128, shared_secret: &[u8]) -> AesKey128 {
+    sha512_two_step(&aes_key, shared_secret)
 }
 
-pub fn cipher_with_hashed_aes_iv(
-    key_text: impl AsRef<[u8]>,
-    iv_text: impl AsRef<[u8]>,
-    secret: impl AsRef<[u8]>,
-) -> AesCtr128BE {
-    use aes::cipher::KeyIvInit;
-
-    let aes = sha512_two_step(key_text, secret.as_ref());
-    let iv = sha512_two_step(iv_text, secret.as_ref());
+pub fn cipher_with_hashed_aes_iv(key_text: &[u8], iv_text: &[u8], secret: &[u8]) -> AesCtr128BE {
+    let aes = sha512_two_step(key_text, secret);
+    let iv = sha512_two_step(iv_text, secret);
 
     AesCtr128BE::new((&aes).into(), (&iv).into())
 }
 
-#[inline(always)]
-fn sha512_two_step(x: impl AsRef<[u8]>, y: impl AsRef<[u8]>) -> [u8; 16] {
+pub fn hkdf(input: &[u8], salt: &[u8], info: &[u8]) -> HkdfOutput {
+    let hkdf = Hkdf::<Sha512>::new(Some(salt), input);
+    let mut output = [0u8; _];
+    hkdf.expand(info, &mut output)
+        .expect("OKM must be 32 bytes len");
+
+    output
+}
+
+fn sha512_two_step(x: &[u8], y: &[u8]) -> [u8; 16] {
     use sha2::{Digest, Sha512};
 
     let mut hasher = Sha512::new();
