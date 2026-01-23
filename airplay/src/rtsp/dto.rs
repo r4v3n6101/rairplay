@@ -2,14 +2,16 @@
 
 use bytes::Bytes;
 use macaddr::MacAddr6;
-use serde::{Deserialize, Serialize};
+use plist::{from_value, Value};
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-pub struct StreamType;
-
-impl StreamType {
-    pub const AUDIO_REALTIME: u32 = 96;
-    pub const AUDIO_BUFFERED: u32 = 103;
-    pub const VIDEO: u32 = 110;
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(u32)]
+pub enum StreamType {
+    AudioRealtime = 96,
+    AudioBuffered = 103,
+    Video = 110,
 }
 
 #[derive(Debug, Serialize)]
@@ -93,14 +95,10 @@ pub enum TimingProtocol {
     },
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type")]
+#[derive(Debug)]
 pub enum StreamRequest {
-    #[serde(rename = 96)]
     AudioRealtime(AudioRealtimeRequest),
-    #[serde(rename = 103)]
     AudioBuffered(AudioBufferedRequest),
-    #[serde(rename = 110)]
     Video(VideoRequest),
 }
 
@@ -164,32 +162,20 @@ pub enum SetupResponse {
     },
 }
 
-#[derive(Debug, Serialize)]
-#[serde(tag = "type")]
+#[derive(Debug)]
 pub enum StreamResponse {
-    #[serde(rename = 96)]
     AudioRealtime {
-        #[serde(rename = "streamID")]
         id: u64,
-        #[serde(rename = "dataPort")]
         local_data_port: u16,
-        #[serde(rename = "controlPort")]
         local_control_port: u16,
     },
-    #[serde(rename = 103)]
     AudioBuffered {
-        #[serde(rename = "streamID")]
         id: u64,
-        #[serde(rename = "dataPort")]
         local_data_port: u16,
-        #[serde(rename = "audioBufferSize")]
         audio_buffer_size: u32,
     },
-    #[serde(rename = 110)]
     Video {
-        #[serde(rename = "streamID")]
         id: u64,
-        #[serde(rename = "dataPort")]
         local_data_port: u16,
     },
 }
@@ -204,6 +190,129 @@ pub struct Teardown {
 pub struct TeardownRequest {
     #[serde(rename = "streamID")]
     pub id: Option<u64>,
-    #[serde(rename = "type")]
-    pub ty: u32,
+    #[serde(rename = "type", deserialize_with = "deserialize_stream_type")]
+    pub ty: StreamType,
+}
+
+fn deserialize_stream_type<'de, D>(deserializer: D) -> Result<StreamType, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let ty = u32::deserialize(deserializer)?;
+    match ty {
+        x if x == StreamType::AudioRealtime as u32 => Ok(StreamType::AudioRealtime),
+        x if x == StreamType::AudioBuffered as u32 => Ok(StreamType::AudioBuffered),
+        x if x == StreamType::Video as u32 => Ok(StreamType::Video),
+        _ => Err(de::Error::custom("unknown stream type")),
+    }
+}
+
+fn serialize_stream_type<S>(tag: &StreamType, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u32(*tag as u32)
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamRequestEnvelope {
+    #[serde(rename = "type", deserialize_with = "deserialize_stream_type")]
+    ty: StreamType,
+    #[serde(flatten)]
+    payload: Value,
+}
+
+impl<'de> Deserialize<'de> for StreamRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let env = StreamRequestEnvelope::deserialize(deserializer)?;
+        match env.ty {
+            StreamType::AudioRealtime => Ok(StreamRequest::AudioRealtime(
+                from_value(&env.payload).map_err(de::Error::custom)?,
+            )),
+            StreamType::AudioBuffered => Ok(StreamRequest::AudioBuffered(
+                from_value(&env.payload).map_err(de::Error::custom)?,
+            )),
+            StreamType::Video => Ok(StreamRequest::Video(
+                from_value(&env.payload).map_err(de::Error::custom)?,
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct StreamResponseAudioRealtime {
+    #[serde(rename = "type", serialize_with = "serialize_stream_type")]
+    ty: StreamType,
+    #[serde(rename = "streamID")]
+    id: u64,
+    #[serde(rename = "dataPort")]
+    local_data_port: u16,
+    #[serde(rename = "controlPort")]
+    local_control_port: u16,
+}
+
+#[derive(Debug, Serialize)]
+struct StreamResponseAudioBuffered {
+    #[serde(rename = "type", serialize_with = "serialize_stream_type")]
+    ty: StreamType,
+    #[serde(rename = "streamID")]
+    id: u64,
+    #[serde(rename = "dataPort")]
+    local_data_port: u16,
+    #[serde(rename = "audioBufferSize")]
+    audio_buffer_size: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct StreamResponseVideo {
+    #[serde(rename = "type", serialize_with = "serialize_stream_type")]
+    ty: StreamType,
+    #[serde(rename = "streamID")]
+    id: u64,
+    #[serde(rename = "dataPort")]
+    local_data_port: u16,
+}
+
+impl Serialize for StreamResponse {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            StreamResponse::AudioRealtime {
+                id,
+                local_data_port,
+                local_control_port,
+            } => StreamResponseAudioRealtime {
+                ty: StreamType::AudioRealtime,
+                id: *id,
+                local_data_port: *local_data_port,
+                local_control_port: *local_control_port,
+            }
+            .serialize(serializer),
+            StreamResponse::AudioBuffered {
+                id,
+                local_data_port,
+                audio_buffer_size,
+            } => StreamResponseAudioBuffered {
+                ty: StreamType::AudioBuffered,
+                id: *id,
+                local_data_port: *local_data_port,
+                audio_buffer_size: *audio_buffer_size,
+            }
+            .serialize(serializer),
+            StreamResponse::Video {
+                id,
+                local_data_port,
+            } => StreamResponseVideo {
+                ty: StreamType::Video,
+                id: *id,
+                local_data_port: *local_data_port,
+            }
+            .serialize(serializer),
+        }
+    }
 }

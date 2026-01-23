@@ -123,7 +123,7 @@ pub async fn teardown<A, V>(
                     .filter(|((_, ty), _)| *ty == req.ty)
                     .for_each(|(_, chan)| chan.close());
                 stream_channels.retain(|(_, ty), _| *ty != req.ty);
-                tracing::info!(type=%req.ty, "teardown stream");
+                tracing::info!(type=?req.ty, "teardown stream");
             }
         }
     } else {
@@ -269,7 +269,7 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
             .stream_channels
             .lock()
             .unwrap()
-            .insert((id, StreamType::AUDIO_REALTIME), shared_data);
+            .insert((id, StreamType::AudioRealtime), shared_data);
     })
     .map(|chan| StreamResponse::AudioRealtime {
         id,
@@ -345,7 +345,7 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
             .stream_channels
             .lock()
             .unwrap()
-            .insert((id, StreamType::AUDIO_BUFFERED), shared_data);
+            .insert((id, StreamType::AudioBuffered), shared_data);
     })
     .map(|chan| StreamResponse::AudioBuffered {
         id,
@@ -399,7 +399,7 @@ async fn setup_video<A, V: VideoDevice>(
             .stream_channels
             .lock()
             .unwrap()
-            .insert((id, StreamType::VIDEO), shared_data);
+            .insert((id, StreamType::Video), shared_data);
     })
     .map(|chan| StreamResponse::Video {
         id,
