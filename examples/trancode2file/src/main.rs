@@ -19,21 +19,24 @@ async fn main() {
 
     discovery::mdns_broadcast();
 
-    let config = Arc::new(airplay::config::Config::<_, _> {
-        video: airplay::config::Video {
-            device: playback::PipeDevice {
-                callback: video::transcode,
+    let config = Arc::new(
+        airplay::config::Config::<_, _, airplay::config::DefaultKeychain> {
+            video: airplay::config::Video {
+                device: playback::PipeDevice {
+                    callback: video::transcode,
+                },
+                ..Default::default()
             },
+            audio: airplay::config::Audio {
+                device: playback::PipeDevice {
+                    callback: audio::transcode,
+                },
+                ..Default::default()
+            },
+            pairing: airplay::config::Pairing::HomeKit,
             ..Default::default()
         },
-        audio: airplay::config::Audio {
-            device: playback::PipeDevice {
-                callback: audio::transcode,
-            },
-            ..Default::default()
-        },
-        ..Default::default()
-    });
+    );
 
     let tcp_listener = TcpListener::bind("0.0.0.0:5200").await.unwrap();
     axum::serve(

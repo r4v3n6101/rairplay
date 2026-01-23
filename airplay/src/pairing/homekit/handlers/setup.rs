@@ -1,33 +1,37 @@
 use std::{borrow::Cow, ops::BitXor};
 
 use bytes::Bytes;
+use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::AeadMutInPlace};
+use ed25519_dalek::{Signature, VerifyingKey};
 use num_bigint::BigUint;
 use rand::Rng;
 use sha2::{Digest, Sha512};
 use srp::{client::SrpClient, groups::G_3072, server::SrpServer, types::SrpGroup};
 
-use crate::config::PinCode;
+use crate::{config::PinCode, crypto};
 
 use super::super::dto::ErrorCode;
 
 type SaltArray = [u8; 16];
 type PrivKeyArray = [u8; 64];
 
-pub enum State {
-    Init {
-        username: &'static str,
-        password: Cow<'static, str>,
-    },
+enum Inner {
+    Init,
     AuthStart {
         salt: SaltArray,
         privkey: PrivKeyArray,
-        username: &'static str,
         verifier: Vec<u8>,
     },
     Transient {
         session_key: Bytes,
     },
     // TODO: non-transient with encryption of tcp channel
+}
+
+pub struct State {
+    username: &'static str,
+    password: Cow<'static, str>,
+    inner: Inner,
 }
 
 impl State {
@@ -42,11 +46,15 @@ impl State {
             Cow::Borrowed(PAIR_SETUP_DEFAULT_PASSWORD)
         };
 
-        Self::Init { username, password }
+        Self {
+            username,
+            password,
+            inner: Inner::Init,
+        }
     }
 
     pub fn m1_m2(&mut self, mut random: impl Rng) -> Result<(Vec<u8>, Vec<u8>), ErrorCode> {
-        let Self::Init { username, password } = &self else {
+        let Inner::Init = &self.inner else {
             return Err(ErrorCode::Busy);
         };
 
@@ -56,15 +64,15 @@ impl State {
         random.fill(&mut privkey);
 
         let srp_client = SrpClient::<Sha512>::new(&G_3072);
-        let verifier = srp_client.compute_verifier(username.as_bytes(), password.as_bytes(), &salt);
+        let verifier =
+            srp_client.compute_verifier(self.username.as_bytes(), self.password.as_bytes(), &salt);
 
         let srp_server = SrpServer::<Sha512>::new(&G_3072);
         let pubkey = srp_server.compute_public_ephemeral(&privkey, &verifier);
 
-        *self = Self::AuthStart {
+        self.inner = Inner::AuthStart {
             salt,
             privkey,
-            username,
             verifier,
         };
 
@@ -76,12 +84,11 @@ impl State {
         client_pubkey: &[u8],
         client_proof: &[u8],
     ) -> Result<Vec<u8>, ErrorCode> {
-        let Self::AuthStart {
+        let Inner::AuthStart {
             salt,
             privkey,
-            username,
             verifier,
-        } = self
+        } = &self.inner
         else {
             return Err(ErrorCode::Busy);
         };
@@ -103,7 +110,7 @@ impl State {
             &server_pubkey,
             client_pubkey,
             client_proof,
-            username.as_bytes(),
+            self.username.as_bytes(),
             salt,
             &key,
             &G_3072,
@@ -112,11 +119,118 @@ impl State {
         };
 
         let session_key = Bytes::from_owner(key.to_vec());
-        *self = Self::Transient {
+        self.inner = Inner::Transient {
             session_key: session_key.clone(),
         };
 
         Ok(server_proof)
+    }
+
+    pub fn m5_m6_dec(&self, msg: &mut Vec<u8>) -> Result<(), ErrorCode> {
+        const NONCE: &[u8] = b"\0\0\0\0PS-Msg05";
+        const SALT: &[u8] = b"Pair-Setup-Encrypt-Salt";
+        const INFO: &[u8] = b"Pair-Setup-Encrypt-Info";
+
+        let Inner::Transient { session_key } = &self.inner else {
+            return Err(ErrorCode::Busy);
+        };
+
+        let session_key = crypto::hkdf(session_key, SALT, INFO);
+        let mut cipher = ChaCha20Poly1305::new(&session_key.into());
+        if cipher
+            .decrypt_in_place(Nonce::from_slice(NONCE), &[], msg)
+            .is_err()
+        {
+            return Err(ErrorCode::Authentication);
+        }
+
+        Ok(())
+    }
+
+    pub fn m5_m6_verify(
+        &self,
+        device_id: &[u8],
+        device_pubkey: &[u8],
+        device_signature: &[u8],
+    ) -> Result<(), ErrorCode> {
+        const SALT: &[u8] = b"Pair-Setup-Controller-Sign-Salt";
+        const INFO: &[u8] = b"Pair-Setup-Controller-Sign-Info";
+
+        let Inner::Transient { session_key } = &self.inner else {
+            return Err(ErrorCode::Busy);
+        };
+
+        let device_x = crypto::hkdf(session_key, SALT, INFO);
+        let mut device_info =
+            Vec::with_capacity(device_x.len() + device_id.len() + device_pubkey.len());
+        device_info.extend_from_slice(&device_x);
+        device_info.extend_from_slice(device_id);
+        device_info.extend_from_slice(device_pubkey);
+
+        let Ok(pubkey) = device_pubkey.try_into() else {
+            return Err(ErrorCode::Authentication);
+        };
+        let Ok(verifying_key) = VerifyingKey::from_bytes(&pubkey) else {
+            return Err(ErrorCode::Authentication);
+        };
+        let Ok(signature) = Signature::from_slice(device_signature) else {
+            return Err(ErrorCode::Authentication);
+        };
+        if verifying_key
+            .verify_strict(&device_info, &signature)
+            .is_err()
+        {
+            return Err(ErrorCode::Authentication);
+        }
+
+        Ok(())
+    }
+
+    pub fn m5_m6_generate_signature<F>(
+        &self,
+        accessory_id: &[u8],
+        accessory_pubkey: &[u8],
+        sign: F,
+    ) -> Result<Vec<u8>, ErrorCode>
+    where
+        F: FnOnce(&[u8]) -> Vec<u8>,
+    {
+        const SALT: &[u8] = b"Pair-Setup-Accessory-Sign-Salt";
+        const INFO: &[u8] = b"Pair-Setup-Accessory-Sign-Info";
+
+        let Inner::Transient { session_key } = &self.inner else {
+            return Err(ErrorCode::Busy);
+        };
+
+        let accessory_x = crypto::hkdf(session_key, SALT, INFO);
+        let mut accessory_info =
+            Vec::with_capacity(accessory_x.len() + accessory_id.len() + accessory_pubkey.len());
+        accessory_info.extend_from_slice(&accessory_x);
+        accessory_info.extend_from_slice(accessory_id);
+        accessory_info.extend_from_slice(accessory_pubkey);
+
+        Ok(sign(&accessory_info))
+    }
+
+    pub fn m5_m6_enc(&self, msg: &mut Vec<u8>) -> Result<(), ErrorCode> {
+        const NONCE: &[u8] = b"\0\0\0\0PS-Msg06";
+        const SALT: &[u8] = b"Pair-Setup-Encrypt-Salt";
+        const INFO: &[u8] = b"Pair-Setup-Encrypt-Info";
+
+        let Inner::Transient { session_key } = &self.inner else {
+            return Err(ErrorCode::Busy);
+        };
+
+        let session_key = crypto::hkdf(session_key, SALT, INFO);
+        let mut cipher = ChaCha20Poly1305::new(&session_key.into());
+        if cipher
+            .encrypt_in_place(Nonce::from_slice(NONCE), &[], msg)
+            .is_err()
+        {
+            return Err(ErrorCode::Authentication);
+        }
+
+        Ok(())
     }
 }
 
@@ -298,25 +412,24 @@ mod tests {
         assert_eq!(B, pubkey);
         assert_eq!(s, salt.as_slice());
 
-        let State::AuthStart {
+        let Inner::AuthStart {
             salt,
             privkey,
-            username,
             verifier,
-        } = &state
+        } = &state.inner
         else {
             unreachable!()
         };
 
         assert_eq!(s, salt.as_slice());
         assert_eq!(b, privkey.as_slice());
-        assert_eq!(&"Pair-Setup", username);
+        assert_eq!("Pair-Setup", state.username);
         assert_eq!(v, verifier);
 
         let Ok(server_proof) = state.m3_m4(A, M1) else {
             panic!("m3m4");
         };
-        let State::Transient { session_key } = &state else {
+        let Inner::Transient { session_key } = &state.inner else {
             unreachable!()
         };
 
