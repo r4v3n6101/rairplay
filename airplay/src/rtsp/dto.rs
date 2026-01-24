@@ -3,8 +3,7 @@
 use bytes::Bytes;
 use macaddr::MacAddr6;
 use plist::{from_value, Value};
-use serde::de;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u32)]
@@ -214,19 +213,19 @@ where
     serializer.serialize_u32(*tag as u32)
 }
 
-#[derive(Debug, Deserialize)]
-struct StreamRequestEnvelope {
-    #[serde(rename = "type", deserialize_with = "deserialize_stream_type")]
-    ty: StreamType,
-    #[serde(flatten)]
-    payload: Value,
-}
-
 impl<'de> Deserialize<'de> for StreamRequest {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
+        #[derive(Debug, Deserialize)]
+        struct StreamRequestEnvelope {
+            #[serde(rename = "type", deserialize_with = "deserialize_stream_type")]
+            ty: StreamType,
+            #[serde(flatten)]
+            payload: Value,
+        }
+
         let env = StreamRequestEnvelope::deserialize(deserializer)?;
         match env.ty {
             StreamType::AudioRealtime => Ok(StreamRequest::AudioRealtime(
@@ -240,30 +239,6 @@ impl<'de> Deserialize<'de> for StreamRequest {
             )),
         }
     }
-}
-
-#[derive(Debug, Serialize)]
-struct StreamResponseAudioRealtime {
-    #[serde(rename = "type", serialize_with = "serialize_stream_type")]
-    ty: StreamType,
-    #[serde(rename = "streamID")]
-    id: u64,
-    #[serde(rename = "dataPort")]
-    local_data_port: u16,
-    #[serde(rename = "controlPort")]
-    local_control_port: u16,
-}
-
-#[derive(Debug, Serialize)]
-struct StreamResponseAudioBuffered {
-    #[serde(rename = "type", serialize_with = "serialize_stream_type")]
-    ty: StreamType,
-    #[serde(rename = "streamID")]
-    id: u64,
-    #[serde(rename = "dataPort")]
-    local_data_port: u16,
-    #[serde(rename = "audioBufferSize")]
-    audio_buffer_size: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -281,6 +256,30 @@ impl Serialize for StreamResponse {
     where
         S: Serializer,
     {
+        #[derive(Debug, Serialize)]
+        struct StreamResponseAudioRealtime {
+            #[serde(rename = "type", serialize_with = "serialize_stream_type")]
+            ty: StreamType,
+            #[serde(rename = "streamID")]
+            id: u64,
+            #[serde(rename = "dataPort")]
+            local_data_port: u16,
+            #[serde(rename = "controlPort")]
+            local_control_port: u16,
+        }
+
+        #[derive(Debug, Serialize)]
+        struct StreamResponseAudioBuffered {
+            #[serde(rename = "type", serialize_with = "serialize_stream_type")]
+            ty: StreamType,
+            #[serde(rename = "streamID")]
+            id: u64,
+            #[serde(rename = "dataPort")]
+            local_data_port: u16,
+            #[serde(rename = "audioBufferSize")]
+            audio_buffer_size: u32,
+        }
+
         match self {
             StreamResponse::AudioRealtime {
                 id,
