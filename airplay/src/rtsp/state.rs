@@ -12,8 +12,6 @@ use crate::{
     streaming::{EventChannel, SharedData},
 };
 
-use super::dto::StreamType;
-
 pub struct ServiceState<ADev, VDev> {
     pub last_stream_id: AtomicU64,
     pub fp_last_msg: Mutex<Bytes>,
@@ -21,7 +19,7 @@ pub struct ServiceState<ADev, VDev> {
     pub ekey: Mutex<AesKey128>,
     pub eiv: Mutex<AesIv128>,
     pub event_channel: AsyncMutex<Option<EventChannel>>,
-    pub stream_channels: Mutex<WeakValueHashMap<(u64, StreamType), Weak<SharedData>>>,
+    pub stream_channels: Mutex<WeakValueHashMap<(u64, u32), Weak<SharedData>>>,
 
     pub config: Arc<Config<ADev, VDev>>,
 }
