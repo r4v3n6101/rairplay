@@ -241,16 +241,6 @@ impl<'de> Deserialize<'de> for StreamRequest {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct StreamResponseVideo {
-    #[serde(rename = "type", serialize_with = "serialize_stream_type")]
-    ty: StreamType,
-    #[serde(rename = "streamID")]
-    id: u64,
-    #[serde(rename = "dataPort")]
-    local_data_port: u16,
-}
-
 impl Serialize for StreamResponse {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -278,6 +268,16 @@ impl Serialize for StreamResponse {
             local_data_port: u16,
             #[serde(rename = "audioBufferSize")]
             audio_buffer_size: u32,
+        }
+
+        #[derive(Debug, Serialize)]
+        struct StreamResponseVideo {
+            #[serde(rename = "type", serialize_with = "serialize_stream_type")]
+            ty: StreamType,
+            #[serde(rename = "streamID")]
+            id: u64,
+            #[serde(rename = "dataPort")]
+            local_data_port: u16,
         }
 
         match self {
