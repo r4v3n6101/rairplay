@@ -1,7 +1,11 @@
-use std::{io, net::SocketAddr, sync::Arc};
+use std::{
+    io,
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+};
 
 use derivative::Derivative;
-use tokio::net::{TcpListener, ToSocketAddrs, UdpSocket};
+use tokio::net::{TcpListener, UdpSocket};
 
 use crate::{
     crypto::{AesIv128, AesKey128, ChaCha20Poly1305Key},
@@ -42,12 +46,13 @@ pub struct SharedData {
 }
 
 impl EventChannel {
-    #[tracing::instrument(ret, err, skip(bind_addr))]
-    pub async fn create(bind_addr: impl ToSocketAddrs) -> io::Result<Self> {
-        let listener = TcpListener::bind(bind_addr).await?;
+    #[tracing::instrument(ret, err)]
+    pub async fn create(bind_addr: IpAddr) -> io::Result<Self> {
+        let listener = TcpListener::bind(SocketAddr::new(bind_addr, 0)).await?;
         let local_addr = listener.local_addr()?;
-        let waker_flag = Arc::new(WakerFlag::default());
+        tracing::info!(%local_addr, "created new listener");
 
+        let waker_flag = Arc::new(WakerFlag::default());
         let wf = Arc::clone(&waker_flag);
         tokio::spawn(async move {
             tokio::select! {
@@ -69,32 +74,37 @@ impl EventChannel {
 }
 
 impl AudioRealtimeChannel {
-    #[tracing::instrument(ret, err, skip(data_bind_addr, control_bind_addr, shared_data, stream))]
+    #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(ret, err, skip(shared_data, stream))]
     pub async fn create(
-        data_bind_addr: impl ToSocketAddrs,
-        control_bind_addr: impl ToSocketAddrs,
+        bind_addr: IpAddr,
+        expected_remote_addr: IpAddr,
         shared_data: Arc<SharedData>,
         stream: impl AudioStream,
         audio_buf_size: u32,
         key: AesKey128,
         iv: AesIv128,
     ) -> io::Result<Self> {
-        let data_socket = UdpSocket::bind(data_bind_addr).await?;
-        let control_socket = UdpSocket::bind(control_bind_addr).await?;
+        let data_socket = UdpSocket::bind(SocketAddr::new(bind_addr, 0)).await?;
+        let control_socket = UdpSocket::bind(SocketAddr::new(bind_addr, 0)).await?;
 
         let local_data_addr = data_socket.local_addr()?;
+        tracing::info!(%local_data_addr, "created new socket");
+
         let local_control_addr = control_socket.local_addr()?;
+        tracing::info!(%local_control_addr, "created new socket");
 
         tokio::spawn(async move {
             let task = async {
                 let data = processing::audio_realtime_processor(
+                    expected_remote_addr,
                     data_socket,
                     audio_buf_size,
                     key,
                     iv,
                     &stream,
                 );
-                let control = processing::control_processor(control_socket);
+                let control = processing::control_processor(expected_remote_addr, control_socket);
 
                 let (first, second) = tokio::join!(data, control);
                 first.or(second)
@@ -117,30 +127,39 @@ impl AudioRealtimeChannel {
 }
 
 impl AudioBufferedChannel {
-    #[tracing::instrument(ret, err, skip(bind_addr, shared_data, stream))]
+    #[tracing::instrument(ret, err, skip(shared_data, stream))]
     pub async fn create(
-        bind_addr: impl ToSocketAddrs,
+        bind_addr: IpAddr,
+        expected_remote_addr: IpAddr,
         shared_data: Arc<SharedData>,
         stream: impl AudioStream,
         audio_buf_size: u32,
         key: ChaCha20Poly1305Key,
     ) -> io::Result<Self> {
-        let listener = TcpListener::bind(bind_addr).await?;
+        let listener = TcpListener::bind(SocketAddr::new(bind_addr, 0)).await?;
         let local_addr = listener.local_addr()?;
+        tracing::info!(%local_addr, "created new listener");
 
         tokio::spawn(async move {
             let task = async {
-                match listener.accept().await {
-                    Ok((tcp_stream, _)) => {
-                        processing::audio_buffered_processor(
-                            audio_buf_size,
-                            tcp_stream,
-                            key,
-                            &stream,
-                        )
-                        .await
-                    }
-                    Err(err) => Err(err),
+                loop {
+                    return match listener.accept().await {
+                        Ok((tcp_stream, stream_remote_addr)) => {
+                            if expected_remote_addr != stream_remote_addr.ip() {
+                                tracing::debug!(%stream_remote_addr, "skip invalid connection");
+                                continue;
+                            }
+
+                            processing::audio_buffered_processor(
+                                audio_buf_size,
+                                tcp_stream,
+                                key,
+                                &stream,
+                            )
+                            .await
+                        }
+                        Err(err) => Err(err),
+                    };
                 }
             };
 
@@ -161,32 +180,41 @@ impl AudioBufferedChannel {
 }
 
 impl VideoChannel {
-    #[tracing::instrument(ret, err, skip(bind_addr, shared_data, stream))]
+    #[tracing::instrument(ret, err, skip(shared_data, stream))]
     pub async fn create(
-        bind_addr: impl ToSocketAddrs,
+        bind_addr: IpAddr,
+        expected_remote_addr: IpAddr,
         shared_data: Arc<SharedData>,
         stream: impl VideoStream,
         video_buf_size: u32,
         key: AesKey128,
         stream_connection_id: u64,
     ) -> io::Result<Self> {
-        let listener = TcpListener::bind(bind_addr).await?;
+        let listener = TcpListener::bind(SocketAddr::new(bind_addr, 0)).await?;
         let local_addr = listener.local_addr()?;
+        tracing::info!(%local_addr, "created new listener");
 
         tokio::spawn(async move {
             let task = async {
-                match listener.accept().await {
-                    Ok((tcp_stream, _)) => {
-                        processing::video_processor(
-                            video_buf_size,
-                            tcp_stream,
-                            key,
-                            stream_connection_id,
-                            &stream,
-                        )
-                        .await
-                    }
-                    Err(err) => Err(err),
+                loop {
+                    return match listener.accept().await {
+                        Ok((tcp_stream, stream_remote_addr)) => {
+                            if expected_remote_addr != stream_remote_addr.ip() {
+                                tracing::debug!(%stream_remote_addr, "skip invalid connection");
+                                continue;
+                            }
+
+                            processing::video_processor(
+                                video_buf_size,
+                                tcp_stream,
+                                key,
+                                stream_connection_id,
+                                &stream,
+                            )
+                            .await
+                        }
+                        Err(err) => Err(err),
+                    };
                 }
             };
 

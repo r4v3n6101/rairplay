@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, net::IpAddr};
 
 use tokio::{
     io::AsyncReadExt,
@@ -87,6 +87,7 @@ pub async fn audio_buffered_processor(
 
 #[tracing::instrument(level = "DEBUG", skip(stream))]
 pub async fn audio_realtime_processor(
+    expected_remote_addr: IpAddr,
     socket: UdpSocket,
     audio_buf_size: u32,
     key: AesKey128,
@@ -101,20 +102,25 @@ pub async fn audio_realtime_processor(
 
     loop {
         async {
-            let pkt_len = socket.recv(&mut pkt_buf).await?;
+            let (pkt_len, remote_addr) = socket.recv_from(&mut pkt_buf).await?;
 
-            if pkt_len < AudioPacket::HEADER_LEN {
-                tracing::warn!(%pkt_len, "malformed packet");
+            // Filter out unexpected addresses
+            if expected_remote_addr == remote_addr.ip() {
+                if pkt_len < AudioPacket::HEADER_LEN {
+                    tracing::warn!(%pkt_len, "malformed packet");
+                } else {
+                    let mut rtp = audio_buf.allocate_buf(pkt_len);
+                    rtp.copy_from_slice(&pkt_buf[..pkt_len]);
+                    tracing::trace!(%pkt_len, "packet read");
+
+                    cipher.decrypt(&mut rtp[AudioPacket::HEADER_LEN..]);
+                    tracing::trace!("packet decrypted");
+
+                    stream.on_data(AudioPacket { rtp });
+                    tokio::task::consume_budget().await;
+                }
             } else {
-                let mut rtp = audio_buf.allocate_buf(pkt_len);
-                rtp.copy_from_slice(&pkt_buf[..pkt_len]);
-                tracing::trace!(%pkt_len, "packet read");
-
-                cipher.decrypt(&mut rtp[AudioPacket::HEADER_LEN..]);
-                tracing::trace!("packet decrypted");
-
-                stream.on_data(AudioPacket { rtp });
-                tokio::task::consume_budget().await;
+                tracing::debug!(%remote_addr, "skip invalid connection");
             }
 
             io::Result::Ok(())
@@ -125,7 +131,7 @@ pub async fn audio_realtime_processor(
 }
 
 #[tracing::instrument(level = "DEBUG", err)]
-pub async fn control_processor(socket: UdpSocket) -> io::Result<()> {
+pub async fn control_processor(_expected_remote_addr: IpAddr, socket: UdpSocket) -> io::Result<()> {
     const BUF_SIZE: usize = 16 * 1024;
 
     let mut buf = [0u8; BUF_SIZE];

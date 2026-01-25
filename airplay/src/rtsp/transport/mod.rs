@@ -1,6 +1,6 @@
 use std::{
     io,
-    net::{SocketAddr, SocketAddrV4, SocketAddrV6},
+    net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6},
 };
 
 use axum::serve::Listener;
@@ -15,15 +15,29 @@ mod codec;
 
 pub struct TcpListenerWithRtspRemap {
     listener: DualStackTcpListener,
+    bind_addr4: SocketAddrV4,
+    bind_addr6: SocketAddrV6,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum ExtendedAddr {
-    Local((SocketAddrV6, SocketAddrV4)),
-    Peer {
-        local_addr: SocketAddr,
-        remote_addr: SocketAddr,
-    },
+pub struct Addresses {
+    pub bind_addr4: SocketAddrV4,
+    pub bind_addr6: SocketAddrV6,
+    pub remote_addr: Option<SocketAddr>,
+}
+
+impl Addresses {
+    /// Returns an IP address of the same family as the given remote address
+    pub fn bind_addr(&self) -> Option<IpAddr> {
+        self.remote_addr.map(|addr| match addr {
+            SocketAddr::V4(_) => IpAddr::V4(*self.bind_addr4.ip()),
+            SocketAddr::V6(_) => IpAddr::V6(*self.bind_addr6.ip()),
+        })
+    }
+
+    pub fn remote_addr(&self) -> Option<IpAddr> {
+        self.remote_addr.as_ref().map(SocketAddr::ip)
+    }
 }
 
 impl TcpListenerWithRtspRemap {
@@ -33,17 +47,9 @@ impl TcpListenerWithRtspRemap {
                 [SocketAddr::V4(addr4), SocketAddr::V6(addr6)].as_slice(),
             )
             .await?,
+            bind_addr4: addr4,
+            bind_addr6: addr6,
         })
-    }
-}
-
-impl ExtendedAddr {
-    pub fn local_addr(&self) -> SocketAddr {
-        match *self {
-            // Won't called, but pass v6 as default. Just for sure
-            Self::Local((addr6, _)) => SocketAddr::V6(addr6),
-            Self::Peer { local_addr, .. } => local_addr,
-        }
     }
 }
 
@@ -53,7 +59,7 @@ impl Listener for TcpListenerWithRtspRemap {
     type Io = SinkWriter<
         StreamReader<Framed<TcpStream, codec::Rtsp2Http>, <codec::Rtsp2Http as Decoder>::Item>,
     >;
-    type Addr = ExtendedAddr;
+    type Addr = Addresses;
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         loop {
@@ -64,25 +70,25 @@ impl Listener for TcpListenerWithRtspRemap {
                     continue;
                 }
             };
-            let local_addr = match stream.local_addr() {
-                Ok(res) => res,
-                Err(err) => {
-                    tracing::error!(%err, "couldn't get local_addr of stream");
-                    continue;
-                }
-            };
 
             return (
                 SinkWriter::new(StreamReader::new(Framed::new(stream, codec::Rtsp2Http))),
-                ExtendedAddr::Peer {
-                    local_addr,
-                    remote_addr,
+                Addresses {
+                    bind_addr4: self.bind_addr4,
+                    bind_addr6: self.bind_addr6,
+                    remote_addr: Some(remote_addr),
                 },
             );
         }
     }
 
     fn local_addr(&self) -> Result<Self::Addr> {
-        self.listener.local_addr().map(ExtendedAddr::Local)
+        self.listener
+            .local_addr()
+            .map(|(bind_addr6, bind_addr4)| Addresses {
+                bind_addr4,
+                bind_addr6,
+                remote_addr: None,
+            })
     }
 }

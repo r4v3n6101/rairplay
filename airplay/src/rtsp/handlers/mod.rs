@@ -1,7 +1,4 @@
-use std::{
-    net::SocketAddr,
-    sync::{Arc, Weak, atomic::Ordering},
-};
+use std::sync::{Arc, Weak, atomic::Ordering};
 
 use crate::{
     crypto::{AesIv128, ChaCha20Poly1305Key, hash_aes_key},
@@ -30,7 +27,7 @@ use super::{
     },
     extractor::BinaryPlist,
     state::ServiceState,
-    transport::ExtendedAddr,
+    transport::Addresses,
 };
 
 mod fairplay;
@@ -140,7 +137,7 @@ pub async fn teardown<A, V>(
 
 pub async fn setup<A: AudioDevice, V: VideoDevice>(
     state: State<Arc<ServiceState<A, V>>>,
-    connect_info: ConnectInfo<ExtendedAddr>,
+    connect_info: ConnectInfo<Addresses>,
     BinaryPlist(req): BinaryPlist<SetupRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     match req {
@@ -152,13 +149,13 @@ pub async fn setup<A: AudioDevice, V: VideoDevice>(
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_info<A, V>(
     State(state): State<Arc<ServiceState<A, V>>>,
-    ConnectInfo(addrs): ConnectInfo<ExtendedAddr>,
+    ConnectInfo(addrs): ConnectInfo<Addresses>,
     SenderInfo { ekey, eiv, .. }: SenderInfo,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     let mut lock = state.event_channel.lock().await;
     let event_channel = match &mut *lock {
         Some(chan) => chan,
-        event_channel @ None => EventChannel::create(SocketAddr::new(addrs.local_addr().ip(), 0))
+        event_channel @ None => EventChannel::create(addrs.bind_addr().unwrap())
             .await
             .map(|chan| event_channel.insert(chan))
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
@@ -197,7 +194,7 @@ async fn setup_info<A, V>(
 #[tracing::instrument(level = "DEBUG", skip_all)]
 async fn setup_streams<A: AudioDevice, V: VideoDevice>(
     State(state): State<Arc<ServiceState<A, V>>>,
-    connect_info: ConnectInfo<ExtendedAddr>,
+    connect_info: ConnectInfo<Addresses>,
     requests: Vec<StreamRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     let mut responses = Vec::with_capacity(requests.len());
@@ -223,7 +220,7 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice>(
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_realtime_audio<A: AudioDevice, V>(
     state: &ServiceState<A, V>,
-    ConnectInfo(addrs): ConnectInfo<ExtendedAddr>,
+    ConnectInfo(addrs): ConnectInfo<Addresses>,
     AudioRealtimeRequest {
         audio_format,
         samples_per_frame,
@@ -263,8 +260,8 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     AudioRealtimeChannel::create(
-        SocketAddr::new(addrs.local_addr().ip(), 0),
-        SocketAddr::new(addrs.local_addr().ip(), 0),
+        addrs.bind_addr().unwrap(),
+        addrs.remote_addr().unwrap(),
         shared_data.clone(),
         stream,
         state.config.audio.buf_size,
@@ -290,7 +287,7 @@ async fn setup_realtime_audio<A: AudioDevice, V>(
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_buffered_audio<A: AudioDevice, V>(
     state: &ServiceState<A, V>,
-    ConnectInfo(addrs): ConnectInfo<ExtendedAddr>,
+    ConnectInfo(addrs): ConnectInfo<Addresses>,
     AudioBufferedRequest {
         samples_per_frame,
         audio_format,
@@ -342,7 +339,8 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     AudioBufferedChannel::create(
-        SocketAddr::new(addrs.local_addr().ip(), 0),
+        addrs.bind_addr().unwrap(),
+        addrs.remote_addr().unwrap(),
         shared_data.clone(),
         stream,
         state.config.audio.buf_size,
@@ -367,7 +365,7 @@ async fn setup_buffered_audio<A: AudioDevice, V>(
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_video<A, V: VideoDevice>(
     state: &ServiceState<A, V>,
-    ConnectInfo(addrs): ConnectInfo<ExtendedAddr>,
+    ConnectInfo(addrs): ConnectInfo<Addresses>,
     VideoRequest {
         stream_connection_id,
         ..
@@ -396,7 +394,8 @@ async fn setup_video<A, V: VideoDevice>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     VideoChannel::create(
-        SocketAddr::new(addrs.local_addr().ip(), 0),
+        addrs.bind_addr().unwrap(),
+        addrs.remote_addr().unwrap(),
         shared_data.clone(),
         stream,
         state.config.video.buf_size,
