@@ -1,5 +1,3 @@
-use std::net::{IpAddr, Ipv4Addr};
-
 use bitflags::bitflags;
 use derivative::Derivative;
 
@@ -24,10 +22,6 @@ pub struct Config<ADev, VDev> {
     #[derivative(Default(value = "env!(\"CARGO_PKG_VERSION\").to_string()"))]
     pub fw_version: String,
     pub pairing: Pairing,
-    /// Address for binding opened streams.
-    /// By default they're binded to `0.0.0.0`.
-    #[derivative(Default(value = "IpAddr::from(Ipv4Addr::UNSPECIFIED)"))]
-    pub bind_addr: IpAddr,
     pub audio: Audio<ADev>,
     pub video: Video<VDev>,
 }

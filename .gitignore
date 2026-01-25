@@ -3,3 +3,6 @@
 **/.DS_Store
 .direnv/
 .idea/
+
+audio_*.wav
+video_*.mp4

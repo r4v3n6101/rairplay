@@ -86,7 +86,15 @@ impl Decoder for Rtsp2Http {
                             }
                         }
                         _ => {
-                            output.put_slice(path.as_bytes());
+                            if let Some(stripped) = path.strip_prefix("rtsp://") {
+                                if let Some(pos) = stripped.find('/') {
+                                    output.put_slice(&stripped.as_bytes()[pos..]);
+                                } else {
+                                    output.put_slice(path.as_bytes());
+                                }
+                            } else {
+                                output.put_slice(path.as_bytes());
+                            }
                         }
                     }
                     output.put_u8(b' ');
@@ -186,5 +194,38 @@ impl<T: AsRef<[u8]>> Encoder<T> for Rtsp2Http {
         );
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Rtsp2Http;
+    use tokio_util::bytes::BytesMut;
+    use tokio_util::codec::Decoder;
+
+    #[test]
+    fn decode_rtsp_setup_ipv4_and_ipv6() {
+        let src_ipv4 = "SETUP rtsp://192.168.1.32/10491381106460282020 RTSP/1.0\r\nContent-Length: 0\r\nContent-Type: application/x-apple-binary-plist\r\nCSeq: 6\r\nDACP-ID: A3F9647052546E53\r\nActive-Remote: 3633173181\r\nUser-Agent: AirPlay/675.4.1\r\n\r\n";
+        let src_ipv6 = "SETUP rtsp://fe80::3032:2ff:fe42:7267/4308029329791076611 RTSP/1.0\r\nContent-Length: 0\r\nContent-Type: application/x-apple-binary-plist\r\nCSeq: 6\r\nDACP-ID: 974F76DCFEAD7ECC\r\nActive-Remote: 418710485\r\nUser-Agent: AirPlay/695.5.1\r\n\r\n";
+
+        let mut decoder = Rtsp2Http;
+
+        let mut buffer = BytesMut::from(src_ipv4.as_bytes());
+        let decoded = decoder
+            .decode(&mut buffer)
+            .expect("decode ipv4 request")
+            .expect("ipv4 request decoded");
+        let decoded = std::str::from_utf8(&decoded).expect("utf8 ipv4 output");
+        let expected_ipv4 = "SETUP /10491381106460282020 HTTP/1.1\r\nContent-Length: 0\r\nContent-Type: application/x-apple-binary-plist\r\nCSeq: 6\r\nDACP-ID: A3F9647052546E53\r\nActive-Remote: 3633173181\r\nUser-Agent: AirPlay/675.4.1\r\n\r\n";
+        assert_eq!(decoded, expected_ipv4);
+
+        let mut buffer = BytesMut::from(src_ipv6.as_bytes());
+        let decoded = decoder
+            .decode(&mut buffer)
+            .expect("decode ipv6 request")
+            .expect("ipv6 request decoded");
+        let decoded = std::str::from_utf8(&decoded).expect("utf8 ipv6 output");
+        let expected_ipv6 = "SETUP /4308029329791076611 HTTP/1.1\r\nContent-Length: 0\r\nContent-Type: application/x-apple-binary-plist\r\nCSeq: 6\r\nDACP-ID: 974F76DCFEAD7ECC\r\nActive-Remote: 418710485\r\nUser-Agent: AirPlay/695.5.1\r\n\r\n";
+        assert_eq!(decoded, expected_ipv6);
     }
 }
