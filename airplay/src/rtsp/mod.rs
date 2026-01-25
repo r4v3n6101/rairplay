@@ -1,8 +1,8 @@
 use std::{convert::Infallible, sync::Arc};
 
 use axum::{
-    Router,
-    extract::Request,
+    Extension, Router,
+    extract::{ConnectInfo, Request},
     handler::Handler,
     http::HeaderName,
     response::Response,
@@ -45,9 +45,10 @@ where
     A: AudioDevice,
     V: VideoDevice,
 {
-    service_fn(move |_: IncomingStream<'_, Listener>| {
+    service_fn(move |incoming: IncomingStream<'_, Listener>| {
         let config = Arc::clone(&config);
-        async {
+        let addrs = *incoming.remote_addr();
+        async move {
             let state = Arc::new(state::ServiceState::new(config));
             let mut router = Router::new()
                 // Heartbeat
@@ -95,6 +96,7 @@ where
 
             // CSeq is required for RTSP protocol
             router = router.layer(PropagateHeaderLayer::new(HeaderName::from_static("cseq")));
+            router = router.layer(Extension(ConnectInfo(addrs)));
 
             Ok(router)
         }

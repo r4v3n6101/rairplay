@@ -88,7 +88,7 @@ impl Decoder for Rtsp2Http {
                         _ => {
                             if let Some(stripped) = path.strip_prefix("rtsp://") {
                                 if let Some(pos) = stripped.find('/') {
-                                    output.put_slice(stripped[pos..].as_bytes());
+                                    output.put_slice(&stripped.as_bytes()[pos..]);
                                 } else {
                                     output.put_slice(path.as_bytes());
                                 }

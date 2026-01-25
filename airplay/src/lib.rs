@@ -1,5 +1,4 @@
 pub mod config;
-pub mod net;
 pub mod playback;
 pub mod rtsp;
 

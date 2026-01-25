@@ -1,9 +1,7 @@
 use std::{io, net::SocketAddr, sync::Arc};
 
 use derivative::Derivative;
-use tokio::net::ToSocketAddrs;
-
-use crate::net::{bind_tcp_dual_stack, bind_udp_dual_stack};
+use tokio::net::{TcpListener, ToSocketAddrs, UdpSocket};
 
 use crate::{
     crypto::{AesIv128, AesKey128, ChaCha20Poly1305Key},
@@ -46,7 +44,7 @@ pub struct SharedData {
 impl EventChannel {
     #[tracing::instrument(ret, err, skip(bind_addr))]
     pub async fn create(bind_addr: impl ToSocketAddrs) -> io::Result<Self> {
-        let listener = bind_tcp_dual_stack(bind_addr).await?;
+        let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;
         let waker_flag = Arc::new(WakerFlag::default());
 
@@ -81,8 +79,8 @@ impl AudioRealtimeChannel {
         key: AesKey128,
         iv: AesIv128,
     ) -> io::Result<Self> {
-        let data_socket = bind_udp_dual_stack(data_bind_addr).await?;
-        let control_socket = bind_udp_dual_stack(control_bind_addr).await?;
+        let data_socket = UdpSocket::bind(data_bind_addr).await?;
+        let control_socket = UdpSocket::bind(control_bind_addr).await?;
 
         let local_data_addr = data_socket.local_addr()?;
         let local_control_addr = control_socket.local_addr()?;
@@ -127,7 +125,7 @@ impl AudioBufferedChannel {
         audio_buf_size: u32,
         key: ChaCha20Poly1305Key,
     ) -> io::Result<Self> {
-        let listener = bind_tcp_dual_stack(bind_addr).await?;
+        let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;
 
         tokio::spawn(async move {
@@ -172,7 +170,7 @@ impl VideoChannel {
         key: AesKey128,
         stream_connection_id: u64,
     ) -> io::Result<Self> {
-        let listener = bind_tcp_dual_stack(bind_addr).await?;
+        let listener = TcpListener::bind(bind_addr).await?;
         let local_addr = listener.local_addr()?;
 
         tokio::spawn(async move {

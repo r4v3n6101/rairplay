@@ -1,7 +1,8 @@
-use std::net::Ipv6Addr;
-use std::sync::Arc;
+use std::{
+    net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6},
+    sync::Arc,
+};
 
-use airplay::net::{bind_addr, bind_tcp_dual_stack};
 use tracing::level_filters::LevelFilter;
 
 mod audio;
@@ -37,14 +38,13 @@ async fn main() {
 
     discovery::mdns_broadcast(config.as_ref());
 
-    let tcp_listener = bind_tcp_dual_stack(bind_addr(
-        Ipv6Addr::UNSPECIFIED.into(),
-        5200,
-    ))
-    .await
-    .unwrap();
     axum::serve(
-        airplay::rtsp::Listener { tcp_listener },
+        airplay::rtsp::Listener::bind(
+            SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 5200),
+            SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 5200, 0, 0),
+        )
+        .await
+        .unwrap(),
         airplay::rtsp::service_factory(config),
     )
     .await
