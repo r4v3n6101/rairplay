@@ -1,34 +1,80 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use gpui::{
     div, img, prelude::*, px, size, App, Application, Bounds, Context, ImageSource, Render, Window,
-    WindowBounds, WindowOptions,
+    WindowBounds, WindowHandle, WindowOptions,
 };
-use tokio::sync::oneshot;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::video::SharedFrame;
+use example_common::playback;
 
-pub fn run_video_window(shared_frame: SharedFrame, shutdown_tx: oneshot::Sender<()>) {
+#[derive(Clone, Copy, Debug)]
+pub enum UiEvent {
+    Open,
+    Close,
+}
+
+pub fn run_video_window(
+    shared_frame: SharedFrame,
+    ui_rx: UnboundedReceiver<UiEvent>,
+    restart_tx: std::sync::mpsc::Sender<()>,
+) {
     Application::new().run(move |cx: &mut App| {
         let bounds = Bounds::centered(None, size(px(960.0), px(540.0)), cx);
-        let mut shutdown_tx = Some(shutdown_tx);
-        cx.on_window_closed(move |cx| {
-            if let Some(tx) = shutdown_tx.take() {
-                let _ = tx.send(());
+        let shared_frame = Arc::clone(&shared_frame);
+        let close_guard = Arc::new(AtomicUsize::new(0));
+        let guard_for_observer = Arc::clone(&close_guard);
+        let restart_tx = restart_tx.clone();
+
+        cx.on_window_closed(move |_cx| {
+            if guard_for_observer.load(Ordering::Acquire) > 0 {
+                guard_for_observer.fetch_sub(1, Ordering::AcqRel);
+                return;
             }
-            cx.shutdown();
+            playback::close_current_streams();
+            let _ = restart_tx.send(());
         })
         .detach();
 
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                ..Default::default()
-            },
-            move |_, cx| cx.new(|_| VideoWindow::new(Arc::clone(&shared_frame))),
-        )
-        .unwrap();
-        cx.activate(true);
+        cx.spawn(async move |cx| {
+            let mut window_handle: Option<WindowHandle<VideoWindow>> = None;
+            let mut ui_rx = ui_rx;
+
+            while let Some(event) = ui_rx.recv().await {
+                match event {
+                    UiEvent::Open => {
+                        let shared_frame = Arc::clone(&shared_frame);
+                        let previous = window_handle.take();
+                        if let Some(handle) = previous {
+                            close_guard.fetch_add(1, Ordering::AcqRel);
+                            let _ = handle.update(cx, |_, window, _| window.remove_window());
+                        }
+                        if let Ok(handle) = cx.open_window(
+                            WindowOptions {
+                                window_bounds: Some(WindowBounds::Windowed(bounds.clone())),
+                                ..Default::default()
+                            },
+                            move |_, cx| cx.new(|_| VideoWindow::new(Arc::clone(&shared_frame))),
+                        ) {
+                            window_handle = Some(handle);
+                            let _ = cx.update(|app| app.activate(true));
+                        }
+                    }
+                    UiEvent::Close => {
+                        let previous = window_handle.take();
+                        if let Some(handle) = previous {
+                            close_guard.fetch_add(1, Ordering::AcqRel);
+                            let _ = handle.update(cx, |_, window, _| window.remove_window());
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
     });
 }
 

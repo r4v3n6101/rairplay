@@ -16,6 +16,9 @@ use gstreamer_app::AppSrc;
 use gstreamer_video::{prelude::VideoFrameExt, VideoFormat, VideoFrame, VideoInfo};
 use image::{Frame, RgbaImage};
 use smallvec::SmallVec;
+use tokio::sync::mpsc::UnboundedSender;
+
+use crate::ui::UiEvent;
 
 pub struct FrameState {
     pub image: Option<Arc<RenderImage>>,
@@ -25,6 +28,7 @@ pub struct FrameState {
 pub type SharedFrame = Arc<Mutex<FrameState>>;
 
 static SHARED_FRAME: OnceLock<SharedFrame> = OnceLock::new();
+static UI_EVENTS: OnceLock<UnboundedSender<UiEvent>> = OnceLock::new();
 
 pub fn init_shared_frame() -> SharedFrame {
     let shared = Arc::new(Mutex::new(FrameState {
@@ -35,11 +39,21 @@ pub fn init_shared_frame() -> SharedFrame {
     shared
 }
 
+pub fn set_ui_sender(sender: UnboundedSender<UiEvent>) {
+    let _ = UI_EVENTS.set(sender);
+}
+
 fn shared_frame() -> SharedFrame {
     SHARED_FRAME
         .get()
         .expect("shared frame must be initialized")
         .clone()
+}
+
+fn send_ui(event: UiEvent) {
+    if let Some(sender) = UI_EVENTS.get() {
+        let _ = sender.send(event);
+    }
 }
 
 pub fn transcode(
@@ -48,6 +62,7 @@ pub fn transcode(
     rx: mpsc::Receiver<VideoPacket>,
 ) -> Result<(), Box<dyn Error>> {
     let shared_frame = shared_frame();
+    let mut ui_session = UiSession::new();
 
     let mut ctx = None;
     loop {
@@ -56,6 +71,7 @@ pub fn transcode(
                 PacketKind::AvcC => match create_stream(payload, shared_frame.clone()) {
                     Ok(res) => {
                         tracing::debug!("avcc packet type");
+                        ui_session.open();
                         ctx = Some(res);
                     }
                     Err(err) => {
@@ -177,6 +193,31 @@ impl Drop for ContextState {
     fn drop(&mut self) {
         if let Err(err) = self.pipeline.set_state(State::Null) {
             tracing::warn!(%err, "pipeline state failed to be set to null");
+        }
+    }
+}
+
+struct UiSession {
+    opened: bool,
+}
+
+impl UiSession {
+    fn new() -> Self {
+        Self { opened: false }
+    }
+
+    fn open(&mut self) {
+        if !self.opened {
+            send_ui(UiEvent::Open);
+            self.opened = true;
+        }
+    }
+}
+
+impl Drop for UiSession {
+    fn drop(&mut self) {
+        if self.opened {
+            send_ui(UiEvent::Close);
         }
     }
 }
