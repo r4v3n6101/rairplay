@@ -1763,12 +1763,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "example-common"
+version = "0.1.0"
+dependencies = [
+ "airplay",
+ "gstreamer",
+ "gstreamer-app",
+ "mdns-sd",
+ "tracing",
+]
+
+[[package]]
 name = "example-gpui"
 version = "0.1.0"
 dependencies = [
  "airplay",
  "axum",
  "core-text",
+ "example-common",
  "gpui",
  "gstreamer",
  "gstreamer-app",
@@ -1776,7 +1788,6 @@ dependencies = [
  "http",
  "httparse",
  "image",
- "mdns-sd",
  "pin-project-lite",
  "smallvec",
  "tokio",
@@ -1792,11 +1803,11 @@ version = "0.1.0"
 dependencies = [
  "airplay",
  "axum",
+ "example-common",
  "gstreamer",
  "gstreamer-app",
  "http",
  "httparse",
- "mdns-sd",
  "pin-project-lite",
  "tokio",
  "tokio-util",

@@ -2,10 +2,10 @@ use std::{error::Error, sync::mpsc};
 
 use airplay::playback::audio::{AudioPacket, AudioParams};
 use gstreamer::{
-    event::Eos,
-    glib::{object::Cast, GString},
-    prelude::{ElementExt, ElementExtManual, GstBinExtManual, GstObjectExt},
     Buffer, Caps, Element, ElementFactory, Format, MessageType, MessageView, Pipeline, State,
+    event::Eos,
+    glib::{GString, object::Cast},
+    prelude::{ElementExt, ElementExtManual, GstBinExtManual, GstObjectExt},
 };
 use gstreamer_app::AppSrc;
 
@@ -19,6 +19,7 @@ pub fn transcode(
         if let Ok(packet) = rx.recv() {
             let mut rtp = packet.rtp;
 
+            // TODO : only for AAC?
             rtp[1] |= 0b1000_0000;
 
             let _ = ctx

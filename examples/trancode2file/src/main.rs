@@ -2,12 +2,10 @@ use std::{
     net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6},
     sync::Arc,
 };
+use example_common::{audio, discovery, playback};
 
 use tracing::level_filters::LevelFilter;
 
-mod audio;
-mod discovery;
-mod playback;
 mod video;
 
 #[tokio::main]

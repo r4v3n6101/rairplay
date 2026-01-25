@@ -2,10 +2,8 @@ use std::{net::Ipv6Addr, sync::Arc, thread};
 use std::net::{Ipv4Addr, SocketAddrV4, SocketAddrV6};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
+use example_common::{audio, discovery, playback};
 
-mod audio;
-mod discovery;
-mod playback;
 mod video;
 mod ui;
 
