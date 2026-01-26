@@ -1,16 +1,16 @@
 [package]
-name = "example-transcode2file"
+name = "example-gpui"
 version = "0.1.0"
 edition = "2024"
 publish = false
 
 [[bin]]
-name = "rairplay-transcode2file"
+name = "rairplay-gpui"
 path = "src/main.rs"
 
 [dependencies]
 tracing = "0.1.40"
-tracing-subscriber = "0.3.18"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 airplay = { path = "../../airplay/" }
 example-common = { path = "../common" }
 
@@ -24,3 +24,8 @@ tokio = { version = "1.41.1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec", "io"] }
 gstreamer = "0.23.6"
 gstreamer-app = "0.23.5"
+gstreamer-video = "0.23.6"
+image = "0.25.1"
+smallvec = "1.13.2"
+gpui = "0.2.2"
+core-text = "=21.0.0"

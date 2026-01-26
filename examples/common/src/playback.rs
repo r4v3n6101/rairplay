@@ -2,7 +2,7 @@ use std::{
     convert::Infallible,
     error::Error,
     future::Future,
-    sync::{Weak, mpsc},
+    sync::{Mutex, OnceLock, Weak, mpsc},
     thread,
 };
 
@@ -14,6 +14,24 @@ use airplay::playback::{
 
 pub type PipeCallback<Params, Packet> =
     fn(u64, Params, mpsc::Receiver<Packet>) -> Result<(), Box<dyn Error>>;
+
+static STREAM_HANDLES: OnceLock<Mutex<Vec<Weak<dyn ChannelHandle>>>> = OnceLock::new();
+
+fn stream_handles() -> &'static Mutex<Vec<Weak<dyn ChannelHandle>>> {
+    STREAM_HANDLES.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+pub fn close_current_streams() {
+    let mut handles = stream_handles().lock().unwrap();
+    handles.retain(|handle| {
+        if let Some(strong) = handle.upgrade() {
+            strong.close();
+            false
+        } else {
+            false
+        }
+    });
+}
 
 #[derive(Debug)]
 pub struct PipeDevice<Params, Packet> {
@@ -43,6 +61,7 @@ where
         params: Self::Params,
         handle: Weak<dyn ChannelHandle>,
     ) -> impl Future<Output = Result<Self::Stream, Self::Error>> + Send {
+        stream_handles().lock().unwrap().push(handle.clone());
         let (tx, rx) = mpsc::channel();
         let callback = self.callback;
         thread::spawn(move || {
