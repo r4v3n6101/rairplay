@@ -2,8 +2,8 @@
 
 use bytes::Bytes;
 use macaddr::MacAddr6;
-use plist::{from_value, Value};
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use plist::{Value, from_value};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u32)]
