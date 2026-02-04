@@ -22,7 +22,7 @@ where
     let state = Arc::new(state::ServiceState::new(keychain_holder, pin));
     Router::new()
         .route("/pair-setup", post(handlers::pair_setup))
-        // .route("/pair-verify", post(()))
+        .route("/pair-verify", post(handlers::pair_verify))
         // .route("/pair-list", post(()))
         // .route("/pair-add", post(()))
         // .route("/pair-pin-start", post(()))

@@ -56,7 +56,7 @@ impl State {
             .map_err(|_| Error::Cryptography("invalid verification key"))?;
         let pubkey_their = PublicKey::from(pubkey_their);
 
-        // Workaround for old version of rand_core
+        // TODO : Workaround for old version of rand_core
         let ephemeral = {
             let buf: [u8; _] = rand.random();
             StaticSecret::from(buf)

@@ -34,6 +34,7 @@ async fn main() {
                 },
                 ..Default::default()
             },
+            pairing: airplay::config::Pairing::HomeKit,
             ..Default::default()
         },
     );

@@ -54,10 +54,6 @@ impl State {
     }
 
     pub fn m1_m2(&mut self, mut random: impl Rng) -> Result<(Vec<u8>, Vec<u8>), ErrorCode> {
-        let Inner::Init = &self.inner else {
-            return Err(ErrorCode::Busy);
-        };
-
         let mut salt: SaltArray = [0u8; _];
         let mut privkey: PrivKeyArray = [0u8; _];
         random.fill(&mut salt);
