@@ -2,9 +2,9 @@ use std::{io, iter};
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce, Tag, aead::AeadMutInPlace};
-use hkdf::Hkdf;
-use sha2::Sha512;
 use tokio_util::codec::{Decoder, Encoder};
+
+use crate::crypto::{self, HkdfOutput};
 
 // 96-bit nonce
 const NONCE_LEN: usize = 12;
@@ -14,11 +14,9 @@ const TAG_LEN: usize = 16;
 const PKT_SIZE_LEN: usize = 2;
 // max payload size in 1 packet
 const PAYLOAD_SIZE: usize = 1024;
-// how much we need from hkdf-sha512
-const OKM_SIZE: usize = 32;
 
 pub struct HAPDecoder {
-    pub key: [u8; OKM_SIZE],
+    pub key: HkdfOutput,
     pub count: u64,
 }
 
@@ -27,13 +25,10 @@ impl HAPDecoder {
         const SALT: &[u8] = b"Control-Salt";
         const INFO: &[u8] = b"Control-Write-Encryption-Key";
 
-        let ikm = shared_secret.as_ref();
-        let hkdf = Hkdf::<Sha512>::new(Some(SALT), ikm);
-        let mut key = [0u8; OKM_SIZE];
-        hkdf.expand(INFO, &mut key)
-            .expect("OKM must be 32 bytes len");
-
-        Self { key, count: 0 }
+        Self {
+            key: crypto::hkdf(shared_secret.as_ref(), SALT, INFO),
+            count: 0,
+        }
     }
 }
 
@@ -88,7 +83,7 @@ impl Decoder for HAPDecoder {
 }
 
 pub struct HAPEncoder {
-    key: [u8; OKM_SIZE],
+    key: HkdfOutput,
     count: usize,
 }
 
@@ -97,13 +92,10 @@ impl HAPEncoder {
         const SALT: &[u8] = b"Control-Salt";
         const INFO: &[u8] = b"Control-Read-Encryption-Key";
 
-        let ikm = shared_secret.as_ref();
-        let hkdf = Hkdf::<Sha512>::new(Some(SALT), ikm);
-        let mut key = [0u8; OKM_SIZE];
-        hkdf.expand(INFO, &mut key)
-            .expect("OKM must be 32 bytes len");
-
-        Self { key, count: 0 }
+        Self {
+            key: crypto::hkdf(shared_secret.as_ref(), SALT, INFO),
+            count: 0,
+        }
     }
 }
 

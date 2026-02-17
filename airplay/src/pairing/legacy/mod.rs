@@ -2,18 +2,29 @@ use std::sync::Arc;
 
 use axum::{Extension, Router, routing::post};
 
-use crate::crypto::Ed25519Key;
+use crate::config::Keychain;
 
-use super::SessionKeyHolder;
+use super::{KeychainHolder, SessionKeyHolder};
 
 mod handlers;
 mod state;
 
-pub fn router(holder: Arc<dyn SessionKeyHolder>, privkey: Ed25519Key) -> Router<()> {
-    let state = Arc::new(state::ServiceState::new(privkey));
+pub fn router<K>(
+    keychain_holder: Arc<dyn KeychainHolder<Keychain = K>>,
+    key_holder: Arc<dyn SessionKeyHolder>,
+) -> Router<()>
+where
+    K: Keychain,
+{
     Router::new()
         .route("/pair-setup", post(handlers::pair_setup))
         .route("/pair-verify", post(handlers::pair_verify))
-        .with_state(state)
-        .layer(Extension(holder))
+        .with_state(Arc::new(state::ServiceState::new(
+            keychain_holder
+                .keychain()
+                .pubkey()
+                .try_into()
+                .expect("valid ed25519 key"),
+        )))
+        .layer(Extension(key_holder))
 }

@@ -142,6 +142,9 @@ macro_rules! impl_tlv8 {
 impl_tlv8!(Salt, Vec<u8>, |v: &[u8]| v.len());
 impl_tlv8!(PublicKey, Vec<u8>, |v: &[u8]| v.len());
 impl_tlv8!(Proof, Vec<u8>, |v: &[u8]| v.len());
+impl_tlv8!(EncryptedData, Vec<u8>, |v: &[u8]| v.len());
+impl_tlv8!(Identifier, Vec<u8>, |v: &[u8]| v.len());
+impl_tlv8!(Signature, Vec<u8>, |v: &[u8]| v.len());
 
 impl Tlv8 for ErrorCode {
     const TAG: TagCode = TagCode::Error;

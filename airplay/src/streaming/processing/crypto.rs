@@ -68,9 +68,9 @@ impl VideoCipher {
     pub fn new(key: AesKey128, stream_connection_id: u64) -> Self {
         Self {
             aesctr: cipher_with_hashed_aes_iv(
-                format!("AirPlayStreamKey{stream_connection_id}"),
-                format!("AirPlayStreamIV{stream_connection_id}"),
-                key,
+                format!("AirPlayStreamKey{stream_connection_id}").as_bytes(),
+                format!("AirPlayStreamIV{stream_connection_id}").as_bytes(),
+                &key,
             ),
             og: [0; 16],
             next_decrypt_count: 0,
