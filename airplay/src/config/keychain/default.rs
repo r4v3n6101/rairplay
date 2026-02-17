@@ -19,7 +19,7 @@ impl Default for DefaultKeychain {
         Self {
             self_id: b"default_none".to_vec(),
             keypair: (signing_key, verifying_key),
-            trusted: Default::default(),
+            trusted: Mutex::default(),
             limit: 10,
         }
     }

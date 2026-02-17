@@ -1,28 +1,18 @@
-use std::sync::Arc;
+use std::sync::Mutex;
 
-use tokio::sync::Mutex as AsyncMutex;
-
-use super::{
-    super::KeychainHolder,
-    handlers::{setup::State as SetupState, verify::State as VerifyState},
-};
+use super::handlers::{setup::State as SetupState, verify::State as VerifyState};
 use crate::config::PinCode;
 
-pub struct ServiceState<K> {
-    pub keychain_holder: Arc<dyn KeychainHolder<Keychain = K>>,
-    pub setup_state: AsyncMutex<SetupState>,
-    pub verify_state: AsyncMutex<VerifyState>,
+pub struct ServiceState {
+    pub setup_state: Mutex<SetupState>,
+    pub verify_state: Mutex<VerifyState>,
 }
 
-impl<K> ServiceState<K> {
-    pub fn new(
-        keychain_holder: Arc<dyn KeychainHolder<Keychain = K>>,
-        pin: Option<PinCode>,
-    ) -> Self {
+impl ServiceState {
+    pub fn new(pin: Option<PinCode>) -> Self {
         Self {
-            keychain_holder,
-            setup_state: AsyncMutex::new(SetupState::new(pin)),
-            verify_state: AsyncMutex::new(VerifyState::new()),
+            setup_state: Mutex::new(SetupState::new(pin)),
+            verify_state: Mutex::new(VerifyState::new()),
         }
     }
 }

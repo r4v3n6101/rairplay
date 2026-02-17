@@ -14,10 +14,9 @@ pub const SIGNATURE_LENGTH: usize = 64;
 pub type SharedSecret = [u8; 32];
 pub type Response = [u8; X25519_KEY_LEN + SIGNATURE_LENGTH];
 
-#[derive(Default)]
+#[allow(clippy::large_enum_variant)]
 enum Inner {
-    #[default]
-    Empty,
+    Init,
     Established {
         verify_their: VerifyingKey,
         pubkey_their: PublicKey,
@@ -27,14 +26,14 @@ enum Inner {
 }
 
 pub struct State {
-    state: Box<Inner>,
+    state: Inner,
     signing_our: SigningKey,
 }
 
 impl State {
     pub fn from_signing_privkey(privkey: Ed25519Key) -> Self {
         Self {
-            state: Box::default(),
+            state: Inner::Init,
             signing_our: SigningKey::from_bytes(&privkey),
         }
     }
@@ -79,12 +78,12 @@ impl State {
         response[..X25519_KEY_LEN].copy_from_slice(pubkey_our.as_ref());
         response[X25519_KEY_LEN..].copy_from_slice(&signature);
 
-        self.state = Box::new(Inner::Established {
+        self.state = Inner::Established {
             verify_their,
             pubkey_our,
             pubkey_their,
             shared_secret,
-        });
+        };
 
         Ok((response, shared_secret))
     }
@@ -95,7 +94,7 @@ impl State {
             pubkey_their,
             pubkey_our,
             shared_secret,
-        } = mem::take(&mut *self.state)
+        } = mem::replace(&mut self.state, Inner::Init)
         else {
             return Err(Error::WrongState);
         };
@@ -112,7 +111,7 @@ impl State {
             .verify_strict(&message, &Signature::from_bytes(&signature))
             .map_err(|_| Error::Verification)
             .inspect(|()| {
-                self.state = Box::new(Inner::Empty);
+                self.state = Inner::Init;
             })
     }
 }

@@ -9,7 +9,7 @@ mod handlers;
 mod state;
 
 pub fn router<K>(
-    keychain_holder: Arc<dyn KeychainHolder<Keychain = K>>,
+    keychain_holder: &dyn KeychainHolder<Keychain = K>,
     key_holder: Arc<dyn SessionKeyHolder>,
 ) -> Router<()>
 where

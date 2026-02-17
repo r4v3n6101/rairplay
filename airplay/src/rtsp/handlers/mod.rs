@@ -137,20 +137,20 @@ pub async fn teardown<A, V, K>(
 }
 
 pub async fn setup<A: AudioDevice, V: VideoDevice, K>(
-    state: State<Arc<ServiceState<A, V, K>>>,
-    connect_info: ConnectInfo<Addresses>,
+    State(state): State<Arc<ServiceState<A, V, K>>>,
+    ConnectInfo(addrs): ConnectInfo<Addresses>,
     BinaryPlist(req): BinaryPlist<SetupRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     match req {
-        SetupRequest::SenderInfo(info) => setup_info(state, connect_info, *info).await,
-        SetupRequest::Streams { requests } => setup_streams(state, connect_info, requests).await,
+        SetupRequest::SenderInfo(info) => setup_info(&state, &addrs, *info).await,
+        SetupRequest::Streams { requests } => setup_streams(&state, &addrs, requests).await,
     }
 }
 
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_info<A, V, K>(
-    State(state): State<Arc<ServiceState<A, V, K>>>,
-    ConnectInfo(addrs): ConnectInfo<Addresses>,
+    state: &ServiceState<A, V, K>,
+    addrs: &Addresses,
     SenderInfo { ekey, eiv, .. }: SenderInfo,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     let mut lock = state.event_channel.lock().await;
@@ -181,8 +181,9 @@ async fn setup_info<A, V, K>(
         "aes key decrypted with fairplay"
     );
 
-    *state.ekey.lock().unwrap() = hash_aes_key(aes_key, &session_key);
-    *state.eiv.lock().unwrap() = eiv;
+    // TODO : skip hashing if no session_key
+    *state.ekey.lock_write() = hash_aes_key(aes_key, &session_key);
+    *state.eiv.lock_write() = eiv;
 
     // TODO : log more info from SenderInfo
 
@@ -194,8 +195,8 @@ async fn setup_info<A, V, K>(
 
 #[tracing::instrument(level = "DEBUG", skip_all)]
 async fn setup_streams<A: AudioDevice, V: VideoDevice, K>(
-    State(state): State<Arc<ServiceState<A, V, K>>>,
-    connect_info: ConnectInfo<Addresses>,
+    state: &ServiceState<A, V, K>,
+    addrs: &Addresses,
     requests: Vec<StreamRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     let mut responses = Vec::with_capacity(requests.len());
@@ -203,12 +204,12 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice, K>(
         let id = state.last_stream_id.fetch_add(1, Ordering::AcqRel);
         match match stream {
             StreamRequest::AudioRealtime(request) => {
-                setup_realtime_audio(&state, connect_info, request, id).await
+                setup_realtime_audio(state, addrs, request, id).await
             }
             StreamRequest::AudioBuffered(request) => {
-                setup_buffered_audio(&state, connect_info, request, id).await
+                setup_buffered_audio(state, addrs, request, id).await
             }
-            StreamRequest::Video(request) => setup_video(&state, connect_info, request, id).await,
+            StreamRequest::Video(request) => setup_video(state, addrs, request, id).await,
         } {
             Ok(response) => responses.push(response),
             Err(err) => return Err(err),
@@ -221,7 +222,7 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice, K>(
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_realtime_audio<A: AudioDevice, V, K>(
     state: &ServiceState<A, V, K>,
-    ConnectInfo(addrs): ConnectInfo<Addresses>,
+    addrs: &Addresses,
     AudioRealtimeRequest {
         audio_format,
         samples_per_frame,
@@ -237,9 +238,6 @@ async fn setup_realtime_audio<A: AudioDevice, V, K>(
         return Err(StatusCode::BAD_REQUEST);
     };
     tracing::debug!(?codec, "codec parsed");
-
-    let key = *state.ekey.lock().unwrap();
-    let iv = *state.eiv.lock().unwrap();
 
     let shared_data = Arc::new(SharedData::default());
     let params = AudioParams {
@@ -266,8 +264,8 @@ async fn setup_realtime_audio<A: AudioDevice, V, K>(
         shared_data.clone(),
         stream,
         state.config.audio.buf_size,
-        key,
-        iv,
+        state.ekey.read(),
+        state.eiv.read(),
     )
     .await
     .inspect(|_| {
@@ -288,7 +286,7 @@ async fn setup_realtime_audio<A: AudioDevice, V, K>(
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_buffered_audio<A: AudioDevice, V, K>(
     state: &ServiceState<A, V, K>,
-    ConnectInfo(addrs): ConnectInfo<Addresses>,
+    addrs: &Addresses,
     AudioBufferedRequest {
         samples_per_frame,
         audio_format,
@@ -366,7 +364,7 @@ async fn setup_buffered_audio<A: AudioDevice, V, K>(
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_video<A, V: VideoDevice, K>(
     state: &ServiceState<A, V, K>,
-    ConnectInfo(addrs): ConnectInfo<Addresses>,
+    addrs: &Addresses,
     VideoRequest {
         stream_connection_id,
         ..
@@ -376,7 +374,6 @@ async fn setup_video<A, V: VideoDevice, K>(
     // This must work like that
     #[allow(clippy::cast_sign_loss)]
     let stream_connection_id = stream_connection_id as u64;
-    let key = *state.ekey.lock().unwrap();
 
     let shared_data = Arc::new(SharedData::default());
     let params = VideoParams {};
@@ -400,7 +397,7 @@ async fn setup_video<A, V: VideoDevice, K>(
         shared_data.clone(),
         stream,
         state.config.video.buf_size,
-        key,
+        state.ekey.read(),
         stream_connection_id,
     )
     .await

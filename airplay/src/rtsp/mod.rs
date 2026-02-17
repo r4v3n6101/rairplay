@@ -68,15 +68,16 @@ where
             match state.config.pairing {
                 Pairing::Legacy => {
                     router = router.merge(pairing::legacy::router(
-                        Arc::clone(&state) as Arc<dyn pairing::KeychainHolder<Keychain = K>>,
+                        &*state,
                         Arc::clone(&state) as Arc<dyn pairing::SessionKeyHolder>,
                     ));
                 }
                 Pairing::HomeKit => {
                     router = router.merge(pairing::homekit::router(
                         Arc::clone(&state) as Arc<dyn pairing::KeychainHolder<Keychain = K>>,
+                        Arc::clone(&state) as Arc<dyn pairing::SessionKeyHolder>,
                         state.config.pin,
-                    ))
+                    ));
                 }
             }
 
