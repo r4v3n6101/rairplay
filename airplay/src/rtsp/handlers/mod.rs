@@ -1,17 +1,5 @@
 use std::sync::{Arc, Weak, atomic::Ordering};
 
-use crate::{
-    crypto::{AesIv128, ChaCha20Poly1305Key, hash_aes_key},
-    playback::{
-        ChannelHandle,
-        audio::{AUDIO_FORMATS, AudioDevice, AudioParams},
-        video::{VideoDevice, VideoParams},
-    },
-    streaming::{
-        AudioBufferedChannel, AudioRealtimeChannel, EventChannel, SharedData, VideoChannel,
-    },
-};
-
 use axum::{
     extract::{ConnectInfo, State},
     response::IntoResponse,
@@ -28,6 +16,17 @@ use super::{
     extractor::BinaryPlist,
     state::ServiceState,
     transport::Addresses,
+};
+use crate::{
+    crypto::{AesIv128, ChaCha20Poly1305Key, hash_aes_key},
+    playback::{
+        ChannelHandle,
+        audio::{AUDIO_FORMATS, AudioDevice, AudioParams},
+        video::{VideoDevice, VideoParams},
+    },
+    streaming::{
+        AudioBufferedChannel, AudioRealtimeChannel, EventChannel, SharedData, VideoChannel,
+    },
 };
 
 mod fairplay;

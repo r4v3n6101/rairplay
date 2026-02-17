@@ -1,6 +1,5 @@
 use bitflags::bitflags;
 use derivative::Derivative;
-
 pub use keychain::{Keychain, default::DefaultKeychain};
 pub use macaddr::MacAddr6;
 pub use pin::{PinCode, PinError};

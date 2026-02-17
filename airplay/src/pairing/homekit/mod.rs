@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use axum::{Router, routing::post};
 
-use crate::config::{Keychain, PinCode};
-
 use super::KeychainHolder;
+use crate::config::{Keychain, PinCode};
 
 mod dto;
 mod extractor;

@@ -3,12 +3,10 @@ use std::sync::Arc;
 use axum::{Extension, extract::State, response::IntoResponse};
 use bytes::Bytes;
 use http::StatusCode;
-
 use inner::{SIGNATURE_LENGTH, X25519_KEY_LEN};
 
-use crate::crypto::Ed25519Key;
-
 use super::{super::SessionKeyHolder, state::ServiceState};
+use crate::crypto::Ed25519Key;
 
 pub mod inner;
 

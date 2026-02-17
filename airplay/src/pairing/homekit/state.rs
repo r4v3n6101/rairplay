@@ -2,12 +2,11 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::config::PinCode;
-
 use super::{
     super::KeychainHolder,
     handlers::{setup::State as SetupState, verify::State as VerifyState},
 };
+use crate::config::PinCode;
 
 pub struct ServiceState<K> {
     pub keychain_holder: Arc<dyn KeychainHolder<Keychain = K>>,

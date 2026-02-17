@@ -100,13 +100,14 @@ impl<T: Tlv8Decode> TaggedValue<T> {
 #[cfg(test)]
 mod tests {
 
-    use super::{super::dto::*, *};
     use axum::{
         body::Body,
         http::{Request, StatusCode},
     };
     use bytes::Bytes;
     use futures::TryStreamExt;
+
+    use super::{super::dto::*, *};
 
     fn encode_tlv(tag: u8, data: &[u8]) -> Vec<u8> {
         let mut out = Vec::new();

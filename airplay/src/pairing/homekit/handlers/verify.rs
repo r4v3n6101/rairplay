@@ -2,9 +2,8 @@ use chacha20poly1305::{ChaCha20Poly1305, KeyInit as _, Nonce, aead::AeadMutInPla
 use rand::{CryptoRng, Rng, RngCore};
 use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
 
-use crate::crypto;
-
 use super::super::dto::ErrorCode;
+use crate::crypto;
 
 enum Inner {
     Init,

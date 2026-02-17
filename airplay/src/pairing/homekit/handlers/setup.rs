@@ -8,9 +8,8 @@ use rand::Rng;
 use sha2::{Digest, Sha512};
 use srp::{client::SrpClient, groups::G_3072, server::SrpServer, types::SrpGroup};
 
-use crate::{config::PinCode, crypto};
-
 use super::super::dto::ErrorCode;
+use crate::{config::PinCode, crypto};
 
 type SaltArray = [u8; 16];
 type PrivKeyArray = [u8; 64];

@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use axum::{Extension, Router, routing::post};
 
-use crate::config::Keychain;
-
 use super::{KeychainHolder, SessionKeyHolder};
+use crate::config::Keychain;
 
 mod handlers;
 mod state;

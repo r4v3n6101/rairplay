@@ -199,9 +199,9 @@ impl<T: AsRef<[u8]>> Encoder<T> for Rtsp2Http {
 
 #[cfg(test)]
 mod tests {
+    use tokio_util::{bytes::BytesMut, codec::Decoder};
+
     use super::Rtsp2Http;
-    use tokio_util::bytes::BytesMut;
-    use tokio_util::codec::Decoder;
 
     #[test]
     fn decode_rtsp_setup_ipv4_and_ipv6() {

@@ -11,14 +11,13 @@ use axum::{
 };
 use tower::{Service, service_fn};
 use tower_http::propagate_header::PropagateHeaderLayer;
+pub use transport::TcpListenerWithRtspRemap as Listener;
 
 use crate::{
     config::{Config, Keychain, Pairing},
     pairing,
     playback::{audio::AudioDevice, video::VideoDevice},
 };
-
-pub use transport::TcpListenerWithRtspRemap as Listener;
 
 mod dto;
 mod extractor;

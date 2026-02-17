@@ -7,8 +7,6 @@ use axum::{
 use bytes::Bytes;
 use http::StatusCode;
 
-use crate::config::Keychain;
-
 use super::{
     dto::{
         EncryptedData, ErrorCode, Identifier, Method, PairingFlags, PairingState, Proof, PublicKey,
@@ -17,6 +15,7 @@ use super::{
     extractor::TaggedValue,
     state::ServiceState,
 };
+use crate::config::Keychain;
 
 pub mod setup;
 pub mod verify;
