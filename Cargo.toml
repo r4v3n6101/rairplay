@@ -1,5 +1,3 @@
 [workspace]
 resolver = "2"
 members = ["airplay", "examples/*"]
-
-# TODO : temporarily, because of unsupported int enum tags
