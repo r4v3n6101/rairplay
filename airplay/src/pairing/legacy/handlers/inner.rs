@@ -1,18 +1,19 @@
 use std::mem;
 
-use aes::cipher::StreamCipher;
+use aes::cipher::{KeyIvInit as _, StreamCipher};
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey, ed25519::signature::SignerMut as _};
 use rand::{CryptoRng, Rng, RngCore};
 use thiserror::Error;
 use x25519_dalek::{PublicKey, StaticSecret};
 
-use crate::crypto::{AesCtr128BE, Ed25519Key, X25519Key, cipher_with_hashed_aes_iv};
+use crate::crypto::sha512_two_step;
 
 pub const X25519_KEY_LEN: usize = 32;
 pub const SIGNATURE_LENGTH: usize = 64;
 
-pub type SharedSecret = [u8; 32];
-pub type Response = [u8; X25519_KEY_LEN + SIGNATURE_LENGTH];
+type SharedSecret = [u8; 32];
+type Response = [u8; X25519_KEY_LEN + SIGNATURE_LENGTH];
+type AesCtr128BE = ctr::Ctr128BE<aes::Aes128>;
 
 #[allow(clippy::large_enum_variant)]
 enum Inner {
@@ -31,28 +32,36 @@ pub struct State {
 }
 
 impl State {
-    pub fn from_signing_privkey(privkey: Ed25519Key) -> Self {
+    pub fn from_signing_privkey(privkey: &[u8]) -> Self {
+        let privkey = <[u8; _]>::try_from(privkey).expect("32 byte key");
         Self {
             state: Inner::Init,
             signing_our: SigningKey::from_bytes(&privkey),
         }
     }
 
-    pub fn verifying_key(&self) -> Ed25519Key {
-        self.signing_our.verifying_key().to_bytes()
+    pub fn verifying_key(&self) -> Vec<u8> {
+        self.signing_our.verifying_key().as_bytes().to_vec()
     }
 
     pub fn establish_agreement<R>(
         &mut self,
-        pubkey_their: X25519Key,
-        verify_their: Ed25519Key,
+        pubkey_their: &[u8],
+        verify_their: &[u8],
         mut rand: R,
     ) -> Result<(Response, SharedSecret), Error>
     where
         R: RngCore + CryptoRng,
     {
+        let Ok(verify_their) = <[u8; _]>::try_from(verify_their) else {
+            return Err(Error::Cryptography("invalid verify key length"));
+        };
         let verify_their = VerifyingKey::from_bytes(&verify_their)
             .map_err(|_| Error::Cryptography("invalid verification key"))?;
+
+        let Ok(pubkey_their) = <[u8; _]>::try_from(pubkey_their) else {
+            return Err(Error::Cryptography("invalid pubkey length"));
+        };
         let pubkey_their = PublicKey::from(pubkey_their);
 
         // TODO : Workaround for old version of rand_core
@@ -128,7 +137,10 @@ pub enum Error {
 }
 
 fn cipher(shared_secret: &[u8]) -> AesCtr128BE {
-    cipher_with_hashed_aes_iv(b"Pair-Verify-AES-Key", b"Pair-Verify-AES-IV", shared_secret)
+    let aes = sha512_two_step(b"Pair-Verify-AES-Key", shared_secret);
+    let iv = sha512_two_step(b"Pair-Verify-AES-IV", shared_secret);
+
+    AesCtr128BE::new((&aes).into(), (&iv).into())
 }
 
 #[cfg(test)]
@@ -146,8 +158,8 @@ mod tests {
             66, 95, 192, 248, 148, 39, 50, 209, 206, 19, 44, 105, 205,
         ];
 
-        let state = super::State::from_signing_privkey(PRIVKEY);
-        assert_eq!(EXPECTED_ED25519_PUBKEY, state.verifying_key());
+        let state = super::State::from_signing_privkey(&PRIVKEY);
+        assert_eq!(EXPECTED_ED25519_PUBKEY, state.verifying_key().as_slice());
     }
 
     #[test]

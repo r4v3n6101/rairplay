@@ -6,9 +6,8 @@ use tokio::sync::Mutex as AsyncMutex;
 use weak_table::WeakValueHashMap;
 
 use crate::{
-    config::{Config, Keychain},
-    crypto::{AesIv128, AesKey128},
-    pairing::{KeychainHolder, SessionKeyHolder},
+    config::Config,
+    crypto::{AesIv128, AesKey128, SessionKey},
     playback::ChannelHandle,
     streaming::{EventChannel, SharedData},
 };
@@ -16,7 +15,7 @@ use crate::{
 pub struct ServiceState<ADev, VDev, KC> {
     pub last_stream_id: AtomicU64,
     pub fp_last_msg: Mutex<Bytes>,
-    pub session_key: Mutex<Option<Bytes>>,
+    pub session_key: SeqLock<Option<SessionKey>>,
     pub ekey: SeqLock<AesKey128>,
     pub eiv: SeqLock<AesIv128>,
     pub event_channel: AsyncMutex<Option<EventChannel>>,
@@ -30,7 +29,7 @@ impl<A, V, K> ServiceState<A, V, K> {
         Self {
             last_stream_id: AtomicU64::default(),
             fp_last_msg: Mutex::default(),
-            session_key: Mutex::default(),
+            session_key: SeqLock::default(),
             ekey: SeqLock::default(),
             eiv: SeqLock::default(),
             event_channel: AsyncMutex::default(),
@@ -38,33 +37,6 @@ impl<A, V, K> ServiceState<A, V, K> {
 
             config,
         }
-    }
-}
-
-impl<A, V, K> SessionKeyHolder for ServiceState<A, V, K>
-where
-    A: Send + Sync,
-    V: Send + Sync,
-    K: Send + Sync,
-{
-    fn set_session_key(&self, key: Bytes) {
-        if !key.is_empty() {
-            let _ = self.session_key.lock().unwrap().insert(key);
-        }
-    }
-}
-
-impl<A, V, K> KeychainHolder for ServiceState<A, V, K>
-where
-    A: Send + Sync,
-    V: Send + Sync,
-    K: Send + Sync,
-    K: Keychain,
-{
-    type Keychain = K;
-
-    fn keychain(&self) -> &Self::Keychain {
-        &self.config.keychain
     }
 }
 

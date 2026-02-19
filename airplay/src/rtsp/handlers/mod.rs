@@ -18,7 +18,7 @@ use super::{
     transport::Addresses,
 };
 use crate::{
-    crypto::{AesIv128, ChaCha20Poly1305Key, hash_aes_key},
+    crypto::{AesIv128, ChaCha20Poly1305Key, sha512_two_step},
     playback::{
         ChannelHandle,
         audio::{AUDIO_FORMATS, AudioDevice, AudioParams},
@@ -167,13 +167,8 @@ async fn setup_info<A, V, K>(
         return Err(StatusCode::BAD_REQUEST);
     };
 
-    let Some(session_key) = state.session_key.lock().unwrap().clone() else {
-        tracing::error!("must be paired before setup call");
-        return Err(StatusCode::FORBIDDEN);
-    };
-
     let fp_last_msg = state.fp_last_msg.lock().unwrap();
-    let aes_key = fairplay::decrypt_key(fp_last_msg.as_ref(), &ekey);
+    let mut aes_key = fairplay::decrypt_key(fp_last_msg.as_ref(), &ekey);
     tracing::trace!(
         ?ekey,
         ?aes_key,
@@ -181,8 +176,16 @@ async fn setup_info<A, V, K>(
         "aes key decrypted with fairplay"
     );
 
-    // TODO : skip hashing if no session_key
-    *state.ekey.lock_write() = hash_aes_key(aes_key, &session_key);
+    if let Some(session_key) = state.session_key.read() {
+        aes_key = sha512_two_step(&aes_key, &session_key);
+        tracing::trace!(
+            ?aes_key,
+            ?session_key,
+            "additional hashing with pairing's shared secret"
+        );
+    }
+
+    *state.ekey.lock_write() = aes_key;
     *state.eiv.lock_write() = eiv;
 
     // TODO : log more info from SenderInfo

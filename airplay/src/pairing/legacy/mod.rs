@@ -1,16 +1,17 @@
 use std::sync::Arc;
 
 use axum::{Extension, Router, routing::post};
+use seqlock::SeqLock;
+use yoke::{Yoke, erased::ErasedArcCart};
 
-use super::{KeychainHolder, SessionKeyHolder};
-use crate::config::Keychain;
+use crate::{config::Keychain, crypto::SessionKey};
 
 mod handlers;
 mod state;
 
 pub fn router<K>(
-    keychain_holder: &dyn KeychainHolder<Keychain = K>,
-    key_holder: Arc<dyn SessionKeyHolder>,
+    keychain: Yoke<&'static K, ErasedArcCart>,
+    session_key: Yoke<&'static SeqLock<Option<SessionKey>>, ErasedArcCart>,
 ) -> Router<()>
 where
     K: Keychain,
@@ -18,12 +19,6 @@ where
     Router::new()
         .route("/pair-setup", post(handlers::pair_setup))
         .route("/pair-verify", post(handlers::pair_verify))
-        .with_state(Arc::new(state::ServiceState::new(
-            keychain_holder
-                .keychain()
-                .pubkey()
-                .try_into()
-                .expect("valid ed25519 key"),
-        )))
-        .layer(Extension(key_holder))
+        .with_state(Arc::new(state::ServiceState::new(keychain.get().pubkey())))
+        .layer(Extension(session_key))
 }

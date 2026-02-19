@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use axum::{Extension, Router, routing::post};
+use yoke::{Yoke, erased::ErasedArcCart};
 
-use super::{KeychainHolder, SessionKeyHolder};
 use crate::config::{Keychain, PinCode};
 
 mod dto;
@@ -11,11 +11,7 @@ mod handlers;
 mod state;
 mod transport;
 
-pub fn router<K>(
-    keychain_holder: Arc<dyn KeychainHolder<Keychain = K>>,
-    key_holder: Arc<dyn SessionKeyHolder>,
-    pin: Option<PinCode>,
-) -> Router<()>
+pub fn router<K>(keychain: Yoke<&'static K, ErasedArcCart>, pin: Option<PinCode>) -> Router<()>
 where
     K: Keychain,
 {
@@ -27,6 +23,5 @@ where
         // .route("/pair-add", post(()))
         // .route("/pair-pin-start", post(()))
         .with_state(state)
-        .layer(Extension(keychain_holder))
-        .layer(Extension(key_holder))
+        .layer(Extension(keychain))
 }

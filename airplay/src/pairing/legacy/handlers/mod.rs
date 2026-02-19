@@ -4,23 +4,25 @@ use axum::{Extension, extract::State, response::IntoResponse};
 use bytes::Bytes;
 use http::StatusCode;
 use inner::{SIGNATURE_LENGTH, X25519_KEY_LEN};
+use seqlock::SeqLock;
+use yoke::{Yoke, erased::ErasedArcCart};
 
-use super::{super::SessionKeyHolder, state::ServiceState};
-use crate::crypto::Ed25519Key;
+use super::state::ServiceState;
+use crate::crypto::SessionKey;
 
 pub mod inner;
 
 /// Don't really need request body here, because it duplicates signing key of counterparty got in
 /// the second request.
 #[tracing::instrument(level = "DEBUG", ret, skip(state))]
-pub async fn pair_setup(State(state): State<Arc<ServiceState>>) -> Ed25519Key {
+pub async fn pair_setup(State(state): State<Arc<ServiceState>>) -> impl IntoResponse {
     state.pairing.lock().unwrap().verifying_key()
 }
 
-#[tracing::instrument(level = "DEBUG", ret, err, skip(state, key_holder))]
+#[tracing::instrument(level = "DEBUG", ret, err, skip(state, session_key))]
 pub async fn pair_verify(
     State(state): State<Arc<ServiceState>>,
-    Extension(key_holder): Extension<Arc<dyn SessionKeyHolder>>,
+    Extension(session_key): Extension<Yoke<&'static SeqLock<Option<SessionKey>>, ErasedArcCart>>,
     body: Bytes,
 ) -> Result<impl IntoResponse, StatusCode> {
     if body.len() < 4 + 2 * X25519_KEY_LEN {
@@ -31,14 +33,14 @@ pub async fn pair_verify(
     let mode = body[0];
     let mut pairing_state = state.pairing.lock().unwrap();
     if mode > 0 {
-        let pubkey_their = body[4..][..X25519_KEY_LEN].try_into().unwrap();
-        let verify_their = body[36..][..X25519_KEY_LEN].try_into().unwrap();
+        let pubkey_their = &body[4..][..X25519_KEY_LEN];
+        let verify_their = &body[36..][..X25519_KEY_LEN];
 
         pairing_state
             .establish_agreement(pubkey_their, verify_their, rand::rng())
             .inspect(|(_, shared_secret)| {
                 tracing::info!("agreement established");
-                key_holder.set_session_key(shared_secret.to_vec().into());
+                session_key.get().lock_write().replace(*shared_secret);
             })
             .inspect_err(|err| tracing::error!(%err, "establishing agreement failed"))
             .map(|(response, _)| response.into_response())

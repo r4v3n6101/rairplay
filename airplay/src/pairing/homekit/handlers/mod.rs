@@ -7,9 +7,9 @@ use axum::{
 };
 use bytes::Bytes;
 use http::StatusCode;
+use yoke::{Yoke, erased::ErasedArcCart};
 
 use super::{
-    super::{KeychainHolder, SessionKeyHolder},
     dto::{
         EncryptedData, ErrorCode, Identifier, Method, PairingFlags, PairingState, Proof, PublicKey,
         Salt, Signature, method, state,
@@ -47,8 +47,7 @@ type ErrorResponse<S> = TaggedValue<(PairingState<S>, ErrorCode)>;
 
 pub async fn pair_setup<K>(
     State(state): State<Arc<ServiceState>>,
-    Extension(keychain_holder): Extension<Arc<dyn KeychainHolder<Keychain = K>>>,
-    Extension(key_holder): Extension<Arc<dyn SessionKeyHolder>>,
+    Extension(keychain): Extension<Yoke<&'static K, ErasedArcCart>>,
     bytes: Bytes,
 ) -> Result<Response, Response>
 where
@@ -82,7 +81,7 @@ where
                     Ok(TaggedValue((identifier, pubkey, signature))) => {
                         let sub_tlv = pair_setup_m5m6(
                             &state,
-                            &*keychain_holder,
+                            *keychain.get(),
                             &identifier,
                             &pubkey,
                             &signature,
@@ -104,14 +103,14 @@ where
 
 pub async fn pair_verify<K>(
     State(state): State<Arc<ServiceState>>,
-    Extension(keychain_holder): Extension<Arc<dyn KeychainHolder<Keychain = K>>>,
+    Extension(keychain): Extension<Yoke<&'static K, ErasedArcCart>>,
     bytes: Bytes,
 ) -> Result<Response, Response>
 where
     K: Keychain,
 {
     if let Ok(TaggedValue(((), pubkey))) = PVM1Msg::from_bytes(&bytes) {
-        let (accessory_tmp_pubkey, sub_tlv) = pair_verify_m1m2(&state, &*keychain_holder, &pubkey)
+        let (accessory_tmp_pubkey, sub_tlv) = pair_verify_m1m2(&state, *keychain.get(), &pubkey)
             .map_err(IntoResponse::into_response)?;
         let msg = sub_tlv.bytes().collect::<Vec<u8>>();
 
@@ -125,7 +124,7 @@ where
 
                 match PVM3MsgSub::from_bytes(&enc_tlv) {
                     Ok(TaggedValue((device_id, device_signature))) => {
-                        pair_verify_m3m4(&state, &*keychain_holder, &device_id, &device_signature)
+                        pair_verify_m3m4(&state, *keychain.get(), &device_id, &device_signature)
                             .map(IntoResponse::into_response)
                             .map_err(IntoResponse::into_response)
                     }
@@ -170,7 +169,7 @@ fn pair_setup_m5m6_dec(
 
 fn pair_setup_m5m6<K>(
     state: &ServiceState,
-    keychain_holder: &dyn KeychainHolder<Keychain = K>,
+    keychain: &K,
     device_id: &[u8],
     device_pubkey: &[u8],
     device_signature: &[u8],
@@ -183,7 +182,6 @@ where
         .m5_m6_verify(device_id, device_pubkey, device_signature)
         .map_err(|err| TaggedValue(((), err)))?;
 
-    let keychain = keychain_holder.keychain();
     if !keychain.trust(device_id, device_pubkey) {
         return Err(TaggedValue(((), ErrorCode::Authentication)));
     }
@@ -216,14 +214,13 @@ fn pair_setup_m5m6_enc(
 
 fn pair_verify_m1m2<K>(
     state: &ServiceState,
-    keychain_holder: &dyn KeychainHolder<Keychain = K>,
+    keychain: &K,
     device_pubkey: &[u8],
 ) -> Result<(Vec<u8>, PVM2MsbSub), ErrorResponse<state::M1>>
 where
     K: Keychain,
 {
     let mut inner = state.verify_state.lock().unwrap();
-    let keychain = keychain_holder.keychain();
     let identity = keychain.id();
     inner
         .m1_m2(rand::rng(), device_pubkey, identity, |msg| {
@@ -266,7 +263,7 @@ fn pair_verify_m3m4_dec(
 
 fn pair_verify_m3m4<K>(
     state: &ServiceState,
-    keychain_holder: &dyn KeychainHolder<Keychain = K>,
+    keychain: &K,
     device_id: &[u8],
     device_signature: &[u8],
 ) -> Result<PVM4Msg, ErrorResponse<state::M3>>
@@ -274,7 +271,6 @@ where
     K: Keychain,
 {
     let inner = state.verify_state.lock().unwrap();
-    let keychain = keychain_holder.keychain();
     inner
         .m3_m4(device_id, device_signature, |msg, signature| {
             keychain.verify(device_id, msg, signature)

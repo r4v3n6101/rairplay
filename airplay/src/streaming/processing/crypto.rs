@@ -1,9 +1,10 @@
 use aes::cipher::{BlockDecryptMut, KeyIvInit as _, StreamCipher as _, block_padding::NoPadding};
 use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, Key, KeyInit as _, Nonce, Tag};
 
-use crate::crypto::{
-    AesCbc128, AesCtr128BE, AesIv128, AesKey128, ChaCha20Poly1305Key, cipher_with_hashed_aes_iv,
-};
+use crate::crypto::{AesIv128, AesKey128, ChaCha20Poly1305Key, sha512_two_step};
+
+type AesCbc128 = cbc::Decryptor<aes::Aes128>;
+type AesCtr128BE = ctr::Ctr128BE<aes::Aes128>;
 
 pub struct AudioBufferedCipher {
     inner: ChaCha20Poly1305,
@@ -66,12 +67,16 @@ pub struct VideoCipher {
 
 impl VideoCipher {
     pub fn new(key: AesKey128, stream_connection_id: u64) -> Self {
+        let aes = sha512_two_step(
+            format!("AirPlayStreamKey{stream_connection_id}").as_bytes(),
+            &key,
+        );
+        let iv = sha512_two_step(
+            format!("AirPlayStreamIV{stream_connection_id}").as_bytes(),
+            &key,
+        );
         Self {
-            aesctr: cipher_with_hashed_aes_iv(
-                format!("AirPlayStreamKey{stream_connection_id}").as_bytes(),
-                format!("AirPlayStreamIV{stream_connection_id}").as_bytes(),
-                &key,
-            ),
+            aesctr: AesCtr128BE::new((&aes).into(), (&iv).into()),
             og: [0; 16],
             next_decrypt_count: 0,
         }

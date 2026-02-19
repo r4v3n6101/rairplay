@@ -12,6 +12,7 @@ use axum::{
 use tower::{Service, service_fn};
 use tower_http::propagate_header::PropagateHeaderLayer;
 pub use transport::TcpListenerWithRtspRemap as Listener;
+use yoke::Yoke;
 
 use crate::{
     config::{Config, Keychain, Pairing},
@@ -65,17 +66,18 @@ where
                 .with_state(Arc::clone(&state));
 
             // TODO : Pairing
+            let keychain = Yoke::attach_to_cart(Arc::clone(&state), |state| &state.config.keychain);
+            let session_key = Yoke::attach_to_cart(Arc::clone(&state), |state| &state.session_key);
             match state.config.pairing {
                 Pairing::Legacy => {
                     router = router.merge(pairing::legacy::router(
-                        &*state,
-                        Arc::clone(&state) as Arc<dyn pairing::SessionKeyHolder>,
+                        keychain.erase_arc_cart(),
+                        session_key.erase_arc_cart(),
                     ));
                 }
                 Pairing::HomeKit => {
                     router = router.merge(pairing::homekit::router(
-                        Arc::clone(&state) as Arc<dyn pairing::KeychainHolder<Keychain = K>>,
-                        Arc::clone(&state) as Arc<dyn pairing::SessionKeyHolder>,
+                        keychain.erase_arc_cart(),
                         state.config.pin,
                     ));
                 }

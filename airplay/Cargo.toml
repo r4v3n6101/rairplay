@@ -38,6 +38,7 @@ tokio-util = { version = "0.7", features = ["codec", "io"] }
 tokio_dual_stack = "0.2.0"
 axum = { version = "0.8.1", default-features = false, features = ["tokio", "http1", "http2"] }
 futures = { version = "0.3.31", default-features = false, features = ["std"] }
+yoke = "0.8.1"
 
 [build-dependencies]
 glob = "0.3.1"
