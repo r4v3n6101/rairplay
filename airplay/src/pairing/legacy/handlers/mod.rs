@@ -37,7 +37,7 @@ pub async fn pair_verify(
         let verify_their = &body[36..][..X25519_KEY_LEN];
 
         pairing_state
-            .establish_agreement(pubkey_their, verify_their, rand::rng())
+            .establish_agreement(rand::rng(), pubkey_their, verify_their)
             .inspect(|(_, shared_secret)| {
                 tracing::info!("agreement established");
                 session_key.get().lock_write().replace(*shared_secret);

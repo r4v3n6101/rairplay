@@ -1,10 +1,10 @@
 use std::mem;
 
 use aes::cipher::{KeyIvInit as _, StreamCipher};
-use ed25519_dalek::{Signature, SigningKey, VerifyingKey, ed25519::signature::SignerMut as _};
-use rand::{CryptoRng, Rng, RngCore};
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use rand::CryptoRng;
 use thiserror::Error;
-use x25519_dalek::{PublicKey, StaticSecret};
+use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::crypto::sha512_two_step;
 
@@ -46,12 +46,12 @@ impl State {
 
     pub fn establish_agreement<R>(
         &mut self,
+        mut rand: R,
         pubkey_their: &[u8],
         verify_their: &[u8],
-        mut rand: R,
     ) -> Result<(Response, SharedSecret), Error>
     where
-        R: RngCore + CryptoRng,
+        R: CryptoRng,
     {
         let Ok(verify_their) = <[u8; _]>::try_from(verify_their) else {
             return Err(Error::Cryptography("invalid verify key length"));
@@ -64,11 +64,7 @@ impl State {
         };
         let pubkey_their = PublicKey::from(pubkey_their);
 
-        // TODO : Workaround for old version of rand_core
-        let ephemeral = {
-            let buf: [u8; _] = rand.random();
-            StaticSecret::from(buf)
-        };
+        let ephemeral = EphemeralSecret::random_from_rng(&mut rand);
         let pubkey_our = PublicKey::from(&ephemeral);
         let shared_secret = ephemeral.diffie_hellman(&pubkey_their).to_bytes();
 

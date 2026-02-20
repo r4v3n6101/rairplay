@@ -1,6 +1,6 @@
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit as _, Nonce, aead::AeadMutInPlace as _};
-use rand::{CryptoRng, Rng, RngCore};
-use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
+use rand::CryptoRng;
+use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
 
 use super::super::dto::ErrorCode;
 use crate::crypto;
@@ -31,7 +31,7 @@ impl State {
         sign: F,
     ) -> Result<(Vec<u8>, Vec<u8>), ErrorCode>
     where
-        R: RngCore + CryptoRng,
+        R: CryptoRng,
         F: FnOnce(&[u8]) -> Vec<u8>,
     {
         let Ok(device_pubkey) = <[u8; _]>::try_from(device_pubkey) else {
@@ -39,14 +39,10 @@ impl State {
         };
         let device_pubkey = PublicKey::from(device_pubkey);
 
-        // TODO : remove when rand will be upgraded
-        let ephemeral = {
-            let buf: [u8; _] = rand.random();
-            StaticSecret::from(buf)
-        };
-
-        let shared_secret = ephemeral.diffie_hellman(&device_pubkey);
+        let ephemeral = EphemeralSecret::random_from_rng(&mut rand);
         let accessory_pubkey = PublicKey::from(&ephemeral);
+        let shared_secret = ephemeral.diffie_hellman(&device_pubkey);
+
         self.inner = Inner::Established {
             accessory_pubkey,
             device_pubkey,
