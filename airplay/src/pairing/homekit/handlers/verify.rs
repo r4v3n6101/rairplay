@@ -108,14 +108,14 @@ impl State {
         device_id: &[u8],
         device_signature: &[u8],
         verify: F,
-    ) -> Result<(), ErrorCode>
+    ) -> Result<[u8; 32], ErrorCode>
     where
         F: FnOnce(&[u8], &[u8]) -> bool,
     {
         let Inner::Established {
             accessory_pubkey,
             device_pubkey,
-            ..
+            shared_secret,
         } = &self.inner
         else {
             return Err(ErrorCode::Busy);
@@ -132,6 +132,6 @@ impl State {
             return Err(ErrorCode::Authentication);
         }
 
-        Ok(())
+        Ok(shared_secret.to_bytes())
     }
 }

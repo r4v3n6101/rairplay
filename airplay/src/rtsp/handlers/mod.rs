@@ -15,7 +15,7 @@ use super::{
     },
     extractor::BinaryPlist,
     state::ServiceState,
-    transport::Addresses,
+    transport::Connection,
 };
 use crate::{
     crypto::{AesIv128, ChaCha20Poly1305Key, sha512_two_step},
@@ -138,25 +138,25 @@ pub async fn teardown<A, V, K>(
 
 pub async fn setup<A: AudioDevice, V: VideoDevice, K>(
     State(state): State<Arc<ServiceState<A, V, K>>>,
-    ConnectInfo(addrs): ConnectInfo<Addresses>,
+    ConnectInfo(conn): ConnectInfo<Connection>,
     BinaryPlist(req): BinaryPlist<SetupRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     match req {
-        SetupRequest::SenderInfo(info) => setup_info(&state, &addrs, *info).await,
-        SetupRequest::Streams { requests } => setup_streams(&state, &addrs, requests).await,
+        SetupRequest::SenderInfo(info) => setup_info(&state, &conn, *info).await,
+        SetupRequest::Streams { requests } => setup_streams(&state, &conn, requests).await,
     }
 }
 
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_info<A, V, K>(
     state: &ServiceState<A, V, K>,
-    addrs: &Addresses,
+    conn: &Connection,
     SenderInfo { ekey, eiv, .. }: SenderInfo,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     let mut lock = state.event_channel.lock().await;
     let event_channel = match &mut *lock {
         Some(chan) => chan,
-        event_channel @ None => EventChannel::create(addrs.bind_addr().unwrap())
+        event_channel @ None => EventChannel::create(conn.bind_addr().unwrap())
             .await
             .map(|chan| event_channel.insert(chan))
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
@@ -176,8 +176,8 @@ async fn setup_info<A, V, K>(
         "aes key decrypted with fairplay"
     );
 
-    if let Some(session_key) = state.session_key.read() {
-        aes_key = sha512_two_step(&aes_key, &session_key);
+    if let Some(session_key) = conn.session_key.read() {
+        aes_key = sha512_two_step(&aes_key, &session_key.key_material);
         tracing::trace!(
             ?aes_key,
             ?session_key,
@@ -199,7 +199,7 @@ async fn setup_info<A, V, K>(
 #[tracing::instrument(level = "DEBUG", skip_all)]
 async fn setup_streams<A: AudioDevice, V: VideoDevice, K>(
     state: &ServiceState<A, V, K>,
-    addrs: &Addresses,
+    conn: &Connection,
     requests: Vec<StreamRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     let mut responses = Vec::with_capacity(requests.len());
@@ -207,12 +207,12 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice, K>(
         let id = state.last_stream_id.fetch_add(1, Ordering::AcqRel);
         match match stream {
             StreamRequest::AudioRealtime(request) => {
-                setup_realtime_audio(state, addrs, request, id).await
+                setup_realtime_audio(state, conn, request, id).await
             }
             StreamRequest::AudioBuffered(request) => {
-                setup_buffered_audio(state, addrs, request, id).await
+                setup_buffered_audio(state, conn, request, id).await
             }
-            StreamRequest::Video(request) => setup_video(state, addrs, request, id).await,
+            StreamRequest::Video(request) => setup_video(state, conn, request, id).await,
         } {
             Ok(response) => responses.push(response),
             Err(err) => return Err(err),
@@ -225,7 +225,7 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice, K>(
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_realtime_audio<A: AudioDevice, V, K>(
     state: &ServiceState<A, V, K>,
-    addrs: &Addresses,
+    conn: &Connection,
     AudioRealtimeRequest {
         audio_format,
         samples_per_frame,
@@ -262,8 +262,8 @@ async fn setup_realtime_audio<A: AudioDevice, V, K>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     AudioRealtimeChannel::create(
-        addrs.bind_addr().unwrap(),
-        addrs.remote_addr().unwrap(),
+        conn.bind_addr().unwrap(),
+        conn.remote_addr().unwrap(),
         shared_data.clone(),
         stream,
         state.config.audio.buf_size,
@@ -289,7 +289,7 @@ async fn setup_realtime_audio<A: AudioDevice, V, K>(
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_buffered_audio<A: AudioDevice, V, K>(
     state: &ServiceState<A, V, K>,
-    addrs: &Addresses,
+    conn: &Connection,
     AudioBufferedRequest {
         samples_per_frame,
         audio_format,
@@ -341,8 +341,8 @@ async fn setup_buffered_audio<A: AudioDevice, V, K>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     AudioBufferedChannel::create(
-        addrs.bind_addr().unwrap(),
-        addrs.remote_addr().unwrap(),
+        conn.bind_addr().unwrap(),
+        conn.remote_addr().unwrap(),
         shared_data.clone(),
         stream,
         state.config.audio.buf_size,
@@ -367,7 +367,7 @@ async fn setup_buffered_audio<A: AudioDevice, V, K>(
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_video<A, V: VideoDevice, K>(
     state: &ServiceState<A, V, K>,
-    addrs: &Addresses,
+    conn: &Connection,
     VideoRequest {
         stream_connection_id,
         ..
@@ -395,8 +395,8 @@ async fn setup_video<A, V: VideoDevice, K>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     VideoChannel::create(
-        addrs.bind_addr().unwrap(),
-        addrs.remote_addr().unwrap(),
+        conn.bind_addr().unwrap(),
+        conn.remote_addr().unwrap(),
         shared_data.clone(),
         stream,
         state.config.video.buf_size,

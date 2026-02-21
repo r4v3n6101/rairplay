@@ -4,11 +4,11 @@ use axum::{Extension, extract::State, response::IntoResponse};
 use bytes::Bytes;
 use http::StatusCode;
 use inner::{SIGNATURE_LENGTH, X25519_KEY_LEN};
-use seqlock::SeqLock;
-use yoke::{Yoke, erased::ErasedArcCart};
 
-use super::state::ServiceState;
-use crate::crypto::SessionKey;
+use super::{
+    super::{SessionKey, SharedSessionKey},
+    state::ServiceState,
+};
 
 pub mod inner;
 
@@ -22,7 +22,7 @@ pub async fn pair_setup(State(state): State<Arc<ServiceState>>) -> impl IntoResp
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state, session_key))]
 pub async fn pair_verify(
     State(state): State<Arc<ServiceState>>,
-    Extension(session_key): Extension<Yoke<&'static SeqLock<Option<SessionKey>>, ErasedArcCart>>,
+    Extension(session_key): Extension<SharedSessionKey>,
     body: Bytes,
 ) -> Result<impl IntoResponse, StatusCode> {
     if body.len() < 4 + 2 * X25519_KEY_LEN {
@@ -38,9 +38,12 @@ pub async fn pair_verify(
 
         pairing_state
             .establish_agreement(rand::rng(), pubkey_their, verify_their)
-            .inspect(|(_, shared_secret)| {
+            .inspect(|&(_, shared_secret)| {
                 tracing::info!("agreement established");
-                session_key.get().lock_write().replace(*shared_secret);
+                session_key.lock_write().replace(SessionKey {
+                    key_material: shared_secret,
+                    upgrade_channel: false,
+                });
             })
             .inspect_err(|err| tracing::error!(%err, "establishing agreement failed"))
             .map(|(response, _)| response.into_response())

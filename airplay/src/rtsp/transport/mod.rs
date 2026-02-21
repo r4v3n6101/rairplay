@@ -11,6 +11,8 @@ use tokio_util::{
     io::{SinkWriter, StreamReader},
 };
 
+use crate::pairing::{SharedSessionKey, UpgradeableCodec};
+
 mod codec;
 
 pub struct TcpListenerWithRtspRemap {
@@ -19,14 +21,15 @@ pub struct TcpListenerWithRtspRemap {
     bind_addr6: SocketAddrV6,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Addresses {
+#[derive(Debug, Clone)]
+pub struct Connection {
     pub bind_addr4: SocketAddrV4,
     pub bind_addr6: SocketAddrV6,
     pub remote_addr: Option<SocketAddr>,
+    pub session_key: SharedSessionKey,
 }
 
-impl Addresses {
+impl Connection {
     /// Returns an IP address of the same family as the given remote address
     pub fn bind_addr(&self) -> Option<IpAddr> {
         self.remote_addr.map(|addr| match addr {
@@ -57,9 +60,12 @@ impl Listener for TcpListenerWithRtspRemap {
     // TODO : TAIT upon it
     // type Io = impl AsyncRead + AsyncWrite;
     type Io = SinkWriter<
-        StreamReader<Framed<TcpStream, codec::Rtsp2Http>, <codec::Rtsp2Http as Decoder>::Item>,
+        StreamReader<
+            Framed<TcpStream, UpgradeableCodec<codec::Rtsp2Http, codec::Rtsp2Http>>,
+            <UpgradeableCodec<codec::Rtsp2Http, codec::Rtsp2Http> as Decoder>::Item,
+        >,
     >;
-    type Addr = Addresses;
+    type Addr = Connection;
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         loop {
@@ -71,9 +77,14 @@ impl Listener for TcpListenerWithRtspRemap {
                 }
             };
 
+            let session_key = SharedSessionKey::default();
             return (
-                SinkWriter::new(StreamReader::new(Framed::new(stream, codec::Rtsp2Http))),
-                Addresses {
+                SinkWriter::new(StreamReader::new(Framed::new(
+                    stream,
+                    UpgradeableCodec::new(codec::Rtsp2Http, codec::Rtsp2Http, session_key.clone()),
+                ))),
+                Connection {
+                    session_key,
                     bind_addr4: self.bind_addr4,
                     bind_addr6: self.bind_addr6,
                     remote_addr: Some(remote_addr),
@@ -83,12 +94,14 @@ impl Listener for TcpListenerWithRtspRemap {
     }
 
     fn local_addr(&self) -> Result<Self::Addr> {
+        // NB: ideally, it's unreachabable, but I'm not sure `axum` doesn't call this inside
         self.listener
             .local_addr()
-            .map(|(bind_addr6, bind_addr4)| Addresses {
+            .map(|(bind_addr6, bind_addr4)| Connection {
                 bind_addr4,
                 bind_addr6,
                 remote_addr: None,
+                session_key: SharedSessionKey::default(),
             })
     }
 }
