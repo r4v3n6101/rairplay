@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Mutex};
 
-use ed25519_dalek::{Signature, SigningKey, VerifyingKey, ed25519::signature::Signer};
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 
 use super::Keychain;
 
@@ -35,7 +35,7 @@ impl Keychain for DefaultKeychain {
     }
 
     fn sign(&self, data: &[u8]) -> Vec<u8> {
-        self.keypair.0.sign(data).to_vec()
+        self.keypair.0.sign(data).to_bytes().to_vec()
     }
 
     fn trust(&self, id: &[u8], key: &[u8]) -> bool {

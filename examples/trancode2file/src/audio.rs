@@ -53,7 +53,7 @@ pub fn transcode(
     }
 }
 
-fn create_stream(params: &AudioParams, id: u64) -> Result<Context, Box<dyn Error>> {
+fn create_stream(_params: &AudioParams, id: u64) -> Result<Context, Box<dyn Error>> {
     let pipeline = Pipeline::default();
 
     let caps = Caps::builder("application/x-rtp")

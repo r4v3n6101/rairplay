@@ -1,10 +1,8 @@
 pub type AesKey128 = [u8; 16];
 pub type AesIv128 = [u8; 16];
-pub type SessionKey = [u8; 32];
 pub type ChaCha20Poly1305Key = [u8; 32];
-pub type HkdfOutput = [u8; 32];
 
-pub fn hkdf(input: &[u8], salt: &[u8], info: &[u8]) -> HkdfOutput {
+pub fn hkdf(input: &[u8], salt: &[u8], info: &[u8]) -> [u8; 32] {
     use hkdf::Hkdf;
     use sha2::Sha512;
 

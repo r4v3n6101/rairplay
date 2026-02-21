@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
 use axum::{Extension, Router, routing::post};
-use seqlock::SeqLock;
 use yoke::{Yoke, erased::ErasedArcCart};
 
-use crate::{config::Keychain, crypto::SessionKey};
+use super::SharedSessionKey;
+use crate::config::Keychain;
 
 mod handlers;
 mod state;
 
 pub fn router<K>(
     keychain: Yoke<&'static K, ErasedArcCart>,
-    session_key: Yoke<&'static SeqLock<Option<SessionKey>>, ErasedArcCart>,
+    session_key: SharedSessionKey,
 ) -> Router<()>
 where
     K: Keychain,

@@ -1,10 +1,10 @@
 use std::{io, iter};
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce, Tag, aead::AeadMutInPlace};
 use tokio_util::codec::{Decoder, Encoder};
 
-use crate::crypto::{self, HkdfOutput};
+use crate::crypto;
 
 // 96-bit nonce
 const NONCE_LEN: usize = 12;
@@ -16,8 +16,8 @@ const PKT_SIZE_LEN: usize = 2;
 const PAYLOAD_SIZE: usize = 1024;
 
 pub struct HAPDecoder {
-    pub key: HkdfOutput,
-    pub count: u64,
+    key: [u8; 32],
+    count: u64,
 }
 
 impl HAPDecoder {
@@ -33,7 +33,7 @@ impl HAPDecoder {
 }
 
 impl Decoder for HAPDecoder {
-    type Item = Bytes;
+    type Item = BytesMut;
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -78,12 +78,12 @@ impl Decoder for HAPDecoder {
 
         self.count += 1;
 
-        Ok(Some(payload.freeze()))
+        Ok(Some(payload))
     }
 }
 
 pub struct HAPEncoder {
-    key: HkdfOutput,
+    key: [u8; 32],
     count: usize,
 }
 

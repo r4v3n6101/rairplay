@@ -3,7 +3,7 @@ use std::io;
 use http::Uri;
 use httparse::{EMPTY_HEADER, Request, Response, Status};
 use tokio_util::{
-    bytes::{BufMut, Bytes, BytesMut},
+    bytes::{BufMut, BytesMut},
     codec::{Decoder, Encoder},
 };
 
@@ -17,7 +17,7 @@ const CRLF: &[u8] = b"\r\n";
 pub struct Rtsp2Http;
 
 impl Decoder for Rtsp2Http {
-    type Item = Bytes;
+    type Item = BytesMut;
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -123,7 +123,7 @@ impl Decoder for Rtsp2Http {
                     // Empty the buffer, so the next frame can be pulled
                     src.clear();
 
-                    return Ok(Some(output.freeze()));
+                    return Ok(Some(output));
                 }
                 Ok(Status::Partial) => {
                     need_more = true;

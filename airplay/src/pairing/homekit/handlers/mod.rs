@@ -10,6 +10,7 @@ use http::StatusCode;
 use yoke::{Yoke, erased::ErasedArcCart};
 
 use super::{
+    super::{SessionKey, SharedSessionKey},
     dto::{
         EncryptedData, ErrorCode, Identifier, Method, PairingFlags, PairingState, Proof, PublicKey,
         Salt, Signature, method, state,
@@ -104,6 +105,7 @@ where
 pub async fn pair_verify<K>(
     State(state): State<Arc<ServiceState>>,
     Extension(keychain): Extension<Yoke<&'static K, ErasedArcCart>>,
+    Extension(session_key): Extension<SharedSessionKey>,
     bytes: Bytes,
 ) -> Result<Response, Response>
 where
@@ -123,11 +125,15 @@ where
                 pair_verify_m3m4_dec(&state, &mut enc_tlv).map_err(IntoResponse::into_response)?;
 
                 match PVM3MsgSub::from_bytes(&enc_tlv) {
-                    Ok(TaggedValue((device_id, device_signature))) => {
-                        pair_verify_m3m4(&state, *keychain.get(), &device_id, &device_signature)
-                            .map(IntoResponse::into_response)
-                            .map_err(IntoResponse::into_response)
-                    }
+                    Ok(TaggedValue((device_id, device_signature))) => pair_verify_m3m4(
+                        &state,
+                        &session_key,
+                        *keychain.get(),
+                        &device_id,
+                        &device_signature,
+                    )
+                    .map(IntoResponse::into_response)
+                    .map_err(IntoResponse::into_response),
                     Err(err) => Err(err.into_response()),
                 }
             }
@@ -263,6 +269,7 @@ fn pair_verify_m3m4_dec(
 
 fn pair_verify_m3m4<K>(
     state: &ServiceState,
+    session_key: &SharedSessionKey,
     keychain: &K,
     device_id: &[u8],
     device_signature: &[u8],
@@ -275,6 +282,12 @@ where
         .m3_m4(device_id, device_signature, |msg, signature| {
             keychain.verify(device_id, msg, signature)
         })
-        .map(|()| TaggedValue(()))
+        .inspect(|&shared_secret| {
+            session_key.lock_write().replace(SessionKey {
+                key_material: shared_secret,
+                upgrade_channel: true,
+            });
+        })
+        .map(|_| TaggedValue(()))
         .map_err(|err| TaggedValue(((), err)))
 }
