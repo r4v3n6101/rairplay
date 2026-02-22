@@ -10,7 +10,7 @@
 - [x] Decrypting **video streams** 
 - [x] Legacy pairing (using **X25519**, **ED25519** and **DH**)
 - [x] FairPlay (v3) using [shairplay](https://github.com/juhovh/shairplay)
-- [ ] HomeKit pairing (**WIP**)  
+- [x] HomeKit pairing (video and RTSP work, though audio couldn't be decrypted)  
 - [x] "DJ mode" for managing many devices at once
 - [x] Example implementation using **GStreamer** library to pipe stream data into a file  
 - [ ] **GStreamer** plugin creating streams according to **rairplay**'s API.
