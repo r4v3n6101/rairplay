@@ -139,6 +139,7 @@ impl AudioRealtimeChannel {
         aeskey: Option<AesKey128>,
         aesiv: Option<AesIv128>,
         session_key: Option<SessionKey>,
+        stream_connection_id: Option<u64>,
     ) -> io::Result<Self> {
         let encryption = if let Some(session_key) = session_key {
             processing::Encryption::HomeKit { key: session_key }
@@ -172,6 +173,7 @@ impl AudioRealtimeChannel {
                     data_socket,
                     audio_buf_size,
                     encryption,
+                    stream_connection_id,
                     &stream,
                 );
                 let control = processing::control_processor(expected_remote_addr, control_socket);

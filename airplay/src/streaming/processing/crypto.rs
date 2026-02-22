@@ -10,18 +10,35 @@ use crate::{
 type AesCbc128 = cbc::Decryptor<aes::Aes128>;
 type AesCtr128BE = ctr::Ctr128BE<aes::Aes128>;
 
-pub struct AudioBufferedCipher {
+pub trait AudioCipher {
+    fn decrypt(&self, packet: &mut BytesMut) -> Result<(), ()>;
+}
+
+pub struct ChachaAudioCipher {
     inner: ChaCha20Poly1305,
 }
 
-impl AudioBufferedCipher {
-    pub fn new(key: ChaCha20Poly1305Key) -> Self {
+impl ChachaAudioCipher {
+    pub fn from_key(key: ChaCha20Poly1305Key) -> Self {
         Self {
             inner: ChaCha20Poly1305::new(&Key::from(key)),
         }
     }
 
-    pub fn decrypt(&self, packet: &mut BytesMut) -> Result<(), ()> {
+    pub fn from_secret_and_id(shared_secret: &[u8], stream_connection_id: u64) -> Self {
+        let key = hkdf(
+            shared_secret,
+            format!("DataStream-Salt{stream_connection_id}").as_bytes(),
+            b"DataStream-Output-Encryption-Key",
+        );
+        let inner = ChaCha20Poly1305::new(&Key::from(key));
+
+        Self { inner }
+    }
+}
+
+impl AudioCipher for ChachaAudioCipher {
+    fn decrypt(&self, packet: &mut BytesMut) -> Result<(), ()> {
         let nonce = {
             let mut buf = [0u8; 12];
             let payload_len = packet.len() - 8;
@@ -42,23 +59,28 @@ impl AudioBufferedCipher {
     }
 }
 
-pub struct AudioRealtimeCipher {
+pub struct AesAudioCipher {
     aescbc: AesCbc128,
 }
 
-impl AudioRealtimeCipher {
+impl AesAudioCipher {
     pub fn new(key: AesKey128, eiv: AesIv128) -> Self {
         Self {
             aescbc: AesCbc128::new(&key.into(), eiv.as_ref().into()),
         }
     }
+}
 
-    pub fn decrypt(&self, buf: &mut [u8]) {
-        let encrypted_len = buf.len() - (buf.len() % 16);
+impl AudioCipher for AesAudioCipher {
+    fn decrypt(&self, packet: &mut BytesMut) -> Result<(), ()> {
+        let payload = &mut packet[AudioPacket::HEADER_LEN..];
+        let encrypted_len = payload.len() - (payload.len() % 16);
         let _ = self
             .aescbc
             .clone()
-            .decrypt_padded_mut::<NoPadding>(&mut buf[..encrypted_len]);
+            .decrypt_padded_mut::<NoPadding>(&mut payload[..encrypted_len]);
+
+        Ok(())
     }
 }
 
@@ -66,14 +88,14 @@ pub trait VideoCipher {
     fn decrypt(&mut self, header: [u8; 128], payload: &mut BytesMut) -> Result<(), ()>;
 }
 
-pub struct LegacyVideoCipher {
+pub struct AesVideoCipher {
     aesctr: AesCtr128BE,
     og: [u8; 16],
     next_decrypt_count: usize,
 }
 
-impl LegacyVideoCipher {
-    pub fn new(key: AesKey128, stream_connection_id: u64) -> Self {
+impl AesVideoCipher {
+    pub fn from_key_and_id(key: AesKey128, stream_connection_id: u64) -> Self {
         let aes = sha512_two_step(
             format!("AirPlayStreamKey{stream_connection_id}").as_bytes(),
             &key,
@@ -90,7 +112,7 @@ impl LegacyVideoCipher {
     }
 }
 
-impl VideoCipher for LegacyVideoCipher {
+impl VideoCipher for AesVideoCipher {
     fn decrypt(&mut self, _: [u8; 128], payload: &mut BytesMut) -> Result<(), ()> {
         let n = self.next_decrypt_count;
 
@@ -122,13 +144,13 @@ impl VideoCipher for LegacyVideoCipher {
     }
 }
 
-pub struct HKVideoCipher {
+pub struct ChachaVideoCipher {
     inner: ChaCha20Poly1305,
     count: u64,
 }
 
-impl HKVideoCipher {
-    pub fn new(shared_secret: &[u8], stream_connection_id: u64) -> Self {
+impl ChachaVideoCipher {
+    pub fn from_secret_and_id(shared_secret: &[u8], stream_connection_id: u64) -> Self {
         let key = hkdf(
             shared_secret,
             format!("DataStream-Salt{stream_connection_id}").as_bytes(),
@@ -140,7 +162,7 @@ impl HKVideoCipher {
     }
 }
 
-impl VideoCipher for HKVideoCipher {
+impl VideoCipher for ChachaVideoCipher {
     fn decrypt(&mut self, header: [u8; 128], payload: &mut BytesMut) -> Result<(), ()> {
         let nonce = {
             let mut buf = [0u8; 12];
@@ -163,7 +185,7 @@ impl VideoCipher for HKVideoCipher {
 mod tests {
     use bytes::BytesMut;
 
-    use super::{LegacyVideoCipher, VideoCipher};
+    use super::{AesVideoCipher, VideoCipher};
 
     #[test]
     fn test_video_decipher() {
@@ -228,7 +250,7 @@ mod tests {
         let mut input = (0..1025usize)
             .map(|x| (x % 255) as u8)
             .collect::<BytesMut>();
-        let mut cipher = LegacyVideoCipher::new([1; 16], 1000);
+        let mut cipher = AesVideoCipher::from_key_and_id([1; 16], 1000);
 
         cipher.decrypt([0; _], &mut input).unwrap();
 

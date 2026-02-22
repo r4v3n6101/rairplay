@@ -14,7 +14,6 @@ use crate::{
         audio::{AudioPacket, AudioStream},
         video::{PacketKind, VideoPacket, VideoStream},
     },
-    streaming::processing::crypto::VideoCipher,
     util::memory,
 };
 
@@ -48,7 +47,8 @@ pub async fn audio_buffered_processor(
     const TRAILER_LEN: usize = 24;
 
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
-    let cipher = crypto::AudioBufferedCipher::new(key);
+    let cipher: &(dyn crypto::AudioCipher + Send + Sync) =
+        &crypto::ChachaAudioCipher::from_key(key);
 
     loop {
         async {
@@ -60,9 +60,7 @@ pub async fn audio_buffered_processor(
                 return Err(io::Error::other("malformed buffered stream"));
             }
 
-            // rtp pkt length w/o encryption data
-            let pkt_len = pkt_len - TRAILER_LEN;
-            let mut rtp = audio_buf.allocate_buf(pkt_len + TRAILER_LEN);
+            let mut rtp = audio_buf.allocate_buf(pkt_len);
             tcp_stream.read_exact(&mut rtp).await?;
             tracing::trace!(%pkt_len, "packet read");
 
@@ -88,15 +86,23 @@ pub async fn audio_realtime_processor(
     socket: UdpSocket,
     audio_buf_size: u32,
     encryption: Encryption,
+    stream_connection_id: Option<u64>,
     stream: &impl AudioStream,
 ) -> io::Result<()> {
     let mut pkt_buf = [0u8; 16 * 1024];
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
-    let cipher = match encryption {
-        Encryption::HomeKit { .. } => {
-            unimplemented!()
+    let cipher: &(dyn crypto::AudioCipher + Send + Sync) = match (encryption, stream_connection_id)
+    {
+        (Encryption::HomeKit { key }, Some(stream_connection_id)) => {
+            &crypto::ChachaAudioCipher::from_secret_and_id(&key.key_material, stream_connection_id)
         }
-        Encryption::Legacy { key, iv } => crypto::AudioRealtimeCipher::new(key, iv),
+        (Encryption::Legacy { key, iv }, _) => &crypto::AesAudioCipher::new(key, iv),
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "stream_connection_id required",
+            ));
+        }
     };
 
     loop {
@@ -112,8 +118,11 @@ pub async fn audio_realtime_processor(
                     rtp.copy_from_slice(&pkt_buf[..pkt_len]);
                     tracing::trace!(%pkt_len, "packet read");
 
-                    cipher.decrypt(&mut rtp[AudioPacket::HEADER_LEN..]);
-                    tracing::trace!("packet decrypted");
+                    if cipher.decrypt(&mut rtp).is_ok() {
+                        tracing::trace!("packet decrypted");
+                    } else {
+                        tracing::warn!("packet decryption failed");
+                    }
 
                     stream.on_data(AudioPacket { rtp });
                     tokio::task::consume_budget().await;
@@ -147,12 +156,13 @@ pub async fn video_processor(
     stream_connection_id: u64,
     stream: &impl VideoStream,
 ) -> io::Result<()> {
-    let cipher: &mut (dyn VideoCipher + Send + Sync) = match encryption {
-        Encryption::HomeKit { key } => {
-            &mut crypto::HKVideoCipher::new(&key.key_material, stream_connection_id)
-        }
+    let cipher: &mut (dyn crypto::VideoCipher + Send + Sync) = match encryption {
+        Encryption::HomeKit { key } => &mut crypto::ChachaVideoCipher::from_secret_and_id(
+            &key.key_material,
+            stream_connection_id,
+        ),
         Encryption::Legacy { key, .. } => {
-            &mut crypto::LegacyVideoCipher::new(key, stream_connection_id)
+            &mut crypto::AesVideoCipher::from_key_and_id(key, stream_connection_id)
         }
     };
 

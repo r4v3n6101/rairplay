@@ -313,10 +313,15 @@ async fn setup_realtime_audio<A: AudioDevice, V, K>(
     AudioRealtimeRequest {
         audio_format,
         samples_per_frame,
+        stream_connection_id,
         ..
     }: AudioRealtimeRequest,
     id: u64,
 ) -> Result<StreamResponse, StatusCode> {
+    // This must work like that
+    #[allow(clippy::cast_sign_loss)]
+    let stream_connection_id = stream_connection_id.map(|x| x as u64);
+
     let Some(codec) = AUDIO_FORMATS
         .get(audio_format.trailing_zeros() as usize)
         .copied()
@@ -361,6 +366,7 @@ async fn setup_realtime_audio<A: AudioDevice, V, K>(
         state.ekey.read(),
         state.eiv.read(),
         session_key,
+        stream_connection_id,
     )
     .await
     .inspect(|_| {

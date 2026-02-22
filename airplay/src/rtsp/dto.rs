@@ -117,6 +117,8 @@ pub struct AudioRealtimeRequest {
     pub max_latency_samples: u32,
     #[serde(rename = "controlPort")]
     pub remote_control_port: u16,
+    #[serde(rename = "streamConnectionID")]
+    pub stream_connection_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
