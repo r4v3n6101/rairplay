@@ -1,9 +1,9 @@
-use chacha20poly1305::{ChaCha20Poly1305, KeyInit as _, Nonce, aead::AeadMutInPlace as _};
+use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::AeadInOut};
 use rand::CryptoRng;
 use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
 
 use super::super::dto::ErrorCode;
-use crate::crypto;
+use crate::crypto::hkdf;
 
 enum Inner {
     Init,
@@ -68,11 +68,11 @@ impl State {
             return Err(ErrorCode::Busy);
         };
 
-        let session_key = crypto::hkdf(shared_secret.as_bytes(), SALT, INFO);
+        let session_key = hkdf(shared_secret.as_bytes(), SALT, INFO);
 
-        let mut cipher = ChaCha20Poly1305::new(&session_key.into());
+        let cipher = ChaCha20Poly1305::new(&session_key.into());
         if cipher
-            .encrypt_in_place(Nonce::from_slice(NONCE), &[], msg)
+            .encrypt_in_place(&Nonce::try_from(NONCE).unwrap(), &[], msg)
             .is_err()
         {
             return Err(ErrorCode::Authentication);
@@ -90,11 +90,11 @@ impl State {
             return Err(ErrorCode::Busy);
         };
 
-        let session_key = crypto::hkdf(shared_secret.as_bytes(), SALT, INFO);
+        let session_key = hkdf(shared_secret.as_bytes(), SALT, INFO);
 
-        let mut cipher = ChaCha20Poly1305::new(&session_key.into());
+        let cipher = ChaCha20Poly1305::new(&session_key.into());
         if cipher
-            .decrypt_in_place(Nonce::from_slice(NONCE), &[], msg)
+            .decrypt_in_place(&Nonce::try_from(NONCE).unwrap(), &[], msg)
             .is_err()
         {
             return Err(ErrorCode::Authentication);

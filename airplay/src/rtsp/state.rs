@@ -15,8 +15,8 @@ use crate::{
 pub struct ServiceState<ADev, VDev, KC> {
     pub last_stream_id: AtomicU64,
     pub fp_last_msg: Mutex<Bytes>,
-    pub ekey: SeqLock<AesKey128>,
-    pub eiv: SeqLock<AesIv128>,
+    pub ekey: SeqLock<Option<AesKey128>>,
+    pub eiv: SeqLock<Option<AesIv128>>,
     pub event_channel: AsyncMutex<Option<EventChannel>>,
     pub stream_channels: Mutex<WeakValueHashMap<(u64, u32), Weak<SharedData>>>,
 

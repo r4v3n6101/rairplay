@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 
-use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::AeadMutInPlace};
+use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::AeadInOut};
 use ed25519_dalek::{Signature, VerifyingKey};
 use rand::{Rng, RngExt};
 use sha2::Sha512;
 use srp::{ClientG3072, ServerG3072};
 
 use super::super::dto::ErrorCode;
-use crate::{config::PinCode, crypto};
+use crate::{config::PinCode, crypto::hkdf};
 
 type SaltArray = [u8; 16];
 type PrivKeyArray = [u8; 64];
@@ -115,10 +115,10 @@ impl State {
             return Err(ErrorCode::Busy);
         };
 
-        let session_key = crypto::hkdf(session_key, SALT, INFO);
-        let mut cipher = ChaCha20Poly1305::new(&session_key.into());
+        let session_key = hkdf(session_key, SALT, INFO);
+        let cipher = ChaCha20Poly1305::new(&session_key.into());
         if cipher
-            .decrypt_in_place(Nonce::from_slice(NONCE), &[], msg)
+            .decrypt_in_place(&Nonce::try_from(NONCE).unwrap(), &[], msg)
             .is_err()
         {
             return Err(ErrorCode::Authentication);
@@ -140,7 +140,7 @@ impl State {
             return Err(ErrorCode::Busy);
         };
 
-        let device_x = crypto::hkdf(session_key, SALT, INFO);
+        let device_x = hkdf(session_key, SALT, INFO);
         let mut device_info =
             Vec::with_capacity(device_x.len() + device_id.len() + device_pubkey.len());
         device_info.extend_from_slice(&device_x);
@@ -182,7 +182,7 @@ impl State {
             return Err(ErrorCode::Busy);
         };
 
-        let accessory_x = crypto::hkdf(session_key, SALT, INFO);
+        let accessory_x = hkdf(session_key, SALT, INFO);
         let mut accessory_info =
             Vec::with_capacity(accessory_x.len() + accessory_id.len() + accessory_pubkey.len());
         accessory_info.extend_from_slice(&accessory_x);
@@ -201,10 +201,10 @@ impl State {
             return Err(ErrorCode::Busy);
         };
 
-        let session_key = crypto::hkdf(session_key, SALT, INFO);
-        let mut cipher = ChaCha20Poly1305::new(&session_key.into());
+        let session_key = hkdf(session_key, SALT, INFO);
+        let cipher = ChaCha20Poly1305::new(&session_key.into());
         if cipher
-            .encrypt_in_place(Nonce::from_slice(NONCE), &[], msg)
+            .encrypt_in_place(&Nonce::try_from(NONCE).unwrap(), &[], msg)
             .is_err()
         {
             return Err(ErrorCode::Authentication);

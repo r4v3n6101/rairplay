@@ -69,7 +69,6 @@ where
                 .erase_arc_cart();
             match state.config.pairing {
                 Pairing::Legacy => {
-                    // TODO : session_key will try to establish upgrade, so it won't work
                     router =
                         router.merge(pairing::legacy::router(keychain, conn.session_key.clone()));
                 }

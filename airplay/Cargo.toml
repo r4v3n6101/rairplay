@@ -27,7 +27,7 @@ srp = { git = "https://github.com/r4v3n6101/PAKEs", branch = "homekit_srp" }
 hkdf = "0.13.0-rc.5"
 x25519-dalek = "3.0.0-pre.6"
 ed25519-dalek = "3.0.0-pre.6"
-chacha20poly1305 = "0.10"
+chacha20poly1305 = { version = "0.11.0-rc.3", features = ["bytes"] }
 
 http = "1"
 httparse = "1"
