@@ -11,7 +11,7 @@ use tokio_util::{
     io::{SinkWriter, StreamReader},
 };
 
-use crate::pairing::{SharedSessionKey, UpgradeableCodec};
+use crate::pairing::{SharedSessionKey, codec::UpgradeableCodec};
 
 mod codec;
 
