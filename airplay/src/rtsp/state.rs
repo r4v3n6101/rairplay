@@ -7,7 +7,7 @@ use weak_table::WeakValueHashMap;
 
 use crate::{
     config::Config,
-    crypto::{AesIv128, AesKey128, SessionKey},
+    crypto::{AesIv128, AesKey128},
     playback::ChannelHandle,
     streaming::{EventChannel, SharedData},
 };
@@ -15,9 +15,8 @@ use crate::{
 pub struct ServiceState<ADev, VDev, KC> {
     pub last_stream_id: AtomicU64,
     pub fp_last_msg: Mutex<Bytes>,
-    pub session_key: SeqLock<Option<SessionKey>>,
-    pub ekey: SeqLock<AesKey128>,
-    pub eiv: SeqLock<AesIv128>,
+    pub ekey: SeqLock<Option<AesKey128>>,
+    pub eiv: SeqLock<Option<AesIv128>>,
     pub event_channel: AsyncMutex<Option<EventChannel>>,
     pub stream_channels: Mutex<WeakValueHashMap<(u64, u32), Weak<SharedData>>>,
 
@@ -29,7 +28,6 @@ impl<A, V, K> ServiceState<A, V, K> {
         Self {
             last_stream_id: AtomicU64::default(),
             fp_last_msg: Mutex::default(),
-            session_key: SeqLock::default(),
             ekey: SeqLock::default(),
             eiv: SeqLock::default(),
             event_channel: AsyncMutex::default(),

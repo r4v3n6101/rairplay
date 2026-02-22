@@ -48,7 +48,7 @@ where
 {
     service_fn(move |incoming: IncomingStream<'_, Listener>| {
         let config = Arc::clone(&config);
-        let addrs = *incoming.remote_addr();
+        let conn = incoming.remote_addr().clone();
         async move {
             let state = Arc::new(state::ServiceState::new(config));
             let mut router = Router::new()
@@ -65,19 +65,17 @@ where
                 // State cloned here, because it will be moved below
                 .with_state(Arc::clone(&state));
 
-            // TODO : Pairing
-            let keychain = Yoke::attach_to_cart(Arc::clone(&state), |state| &state.config.keychain);
-            let session_key = Yoke::attach_to_cart(Arc::clone(&state), |state| &state.session_key);
+            let keychain = Yoke::attach_to_cart(Arc::clone(&state), |state| &state.config.keychain)
+                .erase_arc_cart();
             match state.config.pairing {
                 Pairing::Legacy => {
-                    router = router.merge(pairing::legacy::router(
-                        keychain.erase_arc_cart(),
-                        session_key.erase_arc_cart(),
-                    ));
+                    router =
+                        router.merge(pairing::legacy::router(keychain, conn.session_key.clone()));
                 }
                 Pairing::HomeKit => {
                     router = router.merge(pairing::homekit::router(
-                        keychain.erase_arc_cart(),
+                        keychain,
+                        conn.session_key.clone(),
                         state.config.pin,
                     ));
                 }
@@ -104,7 +102,7 @@ where
 
             // CSeq is required for RTSP protocol
             router = router.layer(PropagateHeaderLayer::new(HeaderName::from_static("cseq")));
-            router = router.layer(Extension(ConnectInfo(addrs)));
+            router = router.layer(Extension(ConnectInfo(conn)));
 
             Ok(router)
         }

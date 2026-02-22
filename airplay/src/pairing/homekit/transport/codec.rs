@@ -1,10 +1,13 @@
 use std::{io, iter};
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce, Tag, aead::AeadMutInPlace};
+use bytes::{Buf, BufMut, BytesMut};
+use chacha20poly1305::{
+    ChaCha20Poly1305, Key, KeyInit, Nonce, Tag,
+    aead::{AeadInOut, inout::InOutBuf},
+};
 use tokio_util::codec::{Decoder, Encoder};
 
-use crate::crypto::{self, HkdfOutput};
+use crate::crypto::hkdf;
 
 // 96-bit nonce
 const NONCE_LEN: usize = 12;
@@ -16,8 +19,8 @@ const PKT_SIZE_LEN: usize = 2;
 const PAYLOAD_SIZE: usize = 1024;
 
 pub struct HAPDecoder {
-    pub key: HkdfOutput,
-    pub count: u64,
+    key: [u8; 32],
+    count: u64,
 }
 
 impl HAPDecoder {
@@ -26,14 +29,14 @@ impl HAPDecoder {
         const INFO: &[u8] = b"Control-Write-Encryption-Key";
 
         Self {
-            key: crypto::hkdf(shared_secret.as_ref(), SALT, INFO),
+            key: hkdf(shared_secret.as_ref(), SALT, INFO),
             count: 0,
         }
     }
 }
 
 impl Decoder for HAPDecoder {
-    type Item = Bytes;
+    type Item = BytesMut;
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -57,8 +60,11 @@ impl Decoder for HAPDecoder {
         }
 
         let mut payload = src.split_to(len.into());
-        let tag = src.split_to(TAG_LEN);
         let aad = len.to_le_bytes();
+        let tag = {
+            let buf = src.split_to(TAG_LEN);
+            <[u8; _]>::try_from(&buf[..]).unwrap()
+        };
         let nonce = {
             let mut buf = [0u8; NONCE_LEN];
             let cnt_buf = self.count.to_le_bytes();
@@ -66,25 +72,25 @@ impl Decoder for HAPDecoder {
             buf
         };
 
-        let mut cipher = ChaCha20Poly1305::new(Key::from_slice(&self.key));
+        let cipher = ChaCha20Poly1305::new(&Key::from(self.key));
         cipher
-            .decrypt_in_place_detached(
-                Nonce::from_slice(&nonce),
+            .decrypt_inout_detached(
+                &Nonce::from(nonce),
                 &aad,
-                &mut payload,
-                Tag::from_slice(&tag),
+                InOutBuf::from(&mut *payload),
+                &Tag::from(tag),
             )
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "income decryption failed"))?;
 
         self.count += 1;
 
-        Ok(Some(payload.freeze()))
+        Ok(Some(payload))
     }
 }
 
 pub struct HAPEncoder {
-    key: HkdfOutput,
-    count: usize,
+    key: [u8; 32],
+    count: u64,
 }
 
 impl HAPEncoder {
@@ -93,7 +99,7 @@ impl HAPEncoder {
         const INFO: &[u8] = b"Control-Read-Encryption-Key";
 
         Self {
-            key: crypto::hkdf(shared_secret.as_ref(), SALT, INFO),
+            key: hkdf(shared_secret.as_ref(), SALT, INFO),
             count: 0,
         }
     }
@@ -117,7 +123,7 @@ impl<T: AsRef<[u8]>> Encoder<T> for HAPEncoder {
 
         for b in blocks {
             let len = b.len();
-            let mut cipher = ChaCha20Poly1305::new(Key::from_slice(&self.key));
+            let cipher = ChaCha20Poly1305::new(&Key::from(self.key));
             let aad = (len as u16).to_le_bytes();
             let nonce = {
                 let mut buf = [0u8; NONCE_LEN];
@@ -132,7 +138,7 @@ impl<T: AsRef<[u8]>> Encoder<T> for HAPEncoder {
             };
             let data = &mut databuf[..len];
             let tag = cipher
-                .encrypt_in_place_detached(Nonce::from_slice(&nonce), &aad, data)
+                .encrypt_inout_detached(&Nonce::from(nonce), &aad, InOutBuf::from(&mut *data))
                 .map_err(|_| io::Error::other("can't encode data"))?;
 
             dst.put_slice(&aad);

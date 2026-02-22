@@ -1,7 +1,11 @@
 use aes::cipher::{BlockDecryptMut, KeyIvInit as _, StreamCipher as _, block_padding::NoPadding};
-use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, Key, KeyInit as _, Nonce, Tag};
+use bytes::BytesMut;
+use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit as _, Nonce, aead::AeadInOut as _};
 
-use crate::crypto::{AesIv128, AesKey128, ChaCha20Poly1305Key, sha512_two_step};
+use crate::{
+    crypto::{AesIv128, AesKey128, ChaCha20Poly1305Key, hkdf, sha512_two_step},
+    playback::audio::AudioPacket,
+};
 
 type AesCbc128 = cbc::Decryptor<aes::Aes128>;
 type AesCtr128BE = ctr::Ctr128BE<aes::Aes128>;
@@ -11,31 +15,30 @@ pub struct AudioBufferedCipher {
 }
 
 impl AudioBufferedCipher {
-    pub const AAD_LEN: usize = 8;
-    pub const TAG_LEN: usize = 16;
-    pub const NONCE_LEN: usize = 12;
-
     pub fn new(key: ChaCha20Poly1305Key) -> Self {
         Self {
-            inner: ChaCha20Poly1305::new(Key::from_slice(&key)),
+            inner: ChaCha20Poly1305::new(&Key::from(key)),
         }
     }
 
-    pub fn open_in_place(
-        &self,
-        nonce: [u8; Self::NONCE_LEN],
-        aad: [u8; Self::AAD_LEN],
-        tag: [u8; Self::TAG_LEN],
-        inout: &mut [u8],
-    ) -> Result<(), ()> {
+    pub fn decrypt(&self, packet: &mut BytesMut) -> Result<(), ()> {
+        let nonce = {
+            let mut buf = [0u8; 12];
+            let payload_len = packet.len() - 8;
+            buf[4..].copy_from_slice(&packet[payload_len..]);
+            packet.truncate(payload_len);
+
+            buf
+        };
+        let mut payload = packet.split_off(AudioPacket::HEADER_LEN);
+
         self.inner
-            .decrypt_in_place_detached(
-                Nonce::from_slice(&nonce),
-                &aad,
-                inout,
-                Tag::from_slice(&tag),
-            )
-            .map_err(|_| ())
+            .decrypt_in_place(&Nonce::from(nonce), &packet[4..12], &mut payload)
+            .map_err(|_| ())?;
+
+        packet.unsplit(payload);
+
+        Ok(())
     }
 }
 
@@ -59,13 +62,17 @@ impl AudioRealtimeCipher {
     }
 }
 
-pub struct VideoCipher {
+pub trait VideoCipher {
+    fn decrypt(&mut self, header: [u8; 128], payload: &mut BytesMut) -> Result<(), ()>;
+}
+
+pub struct LegacyVideoCipher {
     aesctr: AesCtr128BE,
     og: [u8; 16],
     next_decrypt_count: usize,
 }
 
-impl VideoCipher {
+impl LegacyVideoCipher {
     pub fn new(key: AesKey128, stream_connection_id: u64) -> Self {
         let aes = sha512_two_step(
             format!("AirPlayStreamKey{stream_connection_id}").as_bytes(),
@@ -81,39 +88,82 @@ impl VideoCipher {
             next_decrypt_count: 0,
         }
     }
+}
 
-    pub fn decrypt(&mut self, inout: &mut [u8]) {
+impl VideoCipher for LegacyVideoCipher {
+    fn decrypt(&mut self, _: [u8; 128], payload: &mut BytesMut) -> Result<(), ()> {
         let n = self.next_decrypt_count;
 
         // Step 1: Process leftover bytes from the previous call
         if n > 0 {
-            for (i, x) in inout.iter_mut().enumerate().take(n) {
+            for (i, x) in payload.iter_mut().enumerate().take(n) {
                 *x ^= self.og[(16 - n) + i];
             }
         }
 
         // Step 2: Decrypt full blocks
-        let encryptlen = ((inout.len() - n) / 16) * 16;
-        self.aesctr.apply_keystream(&mut inout[n..n + encryptlen]);
+        let encryptlen = ((payload.len() - n) / 16) * 16;
+        self.aesctr.apply_keystream(&mut payload[n..n + encryptlen]);
 
         // Step 3: Handle remaining partial block
-        let restlen = (inout.len() - n) % 16;
-        let reststart = inout.len() - restlen;
+        let restlen = (payload.len() - n) % 16;
+        let reststart = payload.len() - restlen;
         self.next_decrypt_count = 0;
 
         if restlen > 0 {
             self.og.fill(0);
-            self.og[..restlen].copy_from_slice(&inout[reststart..]);
+            self.og[..restlen].copy_from_slice(&payload[reststart..]);
             self.aesctr.apply_keystream(&mut self.og);
-            inout[reststart..].copy_from_slice(&self.og[..restlen]);
+            payload[reststart..].copy_from_slice(&self.og[..restlen]);
             self.next_decrypt_count = 16 - restlen;
         }
+
+        Ok(())
+    }
+}
+
+pub struct HKVideoCipher {
+    inner: ChaCha20Poly1305,
+    count: u64,
+}
+
+impl HKVideoCipher {
+    pub fn new(shared_secret: &[u8], stream_connection_id: u64) -> Self {
+        let key = hkdf(
+            shared_secret,
+            format!("DataStream-Salt{stream_connection_id}").as_bytes(),
+            b"DataStream-Output-Encryption-Key",
+        );
+        let inner = ChaCha20Poly1305::new(&Key::from(key));
+
+        Self { inner, count: 0 }
+    }
+}
+
+impl VideoCipher for HKVideoCipher {
+    fn decrypt(&mut self, header: [u8; 128], payload: &mut BytesMut) -> Result<(), ()> {
+        let nonce = {
+            let mut buf = [0u8; 12];
+            let count = self.count.to_le_bytes();
+            buf[12 - count.len()..].copy_from_slice(&count);
+
+            buf
+        };
+
+        self.inner
+            .decrypt_in_place(&Nonce::from(nonce), &header, payload)
+            .map_err(|_| ())?;
+        self.count += 1;
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::VideoCipher;
+    use bytes::BytesMut;
+
+    use super::{LegacyVideoCipher, VideoCipher};
 
     #[test]
     fn test_video_decipher() {
@@ -175,10 +225,12 @@ mod tests {
             244, 147, 183, 57, 16, 194, 217,
         ];
 
-        let mut input = (0..1025usize).map(|x| (x % 255) as u8).collect::<Vec<_>>();
-        let mut cipher = VideoCipher::new([1; 16], 1000);
+        let mut input = (0..1025usize)
+            .map(|x| (x % 255) as u8)
+            .collect::<BytesMut>();
+        let mut cipher = LegacyVideoCipher::new([1; 16], 1000);
 
-        cipher.decrypt(&mut input);
+        cipher.decrypt([0; _], &mut input).unwrap();
 
         assert_eq!(input, OUTPUT);
     }

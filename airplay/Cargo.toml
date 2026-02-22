@@ -17,17 +17,17 @@ bytes = { version = "1", features = ["serde"] }
 bitflags = { version = "2", features = ["serde"] }
 plist = "1"
 
-rand = "0.9.2"
-sha2 = "0.10"
+rand = "0.10"
+sha2 = "0.11.0-rc.4"
 aes = "0.8"
 ctr = "0.9"
 cbc = "0.1.2"
-num-bigint = "0.4.6"
-srp = "0.6"
-hkdf = "0.12"
-x25519-dalek = { version = "2.0", features = ["static_secrets"] }
-ed25519-dalek = "2"
-chacha20poly1305 = "0.10"
+# srp = "0.7.0-rc.1"
+srp = { git = "https://github.com/r4v3n6101/PAKEs", branch = "homekit_srp" }
+hkdf = "0.13.0-rc.5"
+x25519-dalek = "3.0.0-pre.6"
+ed25519-dalek = "3.0.0-pre.6"
+chacha20poly1305 = { version = "0.11.0-rc.3", features = ["bytes"] }
 
 http = "1"
 httparse = "1"

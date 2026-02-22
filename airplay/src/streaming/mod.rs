@@ -9,6 +9,7 @@ use tokio::net::{TcpListener, UdpSocket};
 
 use crate::{
     crypto::{AesIv128, AesKey128, ChaCha20Poly1305Key},
+    pairing::SessionKey,
     playback::{ChannelHandle, audio::AudioStream, video::VideoStream},
     util::sync::WakerFlag,
 };
@@ -73,59 +74,6 @@ impl EventChannel {
     }
 }
 
-impl AudioRealtimeChannel {
-    #[allow(clippy::too_many_arguments)]
-    #[tracing::instrument(ret, err, skip(shared_data, stream))]
-    pub async fn create(
-        bind_addr: IpAddr,
-        expected_remote_addr: IpAddr,
-        shared_data: Arc<SharedData>,
-        stream: impl AudioStream,
-        audio_buf_size: u32,
-        key: AesKey128,
-        iv: AesIv128,
-    ) -> io::Result<Self> {
-        let data_socket = UdpSocket::bind(SocketAddr::new(bind_addr, 0)).await?;
-        let control_socket = UdpSocket::bind(SocketAddr::new(bind_addr, 0)).await?;
-
-        let local_data_addr = data_socket.local_addr()?;
-        tracing::info!(%local_data_addr, "created new socket");
-
-        let local_control_addr = control_socket.local_addr()?;
-        tracing::info!(%local_control_addr, "created new socket");
-
-        tokio::spawn(async move {
-            let task = async {
-                let data = processing::audio_realtime_processor(
-                    expected_remote_addr,
-                    data_socket,
-                    audio_buf_size,
-                    key,
-                    iv,
-                    &stream,
-                );
-                let control = processing::control_processor(expected_remote_addr, control_socket);
-
-                let (first, second) = tokio::join!(data, control);
-                first.or(second)
-            };
-
-            tokio::select! {
-                () = &shared_data.waker_flag => {},
-                res = task => match remap_io_error_if_needed(res) {
-                    Ok(()) => stream.on_ok(),
-                    Err(err) => stream.on_err(err.into()),
-                }
-            }
-        });
-
-        Ok(Self {
-            local_data_addr,
-            local_control_addr,
-        })
-    }
-}
-
 impl AudioBufferedChannel {
     #[tracing::instrument(ret, err, skip(shared_data, stream))]
     pub async fn create(
@@ -179,7 +127,77 @@ impl AudioBufferedChannel {
     }
 }
 
+impl AudioRealtimeChannel {
+    #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(ret, err, skip(shared_data, stream))]
+    pub async fn create(
+        bind_addr: IpAddr,
+        expected_remote_addr: IpAddr,
+        shared_data: Arc<SharedData>,
+        stream: impl AudioStream,
+        audio_buf_size: u32,
+        aeskey: Option<AesKey128>,
+        aesiv: Option<AesIv128>,
+        session_key: Option<SessionKey>,
+    ) -> io::Result<Self> {
+        let encryption = if let Some(session_key) = session_key {
+            processing::Encryption::HomeKit { key: session_key }
+        } else if let Some(aeskey) = aeskey
+            && let Some(aesiv) = aesiv
+        {
+            processing::Encryption::Legacy {
+                key: aeskey,
+                iv: aesiv,
+            }
+        } else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "no encryption key passed",
+            ));
+        };
+
+        let data_socket = UdpSocket::bind(SocketAddr::new(bind_addr, 0)).await?;
+        let control_socket = UdpSocket::bind(SocketAddr::new(bind_addr, 0)).await?;
+
+        let local_data_addr = data_socket.local_addr()?;
+        tracing::info!(%local_data_addr, "created new socket");
+
+        let local_control_addr = control_socket.local_addr()?;
+        tracing::info!(%local_control_addr, "created new socket");
+
+        tokio::spawn(async move {
+            let task = async {
+                let data = processing::audio_realtime_processor(
+                    expected_remote_addr,
+                    data_socket,
+                    audio_buf_size,
+                    encryption,
+                    &stream,
+                );
+                let control = processing::control_processor(expected_remote_addr, control_socket);
+
+                let (first, second) = tokio::join!(data, control);
+                first.or(second)
+            };
+
+            tokio::select! {
+                () = &shared_data.waker_flag => {},
+                res = task => match remap_io_error_if_needed(res) {
+                    Ok(()) => stream.on_ok(),
+                    Err(err) => stream.on_err(err.into()),
+                }
+            }
+        });
+
+        Ok(Self {
+            local_data_addr,
+            local_control_addr,
+        })
+    }
+}
+
 impl VideoChannel {
+    #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(ret, err, skip(shared_data, stream))]
     pub async fn create(
         bind_addr: IpAddr,
@@ -187,9 +205,27 @@ impl VideoChannel {
         shared_data: Arc<SharedData>,
         stream: impl VideoStream,
         video_buf_size: u32,
-        key: AesKey128,
+        aeskey: Option<AesKey128>,
+        aesiv: Option<AesIv128>,
+        session_key: Option<SessionKey>,
         stream_connection_id: u64,
     ) -> io::Result<Self> {
+        let encryption = if let Some(session_key) = session_key {
+            processing::Encryption::HomeKit { key: session_key }
+        } else if let Some(aeskey) = aeskey
+            && let Some(aesiv) = aesiv
+        {
+            processing::Encryption::Legacy {
+                key: aeskey,
+                iv: aesiv,
+            }
+        } else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "no encryption key passed",
+            ));
+        };
+
         let listener = TcpListener::bind(SocketAddr::new(bind_addr, 0)).await?;
         let local_addr = listener.local_addr()?;
         tracing::info!(%local_addr, "created new listener");
@@ -207,7 +243,7 @@ impl VideoChannel {
                             processing::video_processor(
                                 video_buf_size,
                                 tcp_stream,
-                                key,
+                                encryption,
                                 stream_connection_id,
                                 &stream,
                             )

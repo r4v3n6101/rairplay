@@ -69,9 +69,9 @@ pub struct SenderInfo {
     #[serde(rename = "osBuildVersion")]
     pub os_build_version: Option<String>,
     #[serde(rename = "ekey")]
-    pub ekey: Bytes,
+    pub ekey: Option<Bytes>,
     #[serde(rename = "eiv")]
-    pub eiv: Bytes,
+    pub eiv: Option<Bytes>,
 
     #[serde(flatten)]
     pub timing_proto: TimingProtocol,

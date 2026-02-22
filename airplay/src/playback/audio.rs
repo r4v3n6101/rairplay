@@ -40,9 +40,6 @@ pub struct AudioPacket {
 impl AudioPacket {
     /// Just RTP header
     pub const HEADER_LEN: usize = 12;
-    /// Used for decryption of buffered stream
-    /// Won't be stored in Self
-    pub const TRAILER_LEN: usize = 24;
 }
 
 pub static AUDIO_FORMATS: [Codec; 33] = [

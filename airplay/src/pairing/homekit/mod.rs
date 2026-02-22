@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
 use axum::{Extension, Router, routing::post};
+pub use transport::codec::{HAPDecoder, HAPEncoder};
 use yoke::{Yoke, erased::ErasedArcCart};
 
+use super::SharedSessionKey;
 use crate::config::{Keychain, PinCode};
 
 mod dto;
@@ -11,7 +13,11 @@ mod handlers;
 mod state;
 mod transport;
 
-pub fn router<K>(keychain: Yoke<&'static K, ErasedArcCart>, pin: Option<PinCode>) -> Router<()>
+pub fn router<K>(
+    keychain: Yoke<&'static K, ErasedArcCart>,
+    session_key: SharedSessionKey,
+    pin: Option<PinCode>,
+) -> Router<()>
 where
     K: Keychain,
 {
@@ -24,4 +30,5 @@ where
         // .route("/pair-pin-start", post(()))
         .with_state(state)
         .layer(Extension(keychain))
+        .layer(Extension(session_key))
 }

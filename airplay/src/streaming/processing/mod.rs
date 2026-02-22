@@ -1,5 +1,6 @@
 use std::{io, net::IpAddr};
 
+use bytes::Buf;
 use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, TcpStream, UdpSocket},
@@ -8,14 +9,22 @@ use tracing::Instrument;
 
 use crate::{
     crypto::{AesIv128, AesKey128, ChaCha20Poly1305Key},
+    pairing::SessionKey,
     playback::{
         audio::{AudioPacket, AudioStream},
         video::{PacketKind, VideoPacket, VideoStream},
     },
+    streaming::processing::crypto::VideoCipher,
     util::memory,
 };
 
 mod crypto;
+
+#[derive(Debug)]
+pub enum Encryption {
+    HomeKit { key: SessionKey },
+    Legacy { key: AesKey128, iv: AesIv128 },
+}
 
 #[tracing::instrument(level = "DEBUG")]
 pub async fn event_processor(listener: TcpListener) {
@@ -47,34 +56,22 @@ pub async fn audio_buffered_processor(
             // 2 is pkt_len field size itself
             let pkt_len: usize = pkt_len.saturating_sub(2).into();
 
-            if pkt_len < AudioPacket::HEADER_LEN + AudioPacket::TRAILER_LEN {
+            if pkt_len < AudioPacket::HEADER_LEN + TRAILER_LEN {
                 return Err(io::Error::other("malformed buffered stream"));
             }
 
             // rtp pkt length w/o encryption data
             let pkt_len = pkt_len - TRAILER_LEN;
-            let mut rtp = audio_buf.allocate_buf(pkt_len);
+            let mut rtp = audio_buf.allocate_buf(pkt_len + TRAILER_LEN);
             tcp_stream.read_exact(&mut rtp).await?;
-
-            let mut tag = [0u8; crypto::AudioBufferedCipher::TAG_LEN];
-            let mut nonce = [0u8; crypto::AudioBufferedCipher::NONCE_LEN];
-            let aad = (rtp.as_ref()[4..][..crypto::AudioBufferedCipher::AAD_LEN])
-                .try_into()
-                .unwrap();
-
-            tcp_stream.read_exact(&mut tag).await?;
-            tcp_stream.read_exact(&mut nonce[4..]).await?;
             tracing::trace!(%pkt_len, "packet read");
 
-            if cipher
-                .open_in_place(nonce, aad, tag, &mut rtp[AudioPacket::HEADER_LEN..])
-                .is_err()
-            {
-                tracing::warn!(?nonce, ?aad, ?tag, "packet decryption failed");
-            } else {
+            if cipher.decrypt(&mut rtp).is_ok() {
                 tracing::trace!("packet decrypted");
 
                 stream.on_data(AudioPacket { rtp });
+            } else {
+                tracing::warn!("packet decryption failed");
             }
             tokio::task::consume_budget().await;
 
@@ -90,15 +87,17 @@ pub async fn audio_realtime_processor(
     expected_remote_addr: IpAddr,
     socket: UdpSocket,
     audio_buf_size: u32,
-    key: AesKey128,
-    iv: AesIv128,
+    encryption: Encryption,
     stream: &impl AudioStream,
 ) -> io::Result<()> {
-    const PKT_BUF_SIZE: usize = 16 * 1024;
-
-    let mut pkt_buf = [0u8; PKT_BUF_SIZE];
+    let mut pkt_buf = [0u8; 16 * 1024];
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
-    let cipher = crypto::AudioRealtimeCipher::new(key, iv);
+    let cipher = match encryption {
+        Encryption::HomeKit { .. } => {
+            unimplemented!()
+        }
+        Encryption::Legacy { key, iv } => crypto::AudioRealtimeCipher::new(key, iv),
+    };
 
     loop {
         async {
@@ -144,26 +143,34 @@ pub async fn control_processor(_expected_remote_addr: IpAddr, socket: UdpSocket)
 pub async fn video_processor(
     video_buf_size: u32,
     mut tcp_stream: TcpStream,
-    key: AesKey128,
+    encryption: Encryption,
     stream_connection_id: u64,
     stream: &impl VideoStream,
 ) -> io::Result<()> {
-    const UNKNOWN_BYTES: usize = 112;
+    let cipher: &mut (dyn VideoCipher + Send + Sync) = match encryption {
+        Encryption::HomeKit { key } => {
+            &mut crypto::HKVideoCipher::new(&key.key_material, stream_connection_id)
+        }
+        Encryption::Legacy { key, .. } => {
+            &mut crypto::LegacyVideoCipher::new(key, stream_connection_id)
+        }
+    };
 
     let mut video_buf = memory::BytesHunk::new(video_buf_size as usize);
-    let mut cipher = crypto::VideoCipher::new(key, stream_connection_id);
-
     loop {
         async {
-            let payload_len = tcp_stream.read_u32_le().await?;
-            let kind = match tcp_stream.read_u16_le().await? {
+            let mut header = [0u8; _];
+            tcp_stream.read_exact(&mut header).await?;
+
+            let mut ptr = &header[..];
+            let payload_len = ptr.get_u32_le();
+            let kind = match ptr.get_u16_le() {
                 1 => PacketKind::AvcC,
                 0 | 4096 => PacketKind::Payload,
                 other => PacketKind::Other(other),
             };
-            let unknown_field = tcp_stream.read_u16_le().await?;
-            let timestamp = tcp_stream.read_u64_le().await?;
-            tcp_stream.read_exact(&mut [0; UNKNOWN_BYTES]).await?;
+            let unknown_field = ptr.get_u16_le();
+            let timestamp = ptr.get_u64_le();
 
             let mut pkt = VideoPacket {
                 kind,
@@ -176,8 +183,11 @@ pub async fn video_processor(
             // Only payload need to be decrypted
             // TODO: Other(_) too?
             if matches!(kind, PacketKind::Payload) {
-                cipher.decrypt(&mut pkt.payload);
-                tracing::trace!("packet decrypted");
+                if cipher.decrypt(header, &mut pkt.payload).is_ok() {
+                    tracing::trace!("packet decrypted");
+                } else {
+                    tracing::warn!("packet decryption failed");
+                }
             }
 
             stream.on_data(pkt);

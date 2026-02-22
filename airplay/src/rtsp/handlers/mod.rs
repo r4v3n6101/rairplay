@@ -15,7 +15,7 @@ use super::{
     },
     extractor::BinaryPlist,
     state::ServiceState,
-    transport::Addresses,
+    transport::Connection,
 };
 use crate::{
     crypto::{AesIv128, ChaCha20Poly1305Key, sha512_two_step},
@@ -138,55 +138,61 @@ pub async fn teardown<A, V, K>(
 
 pub async fn setup<A: AudioDevice, V: VideoDevice, K>(
     State(state): State<Arc<ServiceState<A, V, K>>>,
-    ConnectInfo(addrs): ConnectInfo<Addresses>,
+    ConnectInfo(conn): ConnectInfo<Connection>,
     BinaryPlist(req): BinaryPlist<SetupRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     match req {
-        SetupRequest::SenderInfo(info) => setup_info(&state, &addrs, *info).await,
-        SetupRequest::Streams { requests } => setup_streams(&state, &addrs, requests).await,
+        SetupRequest::SenderInfo(info) => setup_info(&state, &conn, *info).await,
+        SetupRequest::Streams { requests } => setup_streams(&state, &conn, requests).await,
     }
 }
 
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_info<A, V, K>(
     state: &ServiceState<A, V, K>,
-    addrs: &Addresses,
+    conn: &Connection,
     SenderInfo { ekey, eiv, .. }: SenderInfo,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     let mut lock = state.event_channel.lock().await;
     let event_channel = match &mut *lock {
         Some(chan) => chan,
-        event_channel @ None => EventChannel::create(addrs.bind_addr().unwrap())
+        event_channel @ None => EventChannel::create(conn.bind_addr().unwrap())
             .await
             .map(|chan| event_channel.insert(chan))
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
     };
 
-    let Ok(eiv) = AesIv128::try_from(eiv.as_ref()) else {
-        tracing::error!(len=%eiv.len(), "invalid length of passed iv");
-        return Err(StatusCode::BAD_REQUEST);
-    };
+    if let Some(ekey) = ekey
+        && let Some(eiv) = eiv
+    {
+        tracing::trace!(?ekey, ?eiv, "ekev & eiv detected");
 
-    let fp_last_msg = state.fp_last_msg.lock().unwrap();
-    let mut aes_key = fairplay::decrypt_key(fp_last_msg.as_ref(), &ekey);
-    tracing::trace!(
-        ?ekey,
-        ?aes_key,
-        ?fp_last_msg,
-        "aes key decrypted with fairplay"
-    );
+        let Ok(eiv) = AesIv128::try_from(eiv.as_ref()) else {
+            tracing::error!(len=%eiv.len(), "invalid length of passed iv");
+            return Err(StatusCode::BAD_REQUEST);
+        };
 
-    if let Some(session_key) = state.session_key.read() {
-        aes_key = sha512_two_step(&aes_key, &session_key);
+        let fp_last_msg = state.fp_last_msg.lock().unwrap();
+        let mut aes_key = fairplay::decrypt_key(fp_last_msg.as_ref(), &ekey);
         tracing::trace!(
+            ?ekey,
             ?aes_key,
-            ?session_key,
-            "additional hashing with pairing's shared secret"
+            ?fp_last_msg,
+            "aes key decrypted with fairplay"
         );
-    }
 
-    *state.ekey.lock_write() = aes_key;
-    *state.eiv.lock_write() = eiv;
+        if let Some(session_key) = conn.session_key.read() {
+            aes_key = sha512_two_step(&aes_key, &session_key.key_material);
+            tracing::trace!(
+                ?aes_key,
+                ?session_key,
+                "additional hashing with pairing's shared secret"
+            );
+        }
+
+        state.ekey.lock_write().replace(aes_key);
+        state.eiv.lock_write().replace(eiv);
+    }
 
     // TODO : log more info from SenderInfo
 
@@ -199,20 +205,20 @@ async fn setup_info<A, V, K>(
 #[tracing::instrument(level = "DEBUG", skip_all)]
 async fn setup_streams<A: AudioDevice, V: VideoDevice, K>(
     state: &ServiceState<A, V, K>,
-    addrs: &Addresses,
+    conn: &Connection,
     requests: Vec<StreamRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     let mut responses = Vec::with_capacity(requests.len());
     for stream in requests {
         let id = state.last_stream_id.fetch_add(1, Ordering::AcqRel);
         match match stream {
-            StreamRequest::AudioRealtime(request) => {
-                setup_realtime_audio(state, addrs, request, id).await
-            }
             StreamRequest::AudioBuffered(request) => {
-                setup_buffered_audio(state, addrs, request, id).await
+                setup_buffered_audio(state, conn, request, id).await
             }
-            StreamRequest::Video(request) => setup_video(state, addrs, request, id).await,
+            StreamRequest::AudioRealtime(request) => {
+                setup_realtime_audio(state, conn, request, id).await
+            }
+            StreamRequest::Video(request) => setup_video(state, conn, request, id).await,
         } {
             Ok(response) => responses.push(response),
             Err(err) => return Err(err),
@@ -223,73 +229,9 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice, K>(
 }
 
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
-async fn setup_realtime_audio<A: AudioDevice, V, K>(
-    state: &ServiceState<A, V, K>,
-    addrs: &Addresses,
-    AudioRealtimeRequest {
-        audio_format,
-        samples_per_frame,
-        ..
-    }: AudioRealtimeRequest,
-    id: u64,
-) -> Result<StreamResponse, StatusCode> {
-    let Some(codec) = AUDIO_FORMATS
-        .get(audio_format.trailing_zeros() as usize)
-        .copied()
-    else {
-        tracing::error!(%audio_format, "unknown audio codec");
-        return Err(StatusCode::BAD_REQUEST);
-    };
-    tracing::debug!(?codec, "codec parsed");
-
-    let shared_data = Arc::new(SharedData::default());
-    let params = AudioParams {
-        samples_per_frame,
-        codec,
-    };
-    let stream = state
-        .config
-        .audio
-        .device
-        .create(
-            id,
-            params,
-            Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
-        )
-        .await
-        .inspect(|_| tracing::trace!("new stream opened"))
-        .inspect_err(|err| tracing::error!(%err, ?params, "stream couldn't be created"))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    AudioRealtimeChannel::create(
-        addrs.bind_addr().unwrap(),
-        addrs.remote_addr().unwrap(),
-        shared_data.clone(),
-        stream,
-        state.config.audio.buf_size,
-        state.ekey.read(),
-        state.eiv.read(),
-    )
-    .await
-    .inspect(|_| {
-        state
-            .stream_channels
-            .lock()
-            .unwrap()
-            .insert((id, StreamType::AudioRealtime as u32), shared_data);
-    })
-    .map(|chan| StreamResponse::AudioRealtime {
-        id,
-        local_data_port: chan.local_data_addr.port(),
-        local_control_port: chan.local_control_addr.port(),
-    })
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-}
-
-#[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_buffered_audio<A: AudioDevice, V, K>(
     state: &ServiceState<A, V, K>,
-    addrs: &Addresses,
+    conn: &Connection,
     AudioBufferedRequest {
         samples_per_frame,
         audio_format,
@@ -341,8 +283,8 @@ async fn setup_buffered_audio<A: AudioDevice, V, K>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     AudioBufferedChannel::create(
-        addrs.bind_addr().unwrap(),
-        addrs.remote_addr().unwrap(),
+        conn.bind_addr().unwrap(),
+        conn.remote_addr().unwrap(),
         shared_data.clone(),
         stream,
         state.config.audio.buf_size,
@@ -365,9 +307,81 @@ async fn setup_buffered_audio<A: AudioDevice, V, K>(
 }
 
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
+async fn setup_realtime_audio<A: AudioDevice, V, K>(
+    state: &ServiceState<A, V, K>,
+    conn: &Connection,
+    AudioRealtimeRequest {
+        audio_format,
+        samples_per_frame,
+        ..
+    }: AudioRealtimeRequest,
+    id: u64,
+) -> Result<StreamResponse, StatusCode> {
+    let Some(codec) = AUDIO_FORMATS
+        .get(audio_format.trailing_zeros() as usize)
+        .copied()
+    else {
+        tracing::error!(%audio_format, "unknown audio codec");
+        return Err(StatusCode::BAD_REQUEST);
+    };
+    tracing::debug!(?codec, "codec parsed");
+
+    let shared_data = Arc::new(SharedData::default());
+    let params = AudioParams {
+        samples_per_frame,
+        codec,
+    };
+    let stream = state
+        .config
+        .audio
+        .device
+        .create(
+            id,
+            params,
+            Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
+        )
+        .await
+        .inspect(|_| tracing::trace!("new stream opened"))
+        .inspect_err(|err| tracing::error!(%err, ?params, "stream couldn't be created"))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let session_key = if let Some(session_key) = conn.session_key.read()
+        && session_key.upgrade_channel
+    {
+        Some(session_key)
+    } else {
+        None
+    };
+    AudioRealtimeChannel::create(
+        conn.bind_addr().unwrap(),
+        conn.remote_addr().unwrap(),
+        shared_data.clone(),
+        stream,
+        state.config.audio.buf_size,
+        state.ekey.read(),
+        state.eiv.read(),
+        session_key,
+    )
+    .await
+    .inspect(|_| {
+        state
+            .stream_channels
+            .lock()
+            .unwrap()
+            .insert((id, StreamType::AudioRealtime as u32), shared_data);
+    })
+    .map(|chan| StreamResponse::AudioRealtime {
+        id,
+        local_data_port: chan.local_data_addr.port(),
+        local_control_port: chan.local_control_addr.port(),
+    })
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+#[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
 async fn setup_video<A, V: VideoDevice, K>(
     state: &ServiceState<A, V, K>,
-    addrs: &Addresses,
+    conn: &Connection,
     VideoRequest {
         stream_connection_id,
         ..
@@ -394,13 +408,22 @@ async fn setup_video<A, V: VideoDevice, K>(
         .inspect_err(|err| tracing::error!(%err, ?params, "stream couldn't be created"))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let session_key = if let Some(session_key) = conn.session_key.read()
+        && session_key.upgrade_channel
+    {
+        Some(session_key)
+    } else {
+        None
+    };
     VideoChannel::create(
-        addrs.bind_addr().unwrap(),
-        addrs.remote_addr().unwrap(),
+        conn.bind_addr().unwrap(),
+        conn.remote_addr().unwrap(),
         shared_data.clone(),
         stream,
         state.config.video.buf_size,
         state.ekey.read(),
+        state.eiv.read(),
+        session_key,
         stream_connection_id,
     )
     .await

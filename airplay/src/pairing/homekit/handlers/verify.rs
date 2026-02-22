@@ -1,9 +1,9 @@
-use chacha20poly1305::{ChaCha20Poly1305, KeyInit as _, Nonce, aead::AeadMutInPlace as _};
-use rand::{CryptoRng, Rng, RngCore};
-use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
+use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::AeadInOut};
+use rand::CryptoRng;
+use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
 
 use super::super::dto::ErrorCode;
-use crate::crypto;
+use crate::crypto::hkdf;
 
 enum Inner {
     Init,
@@ -31,7 +31,7 @@ impl State {
         sign: F,
     ) -> Result<(Vec<u8>, Vec<u8>), ErrorCode>
     where
-        R: RngCore + CryptoRng,
+        R: CryptoRng,
         F: FnOnce(&[u8]) -> Vec<u8>,
     {
         let Ok(device_pubkey) = <[u8; _]>::try_from(device_pubkey) else {
@@ -39,14 +39,10 @@ impl State {
         };
         let device_pubkey = PublicKey::from(device_pubkey);
 
-        // TODO : remove when rand will be upgraded
-        let ephemeral = {
-            let buf: [u8; _] = rand.random();
-            StaticSecret::from(buf)
-        };
-
-        let shared_secret = ephemeral.diffie_hellman(&device_pubkey);
+        let ephemeral = EphemeralSecret::random_from_rng(&mut rand);
         let accessory_pubkey = PublicKey::from(&ephemeral);
+        let shared_secret = ephemeral.diffie_hellman(&device_pubkey);
+
         self.inner = Inner::Established {
             accessory_pubkey,
             device_pubkey,
@@ -72,11 +68,11 @@ impl State {
             return Err(ErrorCode::Busy);
         };
 
-        let session_key = crypto::hkdf(shared_secret.as_bytes(), SALT, INFO);
+        let session_key = hkdf(shared_secret.as_bytes(), SALT, INFO);
 
-        let mut cipher = ChaCha20Poly1305::new(&session_key.into());
+        let cipher = ChaCha20Poly1305::new(&session_key.into());
         if cipher
-            .encrypt_in_place(Nonce::from_slice(NONCE), &[], msg)
+            .encrypt_in_place(&Nonce::try_from(NONCE).unwrap(), &[], msg)
             .is_err()
         {
             return Err(ErrorCode::Authentication);
@@ -94,11 +90,11 @@ impl State {
             return Err(ErrorCode::Busy);
         };
 
-        let session_key = crypto::hkdf(shared_secret.as_bytes(), SALT, INFO);
+        let session_key = hkdf(shared_secret.as_bytes(), SALT, INFO);
 
-        let mut cipher = ChaCha20Poly1305::new(&session_key.into());
+        let cipher = ChaCha20Poly1305::new(&session_key.into());
         if cipher
-            .decrypt_in_place(Nonce::from_slice(NONCE), &[], msg)
+            .decrypt_in_place(&Nonce::try_from(NONCE).unwrap(), &[], msg)
             .is_err()
         {
             return Err(ErrorCode::Authentication);
@@ -112,14 +108,14 @@ impl State {
         device_id: &[u8],
         device_signature: &[u8],
         verify: F,
-    ) -> Result<(), ErrorCode>
+    ) -> Result<[u8; 32], ErrorCode>
     where
         F: FnOnce(&[u8], &[u8]) -> bool,
     {
         let Inner::Established {
             accessory_pubkey,
             device_pubkey,
-            ..
+            shared_secret,
         } = &self.inner
         else {
             return Err(ErrorCode::Busy);
@@ -136,6 +132,6 @@ impl State {
             return Err(ErrorCode::Authentication);
         }
 
-        Ok(())
+        Ok(shared_secret.to_bytes())
     }
 }
