@@ -1,5 +1,7 @@
 #![allow(unused_variables, dead_code)]
 
+use std::net::IpAddr;
+
 use bytes::Bytes;
 use macaddr::MacAddr6;
 use plist::{Value, from_value};
@@ -74,18 +76,18 @@ pub struct SenderInfo {
     pub eiv: Option<Bytes>,
 
     #[serde(flatten)]
-    pub timing_proto: TimingProtocol,
+    pub timing: TimingRequest,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "timingProtocol")]
-pub enum TimingProtocol {
+pub enum TimingRequest {
     #[serde(rename = "PTP")]
     Ptp {
-        //#[serde(flatten, rename = "timingPeerInfo")]
-        //peer_info: (),
-        //#[serde(rename = "timingPeerList")]
-        //peer_list: (),
+        #[serde(rename = "timingPeerInfo")]
+        peer_info: TimingPeer,
+        #[serde(rename = "timingPeerList")]
+        peer_list: Vec<TimingPeer>,
     },
     #[serde(rename = "NTP")]
     Ntp {
@@ -133,16 +135,34 @@ pub enum SetupResponse {
     Info {
         #[serde(rename = "eventPort")]
         event_port: u16,
-
-        // TODO : this may be moved to NTP branch, because it's always zero for PTP and PTP
-        // sometimes requires (or not) timingPeerInfo
-        #[serde(rename = "timingPort")]
-        timing_port: u16,
+        #[serde(flatten)]
+        timing: TimingResponse,
     },
     Streams {
         #[serde(rename = "streams")]
         responses: Vec<StreamResponse>,
     },
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum TimingResponse {
+    Ptp {
+        #[serde(rename = "timingPeerInfo")]
+        peer_info: TimingPeer,
+    },
+    Ntp {
+        #[serde(rename = "timingPort")]
+        timing_port: u16,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TimingPeer {
+    #[serde(rename = "ID")]
+    pub id: String,
+    #[serde(rename = "Addresses")]
+    pub addresses: Vec<IpAddr>,
 }
 
 #[derive(Debug)]

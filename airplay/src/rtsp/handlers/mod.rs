@@ -10,7 +10,8 @@ use http::{header::CONTENT_TYPE, status::StatusCode};
 use super::{
     dto::{
         AudioRequest, Display, InfoResponse, SenderInfo, SetupRequest, SetupResponse,
-        StreamRequest, StreamResponse, StreamType, Teardown, VideoRequest,
+        StreamRequest, StreamResponse, StreamType, Teardown, TimingPeer, TimingRequest,
+        TimingResponse, VideoRequest,
     },
     extractor::BinaryPlist,
     state::ServiceState,
@@ -152,7 +153,9 @@ pub async fn setup<A: AudioDevice, V: VideoDevice, K>(
 async fn setup_info<A, V, K>(
     state: &ServiceState<A, V, K>,
     conn: &Connection,
-    SenderInfo { ekey, eiv, .. }: SenderInfo,
+    SenderInfo {
+        ekey, eiv, timing, ..
+    }: SenderInfo,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
     let mut lock = state.event_channel.lock().await;
     let event_channel = match &mut *lock {
@@ -196,11 +199,21 @@ async fn setup_info<A, V, K>(
         state.eiv.lock_write().replace(eiv);
     }
 
+    let timing = match timing {
+        TimingRequest::Ntp { .. } => TimingResponse::Ntp { timing_port: 0 },
+        TimingRequest::Ptp { .. } => TimingResponse::Ptp {
+            peer_info: TimingPeer {
+                id: state.config.mac_addr.to_string(),
+                addresses: vec![conn.local_addr.ip()],
+            },
+        },
+    };
+
     // TODO : log more info from SenderInfo
 
     Ok(BinaryPlist(SetupResponse::Info {
+        timing,
         event_port: event_channel.local_addr().port(),
-        timing_port: 0,
     }))
 }
 
