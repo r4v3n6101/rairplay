@@ -96,45 +96,27 @@ pub enum TimingProtocol {
 
 #[derive(Debug)]
 pub enum StreamRequest {
-    AudioRealtime(AudioRealtimeRequest),
-    AudioBuffered(AudioBufferedRequest),
+    AudioRealtime(AudioRequest),
+    AudioBuffered(AudioRequest),
     Video(VideoRequest),
 }
 
 #[derive(Debug, Deserialize)]
-pub struct AudioRealtimeRequest {
-    #[serde(rename = "ct")]
-    pub content_type: u8,
-    #[serde(rename = "audioFormat")]
-    pub audio_format: u32,
-    #[serde(rename = "spf")]
-    pub samples_per_frame: u32,
-    #[serde(rename = "sr")]
-    pub sample_rate: u32,
-    #[serde(rename = "latencyMin")]
-    pub min_latency_samples: u32,
-    #[serde(rename = "latencyMax")]
-    pub max_latency_samples: u32,
-    #[serde(rename = "controlPort")]
-    pub remote_control_port: u16,
-    #[serde(rename = "streamConnectionID")]
-    pub stream_connection_id: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AudioBufferedRequest {
-    #[serde(rename = "ct")]
-    pub content_type: u8,
+pub struct AudioRequest {
     #[serde(rename = "audioFormat")]
     pub audio_format: u32,
     #[serde(rename = "audioFormatIndex")]
     pub audio_format_index: Option<u8>,
     #[serde(rename = "spf")]
     pub samples_per_frame: u32,
+
     #[serde(rename = "shk")]
-    pub shared_key: Bytes,
-    #[serde(rename = "clientID")]
-    pub client_id: Option<String>,
+    pub shared_key: Option<Bytes>,
+    #[serde(rename = "streamConnectionID")]
+    pub stream_connection_id: Option<i64>,
+
+    #[serde(rename = "controlPort")]
+    pub remote_control_port: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]

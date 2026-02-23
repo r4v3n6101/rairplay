@@ -7,6 +7,7 @@ use tokio::{
 };
 use tracing::Instrument;
 
+use super::EncryptionMaterial;
 use crate::{
     crypto::{AesIv128, AesKey128, ChaCha20Poly1305Key},
     pairing::SessionKey,
@@ -21,8 +22,48 @@ mod crypto;
 
 #[derive(Debug)]
 pub enum Encryption {
-    HomeKit { key: SessionKey },
-    Legacy { key: AesKey128, iv: AesIv128 },
+    ChaCha {
+        key: ChaCha20Poly1305Key,
+    },
+    HomeKit {
+        key: SessionKey,
+        stream_connection_id: u64,
+    },
+    Legacy {
+        key: AesKey128,
+        iv: AesIv128,
+        stream_connection_id: Option<u64>,
+    },
+}
+
+impl TryFrom<EncryptionMaterial> for Encryption {
+    type Error = io::Error;
+
+    fn try_from(value: EncryptionMaterial) -> Result<Self, Self::Error> {
+        if let Some(key) = value.chacha_key {
+            Ok(Encryption::ChaCha { key })
+        } else if let Some(key) = value.aeskey
+            && let Some(iv) = value.aesiv
+        {
+            Ok(Encryption::Legacy {
+                key,
+                iv,
+                stream_connection_id: value.stream_connection_id,
+            })
+        } else if let Some(key) = value.session_key
+            && let Some(stream_connection_id) = value.stream_connection_id
+        {
+            Ok(Encryption::HomeKit {
+                key,
+                stream_connection_id,
+            })
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "no encryption key passed",
+            ))
+        }
+    }
 }
 
 #[tracing::instrument(level = "DEBUG")]
@@ -37,16 +78,15 @@ pub async fn event_processor(listener: TcpListener) {
 
 #[tracing::instrument(level = "DEBUG", skip(stream))]
 pub async fn audio_buffered_processor(
-    audio_buf_size: u32,
     mut tcp_stream: TcpStream,
-    key: ChaCha20Poly1305Key,
     stream: &impl AudioStream,
+    audio_buf_size: u32,
+    encryption: Encryption,
 ) -> io::Result<()> {
     const TRAILER_LEN: usize = 24;
 
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
-    let cipher: &(dyn crypto::AudioCipher + Send + Sync) =
-        &crypto::ChachaAudioCipher::from_key(key);
+    let cipher = build_audio_cipher(&encryption);
 
     loop {
         async {
@@ -82,26 +122,13 @@ pub async fn audio_buffered_processor(
 pub async fn audio_realtime_processor(
     expected_remote_addr: IpAddr,
     socket: UdpSocket,
+    stream: &impl AudioStream,
     audio_buf_size: u32,
     encryption: Encryption,
-    stream_connection_id: Option<u64>,
-    stream: &impl AudioStream,
 ) -> io::Result<()> {
     let mut pkt_buf = [0u8; 16 * 1024];
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
-    let cipher: &(dyn crypto::AudioCipher + Send + Sync) = match (encryption, stream_connection_id)
-    {
-        (Encryption::HomeKit { key }, Some(stream_connection_id)) => {
-            &crypto::ChachaAudioCipher::from_secret_and_id(&key.key_material, stream_connection_id)
-        }
-        (Encryption::Legacy { key, iv }, _) => &crypto::AesAudioCipher::new(key, iv),
-        _ => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "stream_connection_id required",
-            ));
-        }
-    };
+    let cipher = build_audio_cipher(&encryption);
 
     loop {
         async {
@@ -148,23 +175,14 @@ pub async fn control_processor(_expected_remote_addr: IpAddr, socket: UdpSocket)
 
 #[tracing::instrument(level = "DEBUG", skip(stream))]
 pub async fn video_processor(
-    video_buf_size: u32,
     mut tcp_stream: TcpStream,
-    encryption: Encryption,
-    stream_connection_id: u64,
     stream: &impl VideoStream,
+    video_buf_size: u32,
+    encryption: Encryption,
 ) -> io::Result<()> {
-    let cipher: &mut (dyn crypto::VideoCipher + Send + Sync) = match encryption {
-        Encryption::HomeKit { key } => &mut crypto::ChachaVideoCipher::from_secret_and_id(
-            &key.key_material,
-            stream_connection_id,
-        ),
-        Encryption::Legacy { key, .. } => {
-            &mut crypto::AesVideoCipher::from_key_and_id(key, stream_connection_id)
-        }
-    };
-
     let mut video_buf = memory::BytesHunk::new(video_buf_size as usize);
+    let mut cipher = build_video_cipher(&encryption);
+
     loop {
         async {
             let mut header = [0u8; _];
@@ -205,5 +223,40 @@ pub async fn video_processor(
         }
         .instrument(tracing::debug_span!("packet.video"))
         .await?;
+    }
+}
+
+fn build_audio_cipher(encryption: &Encryption) -> Box<dyn crypto::AudioCipher + Send + Sync> {
+    match encryption {
+        Encryption::ChaCha { key } => Box::new(crypto::ChachaAudioCipher::from_key(*key)),
+        Encryption::HomeKit {
+            key,
+            stream_connection_id,
+        } => Box::new(crypto::ChachaAudioCipher::from_secret_and_id(
+            &key.key_material,
+            *stream_connection_id,
+        )),
+        Encryption::Legacy { key, iv, .. } => Box::new(crypto::AesAudioCipher::new(*key, *iv)),
+    }
+}
+
+fn build_video_cipher(encryption: &Encryption) -> Box<dyn crypto::VideoCipher + Send + Sync> {
+    match encryption {
+        Encryption::HomeKit {
+            key,
+            stream_connection_id,
+        } => Box::new(crypto::ChachaVideoCipher::from_secret_and_id(
+            &key.key_material,
+            *stream_connection_id,
+        )),
+        Encryption::Legacy {
+            key,
+            stream_connection_id: Some(stream_connection_id),
+            ..
+        } => Box::new(crypto::AesVideoCipher::from_key_and_id(
+            *key,
+            *stream_connection_id,
+        )),
+        _ => unreachable!(),
     }
 }

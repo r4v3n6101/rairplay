@@ -25,21 +25,18 @@ pub struct TcpListenerWithRtspRemap {
 pub struct Connection {
     pub bind_addr4: SocketAddrV4,
     pub bind_addr6: SocketAddrV6,
-    pub remote_addr: Option<SocketAddr>,
+    pub local_addr: SocketAddr,
+    pub remote_addr: SocketAddr,
     pub session_key: SharedSessionKey,
 }
 
 impl Connection {
     /// Returns an IP address of the same family as the given remote address
-    pub fn bind_addr(&self) -> Option<IpAddr> {
-        self.remote_addr.map(|addr| match addr {
+    pub fn bind_addr(&self) -> IpAddr {
+        match self.remote_addr {
             SocketAddr::V4(_) => IpAddr::V4(*self.bind_addr4.ip()),
             SocketAddr::V6(_) => IpAddr::V6(*self.bind_addr6.ip()),
-        })
-    }
-
-    pub fn remote_addr(&self) -> Option<IpAddr> {
-        self.remote_addr.as_ref().map(SocketAddr::ip)
+        }
     }
 }
 
@@ -76,6 +73,13 @@ impl Listener for TcpListenerWithRtspRemap {
                     continue;
                 }
             };
+            let local_addr = match stream.local_addr() {
+                Ok(res) => res,
+                Err(err) => {
+                    tracing::error!(%err, "couldn't get local addr of connection");
+                    continue;
+                }
+            };
 
             let session_key = SharedSessionKey::default();
             return (
@@ -85,23 +89,16 @@ impl Listener for TcpListenerWithRtspRemap {
                 ))),
                 Connection {
                     session_key,
+                    local_addr,
+                    remote_addr,
                     bind_addr4: self.bind_addr4,
                     bind_addr6: self.bind_addr6,
-                    remote_addr: Some(remote_addr),
                 },
             );
         }
     }
 
     fn local_addr(&self) -> Result<Self::Addr> {
-        // NB: ideally, it's unreachabable, but I'm not sure `axum` doesn't call this inside
-        self.listener
-            .local_addr()
-            .map(|(bind_addr6, bind_addr4)| Connection {
-                bind_addr4,
-                bind_addr6,
-                remote_addr: None,
-                session_key: SharedSessionKey::default(),
-            })
+        unreachable!("you shall not pass")
     }
 }

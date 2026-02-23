@@ -46,6 +46,15 @@ pub struct SharedData {
     pub waker_flag: WakerFlag,
 }
 
+#[derive(Debug)]
+pub struct EncryptionMaterial {
+    pub stream_connection_id: Option<u64>,
+    pub chacha_key: Option<ChaCha20Poly1305Key>,
+    pub session_key: Option<SessionKey>,
+    pub aeskey: Option<AesKey128>,
+    pub aesiv: Option<AesIv128>,
+}
+
 impl EventChannel {
     #[tracing::instrument(ret, err)]
     pub async fn create(bind_addr: IpAddr) -> io::Result<Self> {
@@ -82,8 +91,10 @@ impl AudioBufferedChannel {
         shared_data: Arc<SharedData>,
         stream: impl AudioStream,
         audio_buf_size: u32,
-        key: ChaCha20Poly1305Key,
+        keys: EncryptionMaterial,
     ) -> io::Result<Self> {
+        let encryption = processing::Encryption::try_from(keys)?;
+
         let listener = TcpListener::bind(SocketAddr::new(bind_addr, 0)).await?;
         let local_addr = listener.local_addr()?;
         tracing::info!(%local_addr, "created new listener");
@@ -99,10 +110,10 @@ impl AudioBufferedChannel {
                             }
 
                             processing::audio_buffered_processor(
-                                audio_buf_size,
                                 tcp_stream,
-                                key,
                                 &stream,
+                                audio_buf_size,
+                                encryption,
                             )
                             .await
                         }
@@ -136,26 +147,9 @@ impl AudioRealtimeChannel {
         shared_data: Arc<SharedData>,
         stream: impl AudioStream,
         audio_buf_size: u32,
-        aeskey: Option<AesKey128>,
-        aesiv: Option<AesIv128>,
-        session_key: Option<SessionKey>,
-        stream_connection_id: Option<u64>,
+        keys: EncryptionMaterial,
     ) -> io::Result<Self> {
-        let encryption = if let Some(session_key) = session_key {
-            processing::Encryption::HomeKit { key: session_key }
-        } else if let Some(aeskey) = aeskey
-            && let Some(aesiv) = aesiv
-        {
-            processing::Encryption::Legacy {
-                key: aeskey,
-                iv: aesiv,
-            }
-        } else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "no encryption key passed",
-            ));
-        };
+        let encryption = processing::Encryption::try_from(keys)?;
 
         let data_socket = UdpSocket::bind(SocketAddr::new(bind_addr, 0)).await?;
         let control_socket = UdpSocket::bind(SocketAddr::new(bind_addr, 0)).await?;
@@ -171,10 +165,9 @@ impl AudioRealtimeChannel {
                 let data = processing::audio_realtime_processor(
                     expected_remote_addr,
                     data_socket,
+                    &stream,
                     audio_buf_size,
                     encryption,
-                    stream_connection_id,
-                    &stream,
                 );
                 let control = processing::control_processor(expected_remote_addr, control_socket);
 
@@ -207,26 +200,9 @@ impl VideoChannel {
         shared_data: Arc<SharedData>,
         stream: impl VideoStream,
         video_buf_size: u32,
-        aeskey: Option<AesKey128>,
-        aesiv: Option<AesIv128>,
-        session_key: Option<SessionKey>,
-        stream_connection_id: u64,
+        keys: EncryptionMaterial,
     ) -> io::Result<Self> {
-        let encryption = if let Some(session_key) = session_key {
-            processing::Encryption::HomeKit { key: session_key }
-        } else if let Some(aeskey) = aeskey
-            && let Some(aesiv) = aesiv
-        {
-            processing::Encryption::Legacy {
-                key: aeskey,
-                iv: aesiv,
-            }
-        } else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "no encryption key passed",
-            ));
-        };
+        let encryption = processing::Encryption::try_from(keys)?;
 
         let listener = TcpListener::bind(SocketAddr::new(bind_addr, 0)).await?;
         let local_addr = listener.local_addr()?;
@@ -243,11 +219,10 @@ impl VideoChannel {
                             }
 
                             processing::video_processor(
-                                video_buf_size,
                                 tcp_stream,
-                                encryption,
-                                stream_connection_id,
                                 &stream,
+                                video_buf_size,
+                                encryption,
                             )
                             .await
                         }

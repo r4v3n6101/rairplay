@@ -9,9 +9,8 @@ use http::{header::CONTENT_TYPE, status::StatusCode};
 
 use super::{
     dto::{
-        AudioBufferedRequest, AudioRealtimeRequest, Display, InfoResponse, SenderInfo,
-        SetupRequest, SetupResponse, StreamRequest, StreamResponse, StreamType, Teardown,
-        VideoRequest,
+        AudioRequest, Display, InfoResponse, SenderInfo, SetupRequest, SetupResponse,
+        StreamRequest, StreamResponse, StreamType, Teardown, VideoRequest,
     },
     extractor::BinaryPlist,
     state::ServiceState,
@@ -25,7 +24,8 @@ use crate::{
         video::{VideoDevice, VideoParams},
     },
     streaming::{
-        AudioBufferedChannel, AudioRealtimeChannel, EventChannel, SharedData, VideoChannel,
+        AudioBufferedChannel, AudioRealtimeChannel, EncryptionMaterial, EventChannel, SharedData,
+        VideoChannel,
     },
 };
 
@@ -157,7 +157,7 @@ async fn setup_info<A, V, K>(
     let mut lock = state.event_channel.lock().await;
     let event_channel = match &mut *lock {
         Some(chan) => chan,
-        event_channel @ None => EventChannel::create(conn.bind_addr().unwrap())
+        event_channel @ None => EventChannel::create(conn.bind_addr())
             .await
             .map(|chan| event_channel.insert(chan))
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
@@ -168,12 +168,13 @@ async fn setup_info<A, V, K>(
     {
         tracing::trace!(?ekey, ?eiv, "ekev & eiv detected");
 
-        let Some(session_key) = conn.session_key.read() else {
-            tracing::error!("must be paired and have session_key");
-            return Err(StatusCode::BAD_REQUEST);
-        };
         let Ok(eiv) = AesIv128::try_from(eiv.as_ref()) else {
             tracing::error!(len=%eiv.len(), "invalid length of passed iv");
+            tracing::error!("must be paired");
+            return Err(StatusCode::BAD_REQUEST);
+        };
+        let Some(session_key) = conn.session_key.read() else {
+            tracing::error!("must be paired");
             return Err(StatusCode::BAD_REQUEST);
         };
         let Some(fp_last_msg) = state.fp_last_msg.read() else {
@@ -181,7 +182,7 @@ async fn setup_info<A, V, K>(
             return Err(StatusCode::BAD_REQUEST);
         };
 
-        let aes_key = fairplay::decrypt_key(fp_last_msg, &ekey);
+        let aes_key = fairplay::decrypt_key(fp_last_msg, ekey);
         tracing::trace!(?aes_key, ?fp_last_msg, "aes key decrypted with fairplay");
 
         let aes_key = sha512_two_step(&aes_key, &session_key.key_material);
@@ -233,15 +234,33 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice, K>(
 async fn setup_buffered_audio<A: AudioDevice, V, K>(
     state: &ServiceState<A, V, K>,
     conn: &Connection,
-    AudioBufferedRequest {
-        samples_per_frame,
+    AudioRequest {
         audio_format,
         audio_format_index,
+        samples_per_frame,
+        stream_connection_id,
         shared_key,
         ..
-    }: AudioBufferedRequest,
+    }: AudioRequest,
     id: u64,
 ) -> Result<StreamResponse, StatusCode> {
+    // This must work like that
+    #[allow(clippy::cast_sign_loss)]
+    let stream_connection_id = stream_connection_id.map(|x| x as u64);
+
+    let chacha_key = shared_key
+        .map(|shk| {
+            ChaCha20Poly1305Key::try_from(shk.as_ref())
+                .inspect_err(|_| {
+                    tracing::error!(
+                        len = shk.len(),
+                        "insufficient length of key for buffered audio's decryption"
+                    );
+                })
+                .map_err(|_| StatusCode::BAD_REQUEST)
+        })
+        .transpose()?;
+
     let Some(codec) = AUDIO_FORMATS
         .get(audio_format_index.map_or_else(|| audio_format.trailing_zeros() as usize, usize::from))
         .copied()
@@ -254,15 +273,6 @@ async fn setup_buffered_audio<A: AudioDevice, V, K>(
         return Err(StatusCode::BAD_REQUEST);
     };
     tracing::debug!(?codec, "codec parsed");
-
-    let key = ChaCha20Poly1305Key::try_from(shared_key.as_ref())
-        .inspect_err(|_| {
-            tracing::error!(
-                len = shared_key.len(),
-                "insufficient length of key for buffered audio's decryption"
-            );
-        })
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let shared_data = Arc::new(SharedData::default());
     let params = AudioParams {
@@ -284,12 +294,18 @@ async fn setup_buffered_audio<A: AudioDevice, V, K>(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     AudioBufferedChannel::create(
-        conn.bind_addr().unwrap(),
-        conn.remote_addr().unwrap(),
+        conn.bind_addr(),
+        conn.remote_addr.ip(),
         shared_data.clone(),
         stream,
         state.config.audio.buf_size,
-        key,
+        EncryptionMaterial {
+            chacha_key,
+            stream_connection_id,
+            aeskey: state.ekey.read(),
+            aesiv: state.eiv.read(),
+            session_key: conn.session_key.read(),
+        },
     )
     .await
     .inspect(|_| {
@@ -311,23 +327,42 @@ async fn setup_buffered_audio<A: AudioDevice, V, K>(
 async fn setup_realtime_audio<A: AudioDevice, V, K>(
     state: &ServiceState<A, V, K>,
     conn: &Connection,
-    AudioRealtimeRequest {
+    AudioRequest {
         audio_format,
+        audio_format_index,
         samples_per_frame,
         stream_connection_id,
+        shared_key,
         ..
-    }: AudioRealtimeRequest,
+    }: AudioRequest,
     id: u64,
 ) -> Result<StreamResponse, StatusCode> {
     // This must work like that
     #[allow(clippy::cast_sign_loss)]
     let stream_connection_id = stream_connection_id.map(|x| x as u64);
 
+    let chacha_key = shared_key
+        .map(|shk| {
+            ChaCha20Poly1305Key::try_from(shk.as_ref())
+                .inspect_err(|_| {
+                    tracing::error!(
+                        len = shk.len(),
+                        "insufficient length of key for buffered audio's decryption"
+                    );
+                })
+                .map_err(|_| StatusCode::BAD_REQUEST)
+        })
+        .transpose()?;
+
     let Some(codec) = AUDIO_FORMATS
-        .get(audio_format.trailing_zeros() as usize)
+        .get(audio_format_index.map_or_else(|| audio_format.trailing_zeros() as usize, usize::from))
         .copied()
     else {
-        tracing::error!(%audio_format, "unknown audio codec");
+        tracing::error!(
+            %audio_format,
+            ?audio_format_index,
+            "unknown audio codec"
+        );
         return Err(StatusCode::BAD_REQUEST);
     };
     tracing::debug!(?codec, "codec parsed");
@@ -351,23 +386,19 @@ async fn setup_realtime_audio<A: AudioDevice, V, K>(
         .inspect_err(|err| tracing::error!(%err, ?params, "stream couldn't be created"))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let session_key = if let Some(session_key) = conn.session_key.read()
-        && session_key.upgrade_channel
-    {
-        Some(session_key)
-    } else {
-        None
-    };
     AudioRealtimeChannel::create(
-        conn.bind_addr().unwrap(),
-        conn.remote_addr().unwrap(),
+        conn.bind_addr(),
+        conn.remote_addr.ip(),
         shared_data.clone(),
         stream,
         state.config.audio.buf_size,
-        state.ekey.read(),
-        state.eiv.read(),
-        session_key,
-        stream_connection_id,
+        EncryptionMaterial {
+            chacha_key,
+            stream_connection_id,
+            aeskey: state.ekey.read(),
+            aesiv: state.eiv.read(),
+            session_key: conn.session_key.read(),
+        },
     )
     .await
     .inspect(|_| {
@@ -415,23 +446,19 @@ async fn setup_video<A, V: VideoDevice, K>(
         .inspect_err(|err| tracing::error!(%err, ?params, "stream couldn't be created"))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let session_key = if let Some(session_key) = conn.session_key.read()
-        && session_key.upgrade_channel
-    {
-        Some(session_key)
-    } else {
-        None
-    };
     VideoChannel::create(
-        conn.bind_addr().unwrap(),
-        conn.remote_addr().unwrap(),
+        conn.bind_addr(),
+        conn.remote_addr.ip(),
         shared_data.clone(),
         stream,
         state.config.video.buf_size,
-        state.ekey.read(),
-        state.eiv.read(),
-        session_key,
-        stream_connection_id,
+        EncryptionMaterial {
+            chacha_key: None,
+            aeskey: state.ekey.read(),
+            aesiv: state.eiv.read(),
+            session_key: conn.session_key.read(),
+            stream_connection_id: Some(stream_connection_id),
+        },
     )
     .await
     .inspect(|_| {
