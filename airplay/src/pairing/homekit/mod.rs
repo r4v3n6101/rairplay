@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
 use axum::{Extension, Router, routing::post};
-pub use transport::codec::{HAPDecoder, HAPEncoder};
 use yoke::{Yoke, erased::ErasedArcCart};
 
 use super::SharedSessionKey;
 use crate::config::{Keychain, PinCode};
 
+pub mod codec;
+
 mod dto;
 mod extractor;
 mod handlers;
 mod state;
-mod transport;
 
 pub fn router<K>(
     keychain: Yoke<&'static K, ErasedArcCart>,

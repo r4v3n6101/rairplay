@@ -5,7 +5,7 @@ use tokio_util::codec::{Decoder, Encoder};
 
 use super::{
     SharedSessionKey,
-    homekit::{HAPDecoder, HAPEncoder},
+    homekit::codec::{HAPDecoder, HAPEncoder},
 };
 
 pub struct UpgradeableCodec<E, D> {
