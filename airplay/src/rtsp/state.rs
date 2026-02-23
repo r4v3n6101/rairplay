@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex, Weak, atomic::AtomicU64};
 
-use bytes::Bytes;
 use seqlock::SeqLock;
 use tokio::sync::Mutex as AsyncMutex;
 use weak_table::WeakValueHashMap;
@@ -12,9 +11,11 @@ use crate::{
     streaming::{EventChannel, SharedData},
 };
 
+pub type FairplayMsg = [u8; 164];
+
 pub struct ServiceState<ADev, VDev, KC> {
     pub last_stream_id: AtomicU64,
-    pub fp_last_msg: Mutex<Bytes>,
+    pub fp_last_msg: SeqLock<Option<FairplayMsg>>,
     pub ekey: SeqLock<Option<AesKey128>>,
     pub eiv: SeqLock<Option<AesIv128>>,
     pub event_channel: AsyncMutex<Option<EventChannel>>,
@@ -27,7 +28,7 @@ impl<A, V, K> ServiceState<A, V, K> {
     pub fn new(config: Arc<Config<A, V, K>>) -> Self {
         Self {
             last_stream_id: AtomicU64::default(),
-            fp_last_msg: Mutex::default(),
+            fp_last_msg: SeqLock::default(),
             ekey: SeqLock::default(),
             eiv: SeqLock::default(),
             event_channel: AsyncMutex::default(),

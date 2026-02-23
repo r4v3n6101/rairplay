@@ -27,9 +27,7 @@ pub enum Encryption {
 
 #[tracing::instrument(level = "DEBUG")]
 pub async fn event_processor(listener: TcpListener) {
-    const BUF_SIZE: usize = 16 * 1024;
-
-    let mut buf = [0; BUF_SIZE];
+    let mut buf = [0; 16 * 1024];
     while let Ok((mut stream, remote_addr)) = listener.accept().await {
         while let Ok(len @ 1..) = stream.read(&mut buf).await {
             tracing::trace!(%len, %remote_addr, "event data");
@@ -66,11 +64,11 @@ pub async fn audio_buffered_processor(
 
             if cipher.decrypt(&mut rtp).is_ok() {
                 tracing::trace!("packet decrypted");
-
-                stream.on_data(AudioPacket { rtp });
             } else {
                 tracing::warn!("packet decryption failed");
             }
+
+            stream.on_data(AudioPacket { rtp });
             tokio::task::consume_budget().await;
 
             Ok(())

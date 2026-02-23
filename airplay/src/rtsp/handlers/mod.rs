@@ -72,11 +72,12 @@ pub async fn fp_setup<A, V, K>(
 ) -> Result<Vec<u8>, StatusCode> {
     fairplay::decode_buf(&body)
         .inspect(|_| {
-            // Magic number somehow. Hate em.
-            if body.len() == 164 {
-                *state.fp_last_msg.lock().unwrap() = body;
-                tracing::trace!("fairplay3 last message is saved");
-            }
+            let Ok(msg) = <[u8; _]>::try_from(&body[..]) else {
+                return;
+            };
+
+            state.fp_last_msg.lock_write().replace(msg);
+            tracing::trace!("fairplay3 last message is saved");
         })
         .inspect_err(|err| tracing::error!(%err, "failed to decode fairplay"))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
@@ -167,28 +168,28 @@ async fn setup_info<A, V, K>(
     {
         tracing::trace!(?ekey, ?eiv, "ekev & eiv detected");
 
+        let Some(session_key) = conn.session_key.read() else {
+            tracing::error!("must be paired and have session_key");
+            return Err(StatusCode::BAD_REQUEST);
+        };
         let Ok(eiv) = AesIv128::try_from(eiv.as_ref()) else {
             tracing::error!(len=%eiv.len(), "invalid length of passed iv");
             return Err(StatusCode::BAD_REQUEST);
         };
+        let Some(fp_last_msg) = state.fp_last_msg.read() else {
+            tracing::error!("fairplay3 handshake must be present");
+            return Err(StatusCode::BAD_REQUEST);
+        };
 
-        let fp_last_msg = state.fp_last_msg.lock().unwrap();
-        let mut aes_key = fairplay::decrypt_key(fp_last_msg.as_ref(), &ekey);
+        let aes_key = fairplay::decrypt_key(fp_last_msg, &ekey);
+        tracing::trace!(?aes_key, ?fp_last_msg, "aes key decrypted with fairplay");
+
+        let aes_key = sha512_two_step(&aes_key, &session_key.key_material);
         tracing::trace!(
-            ?ekey,
             ?aes_key,
-            ?fp_last_msg,
-            "aes key decrypted with fairplay"
+            ?session_key,
+            "additional hashing with pairing's shared secret"
         );
-
-        if let Some(session_key) = conn.session_key.read() {
-            aes_key = sha512_two_step(&aes_key, &session_key.key_material);
-            tracing::trace!(
-                ?aes_key,
-                ?session_key,
-                "additional hashing with pairing's shared secret"
-            );
-        }
 
         state.ekey.lock_write().replace(aes_key);
         state.eiv.lock_write().replace(eiv);
