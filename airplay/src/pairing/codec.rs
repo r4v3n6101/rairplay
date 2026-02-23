@@ -41,10 +41,12 @@ where
         if let Some(hap_decoder) = &mut self.hap_decoder {
             loop {
                 // Try decode gathered data
-                if !self.decode_buf.is_empty()
-                    && let Some(item) = self.inner_decoder.decode(&mut self.decode_buf)?
-                {
-                    return Ok(Some(item));
+                if !self.decode_buf.is_empty() {
+                    tracing::trace!(item=?self.decode_buf, len=%self.decode_buf.len(), "trying to decode gathered buf");
+                    if let Some(item) = self.inner_decoder.decode(&mut self.decode_buf)? {
+                        tracing::trace!("gathered buf decoded");
+                        return Ok(Some(item));
+                    }
                 }
 
                 match hap_decoder.decode(src) {

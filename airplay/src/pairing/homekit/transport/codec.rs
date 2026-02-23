@@ -45,20 +45,27 @@ impl Decoder for HAPDecoder {
             return Ok(None);
         }
 
-        let len = src.get_u16_le();
+        let len = {
+            let mut buf = [0u8; PKT_SIZE_LEN];
+            buf.copy_from_slice(&src[..PKT_SIZE_LEN]);
+
+            u16::from_le_bytes(buf)
+        };
+
         if len > PAYLOAD_SIZE as _ {
             return Err(io::Error::new(
                 io::ErrorKind::OutOfMemory,
-                format!("packet payload must not exceed {PAYLOAD_SIZE} bytes"),
+                format!("block too large: {len}/{PAYLOAD_SIZE}"),
             ));
         }
 
-        let need = TAG_LEN + usize::from(len);
+        let need = PKT_SIZE_LEN + usize::from(len) + TAG_LEN;
         if src.len() < need {
-            src.reserve(need);
+            src.reserve(need - src.len());
             return Ok(None);
         }
 
+        src.advance(PKT_SIZE_LEN);
         let mut payload = src.split_to(len.into());
         let aad = len.to_le_bytes();
         let tag = {
@@ -81,6 +88,7 @@ impl Decoder for HAPDecoder {
                 &Tag::from(tag),
             )
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "income decryption failed"))?;
+        tracing::trace!(count=%self.count, ?len, "block decoded");
 
         self.count += 1;
 
@@ -144,6 +152,9 @@ impl<T: AsRef<[u8]>> Encoder<T> for HAPEncoder {
             dst.put_slice(&aad);
             dst.put_slice(data);
             dst.put_slice(&tag);
+
+            let full_len = PKT_SIZE_LEN + len + TAG_LEN;
+            tracing::trace!(count=%self.count, len=%full_len, "block encoded");
 
             self.count += 1;
         }
