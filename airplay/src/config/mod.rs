@@ -38,7 +38,7 @@ pub enum Pairing {
 #[derive(Derivative)]
 #[derivative(Debug, Default)]
 pub struct Audio<Device> {
-    #[derivative(Default(value = "4 * 1024 * 1024"))]
+    #[derivative(Default(value = "1024 * 1024"))]
     pub buf_size: u32,
     pub device: Device,
 }
@@ -52,7 +52,7 @@ pub struct Video<Device> {
     pub height: u32,
     #[derivative(Default(value = "30"))]
     pub fps: u32,
-    #[derivative(Default(value = "4 * 1024 * 1024"))]
+    #[derivative(Default(value = "1024 * 1024"))]
     pub buf_size: u32,
     pub device: Device,
 }

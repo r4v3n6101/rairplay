@@ -2,14 +2,12 @@ use bytes::BytesMut;
 
 pub struct BytesHunk {
     buf: BytesMut,
-    size: usize,
 }
 
 impl BytesHunk {
     pub fn new(size: usize) -> Self {
         Self {
-            buf: BytesMut::zeroed(size),
-            size,
+            buf: BytesMut::with_capacity(size),
         }
     }
 
@@ -18,10 +16,7 @@ impl BytesHunk {
             return BytesMut::new();
         }
 
-        if self.buf.len() < requested_len {
-            self.buf = BytesMut::zeroed(self.size.max(requested_len));
-        }
-
+        self.buf.resize(requested_len, 0);
         self.buf.split_to(requested_len)
     }
 }
