@@ -15,10 +15,10 @@ use crate::{
         audio::{AudioPacket, AudioStream},
         video::{PacketKind, VideoPacket, VideoStream},
     },
-    util::memory,
 };
 
 mod crypto;
+mod memory;
 
 #[derive(Debug)]
 pub enum Encryption {

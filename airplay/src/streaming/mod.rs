@@ -11,17 +11,17 @@ use crate::{
     crypto::{AesIv128, AesKey128, ChaCha20Poly1305Key},
     pairing::SessionKey,
     playback::{ChannelHandle, audio::AudioStream, video::VideoStream},
-    util::sync::WakerFlag,
 };
 
 mod processing;
+mod sync;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct EventChannel {
     local_addr: SocketAddr,
     #[derivative(Debug = "ignore")]
-    waker_flag: Arc<WakerFlag>,
+    waker_flag: Arc<sync::WakerFlag>,
 }
 
 #[derive(Debug)]
@@ -43,7 +43,7 @@ pub struct VideoChannel {
 
 #[derive(Default)]
 pub struct SharedData {
-    pub waker_flag: WakerFlag,
+    pub waker_flag: sync::WakerFlag,
 }
 
 #[derive(Debug)]
@@ -62,7 +62,7 @@ impl EventChannel {
         let local_addr = listener.local_addr()?;
         tracing::info!(%local_addr, "created new listener");
 
-        let waker_flag = Arc::new(WakerFlag::default());
+        let waker_flag = Arc::new(sync::WakerFlag::default());
         let wf = Arc::clone(&waker_flag);
         tokio::spawn(async move {
             tokio::select! {
