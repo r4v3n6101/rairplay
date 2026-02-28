@@ -4,8 +4,8 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/master";
     flake-utils.url = "github:numtide/flake-utils";
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
+    naersk = {
+      url = "github:nix-community/naersk";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     shairplay = {
@@ -19,15 +19,14 @@
       self,
       nixpkgs,
       flake-utils,
-      rust-overlay,
+      naersk,
       shairplay,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        overlays = [ rust-overlay.overlays.default ];
-        pkgs = import nixpkgs { inherit system overlays; };
-        rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+        pkgs = import nixpkgs { inherit system; };
+        naersk' = pkgs.callPackage naersk { };
         gstreamer-libs = with pkgs; [
           gst_all_1.gstreamer
           gst_all_1.gst-plugins-base
@@ -40,43 +39,31 @@
       in
       {
         formatter = pkgs.nixpkgs-fmt;
-        packages.default =
-          let
-            manifest = (pkgs.lib.importTOML ./examples/trancode2file/Cargo.toml).package;
-            rustPlatform = pkgs.makeRustPlatform {
-              cargo = rustToolchain;
-              rustc = rustToolchain;
-            };
-          in
-          rustPlatform.buildRustPackage {
-            pname = manifest.name;
-            version = manifest.version;
-            src = pkgs.lib.cleanSource ./.;
-            cargoLock = {
-              lockFile = ./Cargo.lock;
-              allowBuiltinFetchGit = true;
-            };
 
-            nativeBuildInputs = with pkgs; [
-              libiconv
-              pkg-config
-            ];
+        packages.default = naersk'.buildPackage {
+          name = "rairplay-transcode2file";
+          version = "0.1.0";
+          src = ./.;
 
-            buildInputs = gstreamer-libs;
+          nativeBuildInputs = with pkgs; [
+            libiconv
+            pkg-config
+          ];
 
-            FAIRPLAY3_SRC = "${shairplay}/src/lib/playfair";
-          };
+          buildInputs = gstreamer-libs;
+
+          FAIRPLAY3_SRC = "${shairplay}/src/lib/playfair";
+        };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = [
-            (rustToolchain.override {
-              extensions = [
-                "rustfmt"
-                "rust-src"
-                "rust-analyzer"
-              ];
-            })
+          buildInputs = with pkgs; [
+            cargo
+            rustc
+            rustfmt
+            rust-analyzer
+            rustPackages.clippy
           ];
+          RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
 
           nativeBuildInputs = [ pkgs.pkg-config ] ++ gstreamer-libs;
 
