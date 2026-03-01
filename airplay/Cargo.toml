@@ -36,6 +36,7 @@ tower-http = { version = "0.6.2", features = ["propagate-header"] }
 tokio = { version = "1.44", features = ["rt", "net", "io-util"] }
 tokio-util = { version = "0.7", features = ["codec", "io"] }
 tokio_dual_stack = "0.2.0"
+socket2 = { version = "0.5", features = ["all"] }
 axum = { version = "0.8.1", default-features = false, features = ["tokio", "http1", "http2"] }
 futures = { version = "0.3.31", default-features = false, features = ["std"] }
 yoke = "0.8.1"
