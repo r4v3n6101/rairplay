@@ -23,5 +23,6 @@ pub enum PacketKind {
     AvcC,
     HvcC,
     Payload,
+    Plist,
     Other(u16),
 }

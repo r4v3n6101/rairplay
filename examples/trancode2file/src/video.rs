@@ -34,7 +34,10 @@ pub fn transcode(
                         .appsrc
                         .push_buffer(Buffer::from_slice(payload))
                         .inspect_err(|err| tracing::warn!(%err, "packet push failed"));
-                }
+                },
+                PacketKind::Plist => {
+                    tracing::debug!("plist packet received");
+                },
                 PacketKind::Other(kind) => {
                     tracing::debug!(%kind, "unknown packet type");
                 }

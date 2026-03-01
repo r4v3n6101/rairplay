@@ -201,6 +201,7 @@ pub async fn video_processor(
                     }
                 },
                 0 | 4096 => PacketKind::Payload,
+                5 => PacketKind::Plist,
                 other => PacketKind::Other(other),
             };
             let unknown_field = ptr.get_u16_le();
