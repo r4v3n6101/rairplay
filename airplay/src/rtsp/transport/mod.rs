@@ -4,7 +4,7 @@ use std::{
 };
 
 use axum::serve::Listener;
-use tokio::{io::Result, net::TcpStream};
+use tokio::{io::Result, net::{TcpSocket, TcpStream}};
 use tokio_dual_stack::{DualStackTcpListener, Tcp as _};
 use tokio_util::{
     codec::{Decoder, Framed},
@@ -42,11 +42,27 @@ impl Connection {
 
 impl TcpListenerWithRtspRemap {
     pub async fn bind(addr4: SocketAddrV4, addr6: SocketAddrV6) -> io::Result<Self> {
+        // Create IPv6 socket with IPV6_V6ONLY=true so it doesn't claim the
+        // IPv4 address space. Linux/Android default IPV6_V6ONLY=0 causes the
+        // subsequent IPv4 bind to fail with EADDRINUSE when both sockets bind
+        // to the same port.
+        let ip6_raw = socket2::Socket::new(
+            socket2::Domain::IPV6,
+            socket2::Type::STREAM,
+            Some(socket2::Protocol::TCP),
+        )?;
+        ip6_raw.set_only_v6(true)?;
+        ip6_raw.set_reuse_address(true)?;
+        ip6_raw.set_nonblocking(true)?;
+        ip6_raw.bind(&SocketAddr::V6(addr6).into())?;
+        let ip6 = TcpSocket::from_std_stream(std::net::TcpStream::from(ip6_raw));
+
+        let ip4 = TcpSocket::new_v4()?;
+        ip4.set_reuseaddr(true)?;
+        ip4.bind(SocketAddr::V4(addr4))?;
+
         Ok(Self {
-            listener: DualStackTcpListener::bind(
-                [SocketAddr::V4(addr4), SocketAddr::V6(addr6)].as_slice(),
-            )
-            .await?,
+            listener: DualStackTcpListener::from_sockets((ip6, 1024), (ip4, 1024))?,
             bind_addr4: addr4,
             bind_addr6: addr6,
         })
