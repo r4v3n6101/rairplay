@@ -16,12 +16,12 @@ pub fn transcode(
     loop {
         if let Ok(VideoPacket { kind, payload, .. }) = rx.recv() {
             match kind {
-                PacketKind::AvcC => match create_stream(payload, id) {
+                PacketKind::AvcC | PacketKind::HvcC => match create_stream(payload, id) {
                     Ok(res) => {
                         ctx = Some(res);
                     }
                     Err(err) => {
-                        tracing::error!(%err, "couldn't initialize context with avcc header");
+                        tracing::error!(%err, "couldn't initialize context with codec config header");
                     }
                 },
                 PacketKind::Payload => {
