@@ -190,9 +190,18 @@ pub async fn video_processor(
 
             let mut ptr = &header[..];
             let payload_len = ptr.get_u32_le();
+            let mut payload = video_buf.allocate_buf(payload_len as usize);
+            tcp_stream.read_exact(&mut payload).await?;
             let kind = match ptr.get_u16_le() {
-                1 => PacketKind::AvcC,
+                1 => {
+                    if payload.len() >= 8 && &payload[4..8] == b"hvc1" {
+                        PacketKind::HvcC
+                    } else {
+                        PacketKind::AvcC
+                    }
+                },
                 0 | 4096 => PacketKind::Payload,
+                5 => PacketKind::Plist,
                 other => PacketKind::Other(other),
             };
             let unknown_field = ptr.get_u16_le();

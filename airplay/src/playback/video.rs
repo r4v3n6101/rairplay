@@ -21,6 +21,8 @@ pub struct VideoPacket {
 #[derive(Debug, Clone, Copy)]
 pub enum PacketKind {
     AvcC,
+    HvcC,
     Payload,
+    Plist,
     Other(u16),
 }
