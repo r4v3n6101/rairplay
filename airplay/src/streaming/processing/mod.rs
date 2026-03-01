@@ -210,9 +210,8 @@ pub async fn video_processor(
             let mut pkt = VideoPacket {
                 kind,
                 timestamp,
-                payload: video_buf.allocate_buf(payload_len as usize),
+                payload,
             };
-            tcp_stream.read_exact(&mut pkt.payload).await?;
             tracing::trace!(?kind, %timestamp, unknown=%unknown_field, %payload_len, "packet read");
 
             // Only payload need to be decrypted
