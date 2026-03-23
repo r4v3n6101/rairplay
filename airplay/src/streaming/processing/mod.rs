@@ -199,7 +199,7 @@ pub async fn video_processor(
                     } else {
                         PacketKind::AvcC
                     }
-                },
+                }
                 0 | 4096 => PacketKind::Payload,
                 5 => PacketKind::Plist,
                 other => PacketKind::Other(other),

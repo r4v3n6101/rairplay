@@ -41,14 +41,14 @@ async fn main() {
 
     discovery::mdns_broadcast(config.as_ref());
 
+    let ap_svc = airplay::ServiceWithPairing::new(config);
     axum::serve(
-        airplay::rtsp::Listener::bind(
+        airplay::transport::DualStackListenerWithRtspRemap::bind(
             SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 5200),
             SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 5200, 0, 0),
         )
-        .await
         .unwrap(),
-        airplay::rtsp::service_factory(config),
+        ap_svc,
     )
     .await
     .unwrap();

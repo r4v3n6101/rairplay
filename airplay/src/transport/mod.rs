@@ -4,7 +4,10 @@ use std::{
 };
 
 use axum::serve::Listener;
-use tokio::{io::Result, net::{TcpSocket, TcpStream}};
+use tokio::{
+    io::Result,
+    net::{TcpSocket, TcpStream},
+};
 use tokio_dual_stack::{DualStackTcpListener, Tcp as _};
 use tokio_util::{
     codec::{Decoder, Framed},
@@ -15,7 +18,7 @@ use crate::pairing::{SharedSessionKey, codec::UpgradeableCodec};
 
 mod codec;
 
-pub struct TcpListenerWithRtspRemap {
+pub struct DualStackListenerWithRtspRemap {
     listener: DualStackTcpListener,
     bind_addr4: SocketAddrV4,
     bind_addr6: SocketAddrV6,
@@ -40,8 +43,8 @@ impl Connection {
     }
 }
 
-impl TcpListenerWithRtspRemap {
-    pub async fn bind(addr4: SocketAddrV4, addr6: SocketAddrV6) -> io::Result<Self> {
+impl DualStackListenerWithRtspRemap {
+    pub fn bind(addr4: SocketAddrV4, addr6: SocketAddrV6) -> io::Result<Self> {
         // Create IPv6 socket with IPV6_V6ONLY=true so it doesn't claim the
         // IPv4 address space. Linux/Android default IPV6_V6ONLY=0 causes the
         // subsequent IPv4 bind to fail with EADDRINUSE when both sockets bind
@@ -69,7 +72,7 @@ impl TcpListenerWithRtspRemap {
     }
 }
 
-impl Listener for TcpListenerWithRtspRemap {
+impl Listener for DualStackListenerWithRtspRemap {
     // TODO : TAIT upon it
     // type Io = impl AsyncRead + AsyncWrite;
     type Io = SinkWriter<

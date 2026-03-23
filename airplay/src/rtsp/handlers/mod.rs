@@ -15,7 +15,6 @@ use super::{
     },
     extractor::BinaryPlist,
     state::ServiceState,
-    transport::Connection,
 };
 use crate::{
     crypto::{AesIv128, ChaCha20Poly1305Key, sha512_two_step},
@@ -28,6 +27,7 @@ use crate::{
         AudioBufferedChannel, AudioRealtimeChannel, EncryptionMaterial, EventChannel, SharedData,
         VideoChannel,
     },
+    transport::Connection,
 };
 
 mod fairplay;

@@ -28,7 +28,7 @@ pub struct Config<ADev, VDev, KC> {
     pub video: Video<VDev>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Copy, Clone)]
 pub enum Pairing {
     #[default]
     Legacy,
