@@ -4,8 +4,8 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/master";
     flake-utils.url = "github:numtide/flake-utils";
-    naersk = {
-      url = "github:nix-community/naersk";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     shairplay = {
@@ -19,14 +19,18 @@
       self,
       nixpkgs,
       flake-utils,
-      naersk,
+      rust-overlay,
       shairplay,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs { inherit system; };
-        naersk' = pkgs.callPackage naersk { };
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ rust-overlay.overlays.default ];
+        };
+
+        rust-toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain;
         gstreamer-libs = with pkgs; [
           gst_all_1.gstreamer
           gst_all_1.gst-plugins-base
@@ -40,31 +44,8 @@
       {
         formatter = pkgs.nixpkgs-fmt;
 
-        packages.default = naersk'.buildPackage {
-          name = "rairplay-transcode2file";
-          version = "0.1.0";
-          src = ./.;
-
-          nativeBuildInputs = with pkgs; [
-            libiconv
-            pkg-config
-          ];
-
-          buildInputs = gstreamer-libs;
-
-          FAIRPLAY3_SRC = "${shairplay}/src/lib/playfair";
-        };
-
         devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            cargo
-            rustc
-            rustfmt
-            rust-analyzer
-            rustPackages.clippy
-          ];
-          RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
-
+          buildInputs = [ rust-toolchain ];
           nativeBuildInputs = [ pkgs.pkg-config ] ++ gstreamer-libs;
 
           RUST_BACKTRACE = "full";

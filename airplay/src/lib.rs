@@ -18,11 +18,11 @@ pub(crate) mod pairing;
 pub(crate) mod rtsp;
 pub(crate) mod streaming;
 
-pub struct ServiceWithPairing<A, V, K> {
+pub struct ServiceFactory<A, V, K> {
     inner: rtsp::ServiceFactory<A, V, K>,
 }
 
-impl<A, V, K> ServiceWithPairing<A, V, K>
+impl<A, V, K> ServiceFactory<A, V, K>
 where
     K: config::Keychain,
     A: playback::audio::AudioDevice,
@@ -37,7 +37,7 @@ where
 }
 
 impl<A, V, K> Service<IncomingStream<'_, transport::DualStackListenerWithRtspRemap>>
-    for ServiceWithPairing<A, V, K>
+    for ServiceFactory<A, V, K>
 where
     A: playback::audio::AudioDevice,
     V: playback::video::VideoDevice,
