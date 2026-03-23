@@ -2,6 +2,7 @@ use std::fmt;
 
 use thiserror::Error;
 
+/// Errors returned when building a [`PinCode`].
 #[derive(Debug, Error)]
 pub enum PinError {
     #[error("sequence of digits not allowed")]
@@ -11,8 +12,11 @@ pub enum PinError {
 }
 
 // 8x u8 for easy alignments, don't really wanna do u32 math
+/// Receiver PIN used by pairing flows.
+///
+/// The display format is `XXX-XX-XXX`.
 #[derive(Debug, Copy, Clone)]
-pub struct PinCode(pub [u8; 8]);
+pub struct PinCode([u8; 8]);
 
 impl fmt::Display for PinCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

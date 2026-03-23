@@ -1,3 +1,5 @@
+//! Transport types used by the receiver service.
+
 use std::{
     io,
     net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6},
@@ -18,23 +20,33 @@ use crate::pairing::{SharedSessionKey, codec::UpgradeableCodec};
 
 mod codec;
 
+/// Dual-stack listener used by the receiver service.
+///
+/// This accepts IPv4 and IPv6 TCP connections on the same port and wraps them
+/// in the codec stack expected by the RTSP service.
 pub struct DualStackListenerWithRtspRemap {
     listener: DualStackTcpListener,
     bind_addr4: SocketAddrV4,
     bind_addr6: SocketAddrV6,
 }
 
+/// Metadata attached to an accepted connection.
 #[derive(Debug, Clone)]
 pub struct Connection {
+    /// Listener IPv4 bind address.
     pub bind_addr4: SocketAddrV4,
+    /// Listener IPv6 bind address.
     pub bind_addr6: SocketAddrV6,
+    /// Socket address accepted on this machine.
     pub local_addr: SocketAddr,
+    /// Remote peer socket address.
     pub remote_addr: SocketAddr,
+    /// Shared session key storage used during pairing and upgrades.
     pub session_key: SharedSessionKey,
 }
 
 impl Connection {
-    /// Returns an IP address of the same family as the given remote address
+    /// Returns the local bind IP matching the peer's address family.
     pub fn bind_addr(&self) -> IpAddr {
         match self.remote_addr {
             SocketAddr::V4(_) => IpAddr::V4(*self.bind_addr4.ip()),
@@ -44,6 +56,11 @@ impl Connection {
 }
 
 impl DualStackListenerWithRtspRemap {
+    /// Binds IPv4 and IPv6 listeners that share the same port.
+    ///
+    /// The IPv6 socket is opened with `IPV6_V6ONLY` enabled so it does not
+    /// consume the IPv4 address space on platforms where dual-stack sockets do
+    /// that by default.
     pub fn bind(addr4: SocketAddrV4, addr6: SocketAddrV6) -> io::Result<Self> {
         // Create IPv6 socket with IPV6_V6ONLY=true so it doesn't claim the
         // IPv4 address space. Linux/Android default IPV6_V6ONLY=0 causes the

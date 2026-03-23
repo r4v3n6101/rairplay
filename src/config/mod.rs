@@ -1,63 +1,106 @@
+//! Receiver configuration types.
+
 use bitflags::bitflags;
 use derivative::Derivative;
+/// Key storage and trust management used by pairing.
 pub use keychain::{Keychain, default::DefaultKeychain};
+/// Receiver MAC address type.
 pub use macaddr::MacAddr6;
+/// Pairing PIN types.
 pub use pin::{PinCode, PinError};
 
 mod keychain;
 mod pin;
 
+/// Top-level receiver configuration.
+///
+/// This binds together the receiver identity advertised to clients, the
+/// pairing mode, supported AirPlay features, and the concrete audio/video
+/// backends that will receive decrypted stream data.
 #[derive(Debug, Derivative)]
 #[derivative(Default)]
 pub struct Config<ADev, VDev, KC> {
+    /// MAC address advertised by the receiver.
     pub mac_addr: MacAddr6,
+    /// Feature bits reported during capability discovery.
     pub features: Features,
+    /// Manufacturer string exposed to clients.
     #[derivative(Default(value = "env!(\"CARGO_PKG_AUTHORS\").to_string()"))]
     pub manufacturer: String,
+    /// Model string exposed to clients.
     #[derivative(Default(value = "env!(\"CARGO_PKG_NAME\").to_string()"))]
     pub model: String,
+    /// Friendly display name shown by clients.
     #[derivative(Default(value = "env!(\"CARGO_PKG_NAME\").to_string()"))]
     pub name: String,
+    /// Firmware version string exposed to clients.
     #[derivative(Default(value = "env!(\"CARGO_PKG_VERSION\").to_string()"))]
     pub fw_version: String,
 
+    /// Optional PIN required by pairing flows that use one.
     pub pin: Option<PinCode>,
+    /// Receiver identity and trusted peer storage.
     pub keychain: KC,
+    /// Pairing protocol exposed by the receiver.
     pub pairing: Pairing,
+    /// Audio backend configuration.
     pub audio: Audio<ADev>,
+    /// Video backend configuration.
     pub video: Video<VDev>,
 }
 
+/// Pairing protocol used by the receiver.
 #[derive(Debug, Default, Copy, Clone)]
 pub enum Pairing {
+    /// Legacy AirPlay pairing.
     #[default]
     Legacy,
+    /// HomeKit-based pairing.
     HomeKit,
 }
 
+/// Audio-specific configuration.
+///
+/// The device creates per-session audio sinks, while `buf_size` controls how
+/// much stream data can be buffered internally for a single audio session.
 #[derive(Derivative)]
 #[derivative(Debug, Default)]
 pub struct Audio<Device> {
+    /// Maximum buffered audio payload per stream, in bytes.
     #[derivative(Default(value = "1024 * 1024"))]
     pub buf_size: u32,
+    /// Audio device factory used for new streams.
     pub device: Device,
 }
 
+/// Video-specific configuration.
+///
+/// The advertised dimensions and frame rate affect how the receiver describes
+/// itself to clients. `buf_size` controls the internal per-stream buffer.
 #[derive(Derivative)]
 #[derivative(Debug, Default)]
 pub struct Video<Device> {
+    /// Advertised output width.
     #[derivative(Default(value = "1920"))]
     pub width: u32,
+    /// Advertised output height.
     #[derivative(Default(value = "1080"))]
     pub height: u32,
+    /// Advertised frame rate.
     #[derivative(Default(value = "30"))]
     pub fps: u32,
+    /// Maximum buffered video payload per stream, in bytes.
     #[derivative(Default(value = "1024 * 1024"))]
     pub buf_size: u32,
+    /// Video device factory used for new streams.
     pub device: Device,
 }
 
 bitflags! {
+    /// AirPlay capability bits advertised by the receiver.
+    ///
+    /// Clients may interpret combinations of these flags, so they should stay
+    /// aligned with the behavior actually implemented by the crate.
     #[repr(transparent)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Features: u64 {
@@ -126,8 +169,7 @@ bitflags! {
     }
 }
 
-/// Default features that supported by the current version of the crate.
-/// Modify it if you make any changes into the code.
+/// Default feature set implemented by the crate.
 impl Default for Features {
     fn default() -> Self {
         Self::Video

@@ -2,28 +2,41 @@ use bytes::BytesMut;
 
 use super::{Device, Stream};
 
+/// Playback backend for audio streams.
 pub trait AudioDevice: Device<Params = AudioParams, Stream: AudioStream> {
+    /// Returns the current volume in the receiver's native scale.
     fn get_volume(&self) -> f32;
+    /// Updates the current volume.
     fn set_volume(&self, value: f32);
 }
 
+/// Stream receiving decrypted audio packets.
 pub trait AudioStream: Stream<Content = AudioPacket> {}
 impl<T> AudioStream for T where T: Stream<Content = AudioPacket> {}
 
+/// Parameters provided when an audio stream is created.
 #[derive(Debug, Clone, Copy)]
 pub struct AudioParams {
+    /// Number of samples carried by each audio frame.
     pub samples_per_frame: u32,
+    /// Audio codec description selected by the client.
     pub codec: Codec,
 }
 
+/// Audio codec description.
 #[derive(Debug, Clone, Copy)]
 pub struct Codec {
+    /// Codec family.
     pub kind: CodecKind,
+    /// Bits per sample when applicable.
     pub bits_per_sample: u32,
+    /// Sample rate in Hz.
     pub sample_rate: u32,
+    /// Channel count.
     pub channels: u8,
 }
 
+/// Audio codec family.
 #[derive(Debug, Clone, Copy)]
 pub enum CodecKind {
     Pcm,
@@ -32,8 +45,10 @@ pub enum CodecKind {
     Alac,
 }
 
+/// Decrypted audio payload delivered to an [`AudioStream`].
 #[derive(Debug)]
 pub struct AudioPacket {
+    /// RTP packet bytes, including the RTP header.
     pub rtp: BytesMut,
 }
 
@@ -42,6 +57,7 @@ impl AudioPacket {
     pub const HEADER_LEN: usize = 12;
 }
 
+/// Audio formats indexed by AirPlay format bit position.
 pub static AUDIO_FORMATS: [Codec; 33] = [
     // 0    Dummy
     Codec {

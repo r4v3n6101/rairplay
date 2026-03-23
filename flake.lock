@@ -38,8 +38,7 @@
       "inputs": {
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs",
-        "rust-overlay": "rust-overlay",
-        "shairplay": "shairplay"
+        "rust-overlay": "rust-overlay"
       }
     },
     "rust-overlay": {
@@ -59,22 +58,6 @@
       "original": {
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "type": "github"
-      }
-    },
-    "shairplay": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1535103783,
-        "narHash": "sha256-SvMUW/oaMcR1n+fhiXd5cpC9U+Llf5gRxOumQ1Vqsws=",
-        "owner": "r4v3n6101",
-        "repo": "shairplay",
-        "rev": "096b61ad14c90169f438e690d096e3fcf87e504e",
-        "type": "github"
-      },
-      "original": {
-        "owner": "r4v3n6101",
-        "repo": "shairplay",
         "type": "github"
       }
     },
