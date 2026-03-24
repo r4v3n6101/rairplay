@@ -1,3 +1,5 @@
 .direnv/
 **/target
 **/.DS_Store
+*.wav
+*.mp4
