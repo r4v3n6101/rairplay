@@ -191,7 +191,7 @@ impl Default for Features {
 
             // A glitch whether /fp-setup is called, but the audio/video data is clear
             | Self::MFiSoft_FairPlay
-            | Self::HomeKitPairing
+            // | Self::HomeKitPairing
             // | Self::AudioUnencrypted
 
             // Seems like needed for a GET /info call
