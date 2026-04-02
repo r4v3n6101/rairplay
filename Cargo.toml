@@ -7,7 +7,7 @@ edition = "2024"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 mdns-sd = "0.11.5"
-airplay = { git = "https://github.com/r4v3n6101/rairplay", branch = "master" }
+rairplay = "1.0.0"
 
 http = "1.3"
 httparse = "1"

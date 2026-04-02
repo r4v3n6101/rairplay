@@ -6,7 +6,7 @@ use std::{
     thread,
 };
 
-use airplay::playback::{
+use rairplay::playback::{
     ChannelHandle, Device, Stream,
     audio::{AudioDevice, AudioPacket, AudioParams},
     video::{VideoDevice, VideoPacket, VideoParams},

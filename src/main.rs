@@ -3,6 +3,10 @@ use std::{
     sync::Arc,
 };
 
+use rairplay::{
+    config::{Audio, Config, DefaultKeychain, Features, Pairing, Video},
+    transport::DualStackListenerWithRtspRemap,
+};
 use tracing::level_filters::LevelFilter;
 
 mod audio;
@@ -19,31 +23,33 @@ async fn main() {
 
     gstreamer::init().expect("gstreamer initialization");
 
-    let config = Arc::new(
-        airplay::config::Config::<_, _, airplay::config::DefaultKeychain> {
-            name: "rairplay".to_string(),
-            video: airplay::config::Video {
-                device: playback::PipeDevice {
-                    callback: video::transcode,
-                },
-                ..Default::default()
+    let mut features = Features::default();
+    features.insert(Features::HomeKitPairing);
+
+    let config = Arc::new(Config::<_, _, DefaultKeychain> {
+        name: "rairplay".to_string(),
+        video: Video {
+            device: playback::PipeDevice {
+                callback: video::transcode,
             },
-            audio: airplay::config::Audio {
-                device: playback::PipeDevice {
-                    callback: audio::transcode,
-                },
-                ..Default::default()
-            },
-            pairing: airplay::config::Pairing::HomeKit,
             ..Default::default()
         },
-    );
+        audio: Audio {
+            device: playback::PipeDevice {
+                callback: audio::transcode,
+            },
+            ..Default::default()
+        },
+        pairing: Pairing::HomeKit,
+        features,
+        ..Default::default()
+    });
 
     discovery::mdns_broadcast(config.as_ref());
 
-    let ap_svc = airplay::ServiceFactory::new(config);
+    let ap_svc = rairplay::ServiceFactory::new(config);
     axum::serve(
-        airplay::transport::DualStackListenerWithRtspRemap::bind(
+        DualStackListenerWithRtspRemap::bind(
             SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 5200),
             SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 5200, 0, 0),
         )

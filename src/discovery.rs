@@ -1,5 +1,5 @@
-use airplay::config::Config;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
+use rairplay::config::Config;
 
 const SERVICE_TYPE: &str = "_airplay._tcp.local.";
 const PROTOCOL_VERSION: &str = "1.1";

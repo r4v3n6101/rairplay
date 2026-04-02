@@ -1,6 +1,5 @@
 use std::{error::Error, sync::mpsc};
 
-use airplay::playback::audio::{AudioPacket, AudioParams};
 use gstreamer::{
     Buffer, Caps, Element, ElementFactory, Format, MessageType, MessageView, Pipeline, State,
     event::Eos,
@@ -8,6 +7,7 @@ use gstreamer::{
     prelude::{ElementExt, ElementExtManual, GstBinExtManual, GstObjectExt},
 };
 use gstreamer_app::AppSrc;
+use rairplay::playback::audio::{AudioPacket, AudioParams};
 
 pub fn transcode(
     id: u64,
