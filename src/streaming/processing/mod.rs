@@ -195,7 +195,7 @@ pub async fn video_processor(
             let kind = match ptr.get_u16_le() {
                 1 => {
                     if payload.len() >= 8 && &payload[4..8] == b"hvc1" {
-                        PacketKind::HvcC
+                        PacketKind::Hvc1
                     } else {
                         PacketKind::AvcC
                     }
