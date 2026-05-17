@@ -31,7 +31,7 @@ pub enum PacketKind {
     /// AVC decoder configuration record.
     AvcC,
     /// HEVC decoder configuration record.
-    HvcC,
+    Hvc1,
     /// Regular encoded video payload.
     Payload,
     /// Auxiliary plist payload.
