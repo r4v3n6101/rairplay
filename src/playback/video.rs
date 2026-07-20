@@ -29,9 +29,9 @@ pub struct VideoPacket {
 #[derive(Debug, Clone, Copy)]
 pub enum PacketKind {
     /// AVC decoder configuration record.
-    AvcC,
+    AvcC(u16),
     /// HEVC decoder configuration record.
-    Hvc1,
+    Hvc1(u16),
     /// Regular encoded video payload.
     Payload,
     /// Auxiliary plist payload.
