@@ -7,7 +7,6 @@ authors.workspace = true
 readme.workspace = true
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
 keywords = ["airplay", "rtsp", "streaming", "homekit"]
 categories = ["multimedia::audio", "multimedia::video"]
 include = [
