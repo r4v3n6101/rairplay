@@ -3,7 +3,12 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/master";
-    flake-utils.url = "github:numtide/flake-utils";
+    flake-parts = {
+      url = "github:hercules-ci/flake-parts";
+      inputs.nixpkgs-lib.follows = "nixpkgs";
+    };
+
+    crane.url = "github:ipetkov/crane";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -11,27 +16,29 @@
   };
 
   outputs =
-    {
-      self,
-      nixpkgs,
-      flake-utils,
-      rust-overlay,
-    }:
-    flake-utils.lib.eachDefaultSystem (
-      system:
-      let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ rust-overlay.overlays.default ];
-        };
-      in
-      {
-        formatter = pkgs.nixpkgs-fmt;
+    inputs:
+    inputs.flake-parts.lib.mkFlake { inherit inputs; } {
+      systems = [
+        "aarch64-darwin"
+        "aarch64-linux"
+        "x86_64-linux"
+      ];
 
-        devShells.default = pkgs.mkShell {
-          buildInputs = [ (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain) ];
-          RUST_BACKTRACE = "full";
+      perSystem =
+        { system, ... }:
+        let
+          pkgs = import inputs.nixpkgs {
+            inherit system;
+            overlays = [ inputs.rust-overlay.overlays.default ];
+          };
+          craneLib = (inputs.crane.mkLib pkgs).overrideToolchain (
+            p: p.rust-bin.fromRustupToolchainFile ./rust-toolchain
+          );
+        in
+        {
+          devShells.default = craneLib.devShell {
+            RUST_BACKTRACE = "full";
+          };
         };
-      }
-    );
+    };
 }

@@ -17,21 +17,18 @@ It is a library crate, not a ready-to-run application. You bring the networking 
 
 ## Build Notes
 
-The crate compiles bundled FairPlay C sources at build time via `cc`.
+Add the library to a Cargo project with `cargo add rairplay`. The package includes the FairPlay C sources and headers. Building it requires Rust and a C compiler.
 
-Requirements:
-
-- A working Rust toolchain
-- A C toolchain available to Cargo build scripts
-- The `shairplay` sources present in `./shairplay`, or an explicit `FAIRPLAY3_SRC` path
-
-If you cloned the repository without submodules:
+From the workspace root, initialize the pinned submodule before building or packaging from a Git checkout.
 
 ```bash
-git submodule update --init --recursive
+git submodule update --init -- 3rdparty/shairplay
+cargo test --workspace
 ```
 
-To point the build at another copy of the FairPlay sources:
+`nix develop` opens a development shell with the Rust toolchain from `rust-toolchain` and a C compiler.
+
+To use an alternative copy of the FairPlay sources, set `FAIRPLAY3_SRC` to its directory.
 
 ```bash
 FAIRPLAY3_SRC=/path/to/shairplay/src/lib/playfair cargo build
@@ -50,7 +47,7 @@ Minimal skeleton:
 ```rust
 use std::{net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6}, sync::Arc};
 
-use airplay::{
+use rairplay::{
     ServiceFactory,
     config::{Config, DefaultKeychain},
     playback::{
@@ -65,11 +62,11 @@ use airplay::{
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Arc::new(Config {
         keychain: DefaultKeychain::default(),
-        audio: airplay::config::Audio {
+        audio: rairplay::config::Audio {
             device: NullDevice::<AudioParams, AudioPacket>::default(),
             ..Default::default()
         },
-        video: airplay::config::Video {
+        video: rairplay::config::Video {
             device: NullDevice::<VideoParams, VideoPacket>::default(),
             ..Default::default()
         },
@@ -109,13 +106,15 @@ The default key storage implementation is `config::DefaultKeychain`. It is usefu
 
 ## Repository Layout
 
+The library lives in `crates/rairplay/`. Paths below are relative to that directory.
+
 - `src/config`: receiver configuration, pairing mode, PINs, keychain abstraction
 - `src/playback`: audio/video device traits and a null backend
 - `src/transport`: listener and protocol transport glue
 - `src/rtsp`: RTSP request handling
 - `src/pairing`: legacy and HomeKit pairing flows
 - `src/streaming`: stream synchronization and packet processing
-- `shairplay`: vendored upstream FairPlay-related code used by the build
+- `3rdparty/shairplay/` contains individual links to the C sources and headers in the workspace's `3rdparty/shairplay/src/lib/playfair/` directory.
 
 ## Known Limits
 
