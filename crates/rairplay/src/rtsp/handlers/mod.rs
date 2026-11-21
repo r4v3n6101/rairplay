@@ -1,4 +1,7 @@
-use std::sync::{Arc, Weak, atomic::Ordering};
+use std::{
+    mem::DropGuard,
+    sync::{Arc, Weak, atomic::Ordering},
+};
 
 use axum::{
     extract::{ConnectInfo, State},
@@ -223,27 +226,55 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice, K>(
     conn: &Connection,
     requests: Vec<StreamRequest>,
 ) -> Result<BinaryPlist<SetupResponse>, StatusCode> {
+    let mut pending = DropGuard::new(
+        Vec::<Weak<SharedData>>::with_capacity(requests.len()),
+        |pending| {
+            pending
+                .iter()
+                .filter_map(Weak::upgrade)
+                .for_each(|chan| chan.close());
+        },
+    );
     let mut responses = Vec::with_capacity(requests.len());
     for stream in requests {
         let id = state.last_stream_id.fetch_add(1, Ordering::AcqRel);
-        match match stream {
+        let channel = Arc::new(SharedData::default());
+        pending.push(Arc::downgrade(&channel));
+
+        let result = match stream {
             StreamRequest::AudioBuffered(request) => {
-                setup_buffered_audio(state, conn, request, id).await
+                setup_buffered_audio(state, conn, request, id, Arc::clone(&channel)).await
             }
             StreamRequest::AudioRealtime(request) => {
-                setup_realtime_audio(state, conn, request, id).await
+                setup_realtime_audio(state, conn, request, id, Arc::clone(&channel)).await
             }
-            StreamRequest::Video(request) => setup_video(state, conn, request, id).await,
-        } {
-            Ok(response) => responses.push(response),
-            Err(err) => return Err(err),
+            StreamRequest::Video(request) => {
+                setup_video(state, conn, request, id, Arc::clone(&channel)).await
+            }
+        }?;
+
+        // Eagerly exit response
+        if channel.waker_flag.is_set() {
+            return Err(StatusCode::SERVICE_UNAVAILABLE);
         }
+
+        responses.push(result);
     }
+
+    if pending.iter().any(|channel| {
+        channel
+            .upgrade()
+            .is_none_or(|channel| channel.waker_flag.is_set())
+    }) {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    DropGuard::dismiss(pending);
 
     Ok(BinaryPlist(SetupResponse::Streams { responses }))
 }
 
-#[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
+#[tracing::instrument(level = "DEBUG", ret, err, skip(state, shared_data))]
 async fn setup_buffered_audio<A: AudioDevice, V, K>(
     state: &ServiceState<A, V, K>,
     conn: &Connection,
@@ -256,6 +287,7 @@ async fn setup_buffered_audio<A: AudioDevice, V, K>(
         ..
     }: AudioRequest,
     id: u64,
+    shared_data: Arc<SharedData>,
 ) -> Result<StreamResponse, StatusCode> {
     // This must work like that
     #[allow(clippy::cast_sign_loss)]
@@ -287,7 +319,10 @@ async fn setup_buffered_audio<A: AudioDevice, V, K>(
     };
     tracing::debug!(?codec, "codec parsed");
 
-    let shared_data = Arc::new(SharedData::default());
+    state.stream_channels.lock().unwrap().insert(
+        (id, StreamType::AudioBuffered as u32),
+        Arc::clone(&shared_data),
+    );
     let params = AudioParams {
         samples_per_frame,
         codec,
@@ -309,7 +344,7 @@ async fn setup_buffered_audio<A: AudioDevice, V, K>(
     AudioBufferedChannel::create(
         conn.bind_addr(),
         conn.remote_addr.ip(),
-        shared_data.clone(),
+        shared_data,
         stream,
         state.config.audio.buf_size,
         EncryptionMaterial {
@@ -321,13 +356,6 @@ async fn setup_buffered_audio<A: AudioDevice, V, K>(
         },
     )
     .await
-    .inspect(|_| {
-        state
-            .stream_channels
-            .lock()
-            .unwrap()
-            .insert((id, StreamType::AudioBuffered as u32), shared_data);
-    })
     .map(|chan| StreamResponse::AudioBuffered {
         id,
         local_data_port: chan.local_addr.port(),
@@ -336,7 +364,7 @@ async fn setup_buffered_audio<A: AudioDevice, V, K>(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-#[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
+#[tracing::instrument(level = "DEBUG", ret, err, skip(state, shared_data))]
 async fn setup_realtime_audio<A: AudioDevice, V, K>(
     state: &ServiceState<A, V, K>,
     conn: &Connection,
@@ -349,6 +377,7 @@ async fn setup_realtime_audio<A: AudioDevice, V, K>(
         ..
     }: AudioRequest,
     id: u64,
+    shared_data: Arc<SharedData>,
 ) -> Result<StreamResponse, StatusCode> {
     // This must work like that
     #[allow(clippy::cast_sign_loss)]
@@ -380,7 +409,10 @@ async fn setup_realtime_audio<A: AudioDevice, V, K>(
     };
     tracing::debug!(?codec, "codec parsed");
 
-    let shared_data = Arc::new(SharedData::default());
+    state.stream_channels.lock().unwrap().insert(
+        (id, StreamType::AudioRealtime as u32),
+        Arc::clone(&shared_data),
+    );
     let params = AudioParams {
         samples_per_frame,
         codec,
@@ -402,7 +434,7 @@ async fn setup_realtime_audio<A: AudioDevice, V, K>(
     AudioRealtimeChannel::create(
         conn.bind_addr(),
         conn.remote_addr.ip(),
-        shared_data.clone(),
+        shared_data,
         stream,
         state.config.audio.buf_size,
         EncryptionMaterial {
@@ -414,13 +446,6 @@ async fn setup_realtime_audio<A: AudioDevice, V, K>(
         },
     )
     .await
-    .inspect(|_| {
-        state
-            .stream_channels
-            .lock()
-            .unwrap()
-            .insert((id, StreamType::AudioRealtime as u32), shared_data);
-    })
     .map(|chan| StreamResponse::AudioRealtime {
         id,
         local_data_port: chan.local_data_addr.port(),
@@ -429,7 +454,7 @@ async fn setup_realtime_audio<A: AudioDevice, V, K>(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-#[tracing::instrument(level = "DEBUG", ret, err, skip(state))]
+#[tracing::instrument(level = "DEBUG", ret, err, skip(state, shared_data))]
 async fn setup_video<A, V: VideoDevice, K>(
     state: &ServiceState<A, V, K>,
     conn: &Connection,
@@ -438,12 +463,17 @@ async fn setup_video<A, V: VideoDevice, K>(
         ..
     }: VideoRequest,
     id: u64,
+    shared_data: Arc<SharedData>,
 ) -> Result<StreamResponse, StatusCode> {
     // This must work like that
     #[allow(clippy::cast_sign_loss)]
     let stream_connection_id = stream_connection_id as u64;
 
-    let shared_data = Arc::new(SharedData::default());
+    state
+        .stream_channels
+        .lock()
+        .unwrap()
+        .insert((id, StreamType::Video as u32), Arc::clone(&shared_data));
     let params = VideoParams {};
     let stream = state
         .config
@@ -462,7 +492,7 @@ async fn setup_video<A, V: VideoDevice, K>(
     VideoChannel::create(
         conn.bind_addr(),
         conn.remote_addr.ip(),
-        shared_data.clone(),
+        shared_data,
         stream,
         state.config.video.buf_size,
         EncryptionMaterial {
@@ -474,13 +504,6 @@ async fn setup_video<A, V: VideoDevice, K>(
         },
     )
     .await
-    .inspect(|_| {
-        state
-            .stream_channels
-            .lock()
-            .unwrap()
-            .insert((id, StreamType::Video as u32), shared_data);
-    })
     .map(|chan| StreamResponse::Video {
         id,
         local_data_port: chan.local_addr.port(),

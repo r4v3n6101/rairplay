@@ -22,6 +22,10 @@ impl Default for WakerFlag {
 }
 
 impl WakerFlag {
+    pub fn is_set(&self) -> bool {
+        self.flag.load(Ordering::Acquire)
+    }
+
     pub fn set_and_wake(&self) {
         self.flag.store(true, Ordering::Release);
         self.waker.wake();
@@ -33,11 +37,13 @@ impl Future for &WakerFlag {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if self.flag.load(Ordering::Acquire) {
+        if self.is_set() {
             return Poll::Ready(());
         }
+
         self.waker.register(cx.waker());
-        if self.flag.load(Ordering::Acquire) {
+
+        if self.is_set() {
             Poll::Ready(())
         } else {
             Poll::Pending
