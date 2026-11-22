@@ -21,20 +21,22 @@ impl Decoder for Rtsp2Http {
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if src.is_empty() {
+        let start = src.len() - src.trim_ascii_start().len();
+        let Some(newline) = src[start..].iter().position(|&byte| byte == b'\n') else {
             return Ok(None);
-        }
+        };
 
         let mut need_more = false;
         loop {
-            if let Some(pos) = src
+            let line = &src[..=start + newline];
+            if let Some(pos) = line
                 .windows(RTSP_VERSION_CRLF.len())
                 .position(|bytes| bytes == RTSP_VERSION_CRLF)
             {
                 // Replacing version with HTTP and trying to parse again
                 src[pos..pos + RTSP_VERSION_CRLF.len()].copy_from_slice(HTTP_VERSION_CRLF);
                 tracing::trace!("replaced version at {pos} position");
-            } else if let Some(pos) = src
+            } else if let Some(pos) = line
                 .windows(HTTP_VERSION_CRLF.len())
                 .position(|bytes| bytes == HTTP_VERSION_CRLF)
             {
@@ -54,16 +56,18 @@ impl Decoder for Rtsp2Http {
                     let content_len = request
                         .headers
                         .iter()
-                        .find_map(|header| {
-                            if header.name.eq_ignore_ascii_case("content-length") {
-                                std::str::from_utf8(header.value).ok()?.parse().ok()
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or(src.len() - len);
+                        .find(|header| header.name.eq_ignore_ascii_case("content-length"))
+                        .map_or(Ok(0), |header| {
+                            std::str::from_utf8(header.value)
+                                .ok()
+                                .filter(|s| !s.starts_with('+'))
+                                .and_then(|s| s.parse().ok())
+                                .ok_or(io::ErrorKind::InvalidData)
+                        })?;
+                    let frame_len = len
+                        .checked_add(content_len)
+                        .ok_or(io::ErrorKind::InvalidData)?;
                     if content_len > src.len() - len {
-                        src.reserve(content_len - (src.len() - len));
                         need_more = true;
                         continue;
                     }
@@ -71,7 +75,7 @@ impl Decoder for Rtsp2Http {
                     let path = request.path.unwrap();
 
                     // Should be enough to fulfill HTTP request and new header
-                    let mut output = BytesMut::with_capacity(src.len());
+                    let mut output = BytesMut::with_capacity(frame_len);
 
                     // Method
                     let method = request.method.unwrap();
@@ -111,6 +115,7 @@ impl Decoder for Rtsp2Http {
                     }
                     output.put_slice(CRLF);
 
+                    let src = src.split_to(frame_len);
                     // Body (i.e. remaining bytes after head of request)
                     output.put_slice(&src[len..]);
 
@@ -119,9 +124,6 @@ impl Decoder for Rtsp2Http {
                         output.len(),
                         src.len()
                     );
-
-                    // Empty the buffer, so the next frame can be pulled
-                    src.clear();
 
                     return Ok(Some(output));
                 }
@@ -202,6 +204,41 @@ mod tests {
     use tokio_util::{bytes::BytesMut, codec::Decoder};
 
     use super::Rtsp2Http;
+
+    #[test]
+    fn decode_partial_and_pipelined_requests() {
+        let post =
+            b"\r\nPOST / RTSP/1.0\r\nX: RTSP/1.0\r\ncontent-length: 12\r\n\r\n\0RTSP/1.0\r\n\xff";
+        let http =
+            b"POST / HTTP/1.1\r\nX: RTSP/1.0\r\ncontent-length: 12\r\n\r\n\0RTSP/1.0\r\n\xff";
+        let tail = b"GET / RTSP/1.0\r\n\r\nGET";
+        for split in 0..post.len() {
+            let mut src = BytesMut::from(&post[..split]);
+            assert!(Rtsp2Http.decode(&mut src).unwrap().is_none());
+            src.extend_from_slice(&post[split..]);
+            src.extend_from_slice(tail);
+            assert_eq!(Rtsp2Http.decode(&mut src).unwrap().unwrap(), &http[..]);
+            assert_eq!(&src[..], tail);
+            let get = Rtsp2Http.decode(&mut src).unwrap().unwrap();
+            assert_eq!(&get[..], b"GET / HTTP/1.1\r\n\r\n");
+            assert_eq!(&src[..], b"GET");
+        }
+    }
+
+    #[test]
+    fn decode_content_length() {
+        let max = usize::MAX.to_string();
+        for value in ["", "1x", "+1", &max, &format!("{max}0")] {
+            let request = format!("POST /feedback RTSP/1.0\r\nContent-Length: {value}\r\n\r\n");
+            let mut src = BytesMut::from(request.as_bytes());
+            let err = Rtsp2Http.decode(&mut src).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData, "{value:?}");
+        }
+
+        let mut src =
+            BytesMut::from("GET / RTSP/1.0\r\nContent-Length: 0\r\nContent-Length: 1\r\n\r\n");
+        assert!(Rtsp2Http.decode(&mut src).unwrap().is_some());
+    }
 
     #[test]
     fn decode_rtsp_setup_ipv4_and_ipv6() {
