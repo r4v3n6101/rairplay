@@ -1,15 +1,12 @@
 //! Playback abstraction used by decrypted audio and video streams.
 
-use std::{error::Error, future::Future, sync::Weak};
+use std::{error::Error, future::Future, io, sync::Weak};
 
 pub mod audio;
 pub mod null;
 pub mod video;
 
 /// Factory for creating per-session playback streams.
-///
-/// A device is long-lived. The crate calls [`Device::create`] whenever a new
-/// audio or video channel is negotiated.
 pub trait Device: Send + Sync + 'static {
     /// Parameters passed when a stream is created.
     type Params;
@@ -37,17 +34,24 @@ pub trait ChannelHandle: Send + Sync + 'static {
 }
 
 /// Sink for decrypted stream data.
-///
-/// A stream receives packet payloads through [`Stream::on_data`] and is then
-/// completed with either [`Stream::on_ok`] or [`Stream::on_err`].
 pub trait Stream: Send + Sync + 'static {
     /// Packet type delivered to this stream.
     type Content;
 
     /// Delivers one decrypted packet.
     fn on_data(&self, content: Self::Content);
-    /// Signals clean stream termination.
-    fn on_ok(self);
-    /// Signals stream termination due to an error.
-    fn on_err(self, err: Box<dyn Error>);
+
+    /// Reports why the channel ended and consumes the stream.
+    fn on_end(self, reason: EndReason);
+}
+
+/// Why a playback stream ended.
+#[derive(Debug)]
+pub enum EndReason {
+    /// The transport finished, including a peer EOF, reset, or abort.
+    Finished,
+    /// The receiver closed the channel or cancelled its setup.
+    Cancelled,
+    /// Accepting a media connection or processing the stream failed.
+    Transport(io::Error),
 }

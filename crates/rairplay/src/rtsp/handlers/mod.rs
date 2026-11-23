@@ -27,8 +27,8 @@ use crate::{
         video::{VideoDevice, VideoParams},
     },
     streaming::{
-        AudioBufferedChannel, AudioRealtimeChannel, EncryptionMaterial, EventChannel, SharedData,
-        VideoChannel,
+        AudioBufferedChannel, AudioRealtimeChannel, ChannelSetup, EncryptionMaterial, EventChannel,
+        SharedData, VideoChannel,
     },
     transport::Connection,
 };
@@ -241,15 +241,16 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice, K>(
         let channel = Arc::new(SharedData::default());
         pending.push(Arc::downgrade(&channel));
 
+        let shared_data = Arc::clone(&channel);
         let result = match stream {
+            StreamRequest::Video(request) => {
+                setup_video(state, conn, request, id, shared_data).await
+            }
             StreamRequest::AudioBuffered(request) => {
-                setup_buffered_audio(state, conn, request, id, Arc::clone(&channel)).await
+                setup_buffered_audio(state, conn, request, id, shared_data).await
             }
             StreamRequest::AudioRealtime(request) => {
-                setup_realtime_audio(state, conn, request, id, Arc::clone(&channel)).await
-            }
-            StreamRequest::Video(request) => {
-                setup_video(state, conn, request, id, Arc::clone(&channel)).await
+                setup_realtime_audio(state, conn, request, id, shared_data).await
             }
         }?;
 
@@ -261,6 +262,7 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice, K>(
         responses.push(result);
     }
 
+    // In case one of stream is up and other(s) ain't
     if pending.iter().any(|channel| {
         channel
             .upgrade()
@@ -275,186 +277,6 @@ async fn setup_streams<A: AudioDevice, V: VideoDevice, K>(
 }
 
 #[tracing::instrument(level = "DEBUG", ret, err, skip(state, shared_data))]
-async fn setup_buffered_audio<A: AudioDevice, V, K>(
-    state: &ServiceState<A, V, K>,
-    conn: &Connection,
-    AudioRequest {
-        audio_format,
-        audio_format_index,
-        samples_per_frame,
-        stream_connection_id,
-        shared_key,
-        ..
-    }: AudioRequest,
-    id: u64,
-    shared_data: Arc<SharedData>,
-) -> Result<StreamResponse, StatusCode> {
-    // This must work like that
-    #[allow(clippy::cast_sign_loss)]
-    let stream_connection_id = stream_connection_id.map(|x| x as u64);
-
-    let chacha_key = shared_key
-        .map(|shk| {
-            ChaCha20Poly1305Key::try_from(shk.as_ref())
-                .inspect_err(|_| {
-                    tracing::error!(
-                        len = shk.len(),
-                        "insufficient length of key for buffered audio's decryption"
-                    );
-                })
-                .map_err(|_| StatusCode::BAD_REQUEST)
-        })
-        .transpose()?;
-
-    let Some(codec) = AUDIO_FORMATS
-        .get(audio_format_index.map_or_else(|| audio_format.trailing_zeros() as usize, usize::from))
-        .copied()
-    else {
-        tracing::error!(
-            %audio_format,
-            ?audio_format_index,
-            "unknown audio codec"
-        );
-        return Err(StatusCode::BAD_REQUEST);
-    };
-    tracing::debug!(?codec, "codec parsed");
-
-    state.stream_channels.lock().unwrap().insert(
-        (id, StreamType::AudioBuffered as u32),
-        Arc::clone(&shared_data),
-    );
-    let params = AudioParams {
-        samples_per_frame,
-        codec,
-    };
-    let stream = state
-        .config
-        .audio
-        .device
-        .create(
-            id,
-            params,
-            Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
-        )
-        .await
-        .inspect(|_| tracing::trace!("new stream opened"))
-        .inspect_err(|err| tracing::error!(%err, ?params, "stream couldn't be created"))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    AudioBufferedChannel::create(
-        conn.bind_addr(),
-        conn.remote_addr.ip(),
-        shared_data,
-        stream,
-        state.config.audio.buf_size,
-        EncryptionMaterial {
-            chacha_key,
-            stream_connection_id,
-            aeskey: state.ekey.read(),
-            aesiv: state.eiv.read(),
-            session_key: conn.session_key.read(),
-        },
-    )
-    .await
-    .map(|chan| StreamResponse::AudioBuffered {
-        id,
-        local_data_port: chan.local_addr.port(),
-        audio_buffer_size: chan.audio_buf_size,
-    })
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-}
-
-#[tracing::instrument(level = "DEBUG", ret, err, skip(state, shared_data))]
-async fn setup_realtime_audio<A: AudioDevice, V, K>(
-    state: &ServiceState<A, V, K>,
-    conn: &Connection,
-    AudioRequest {
-        audio_format,
-        audio_format_index,
-        samples_per_frame,
-        stream_connection_id,
-        shared_key,
-        ..
-    }: AudioRequest,
-    id: u64,
-    shared_data: Arc<SharedData>,
-) -> Result<StreamResponse, StatusCode> {
-    // This must work like that
-    #[allow(clippy::cast_sign_loss)]
-    let stream_connection_id = stream_connection_id.map(|x| x as u64);
-
-    let chacha_key = shared_key
-        .map(|shk| {
-            ChaCha20Poly1305Key::try_from(shk.as_ref())
-                .inspect_err(|_| {
-                    tracing::error!(
-                        len = shk.len(),
-                        "insufficient length of key for buffered audio's decryption"
-                    );
-                })
-                .map_err(|_| StatusCode::BAD_REQUEST)
-        })
-        .transpose()?;
-
-    let Some(codec) = AUDIO_FORMATS
-        .get(audio_format_index.map_or_else(|| audio_format.trailing_zeros() as usize, usize::from))
-        .copied()
-    else {
-        tracing::error!(
-            %audio_format,
-            ?audio_format_index,
-            "unknown audio codec"
-        );
-        return Err(StatusCode::BAD_REQUEST);
-    };
-    tracing::debug!(?codec, "codec parsed");
-
-    state.stream_channels.lock().unwrap().insert(
-        (id, StreamType::AudioRealtime as u32),
-        Arc::clone(&shared_data),
-    );
-    let params = AudioParams {
-        samples_per_frame,
-        codec,
-    };
-    let stream = state
-        .config
-        .audio
-        .device
-        .create(
-            id,
-            params,
-            Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
-        )
-        .await
-        .inspect(|_| tracing::trace!("new stream opened"))
-        .inspect_err(|err| tracing::error!(%err, ?params, "stream couldn't be created"))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    AudioRealtimeChannel::create(
-        conn.bind_addr(),
-        conn.remote_addr.ip(),
-        shared_data,
-        stream,
-        state.config.audio.buf_size,
-        EncryptionMaterial {
-            chacha_key,
-            stream_connection_id,
-            aeskey: state.ekey.read(),
-            aesiv: state.eiv.read(),
-            session_key: conn.session_key.read(),
-        },
-    )
-    .await
-    .map(|chan| StreamResponse::AudioRealtime {
-        id,
-        local_data_port: chan.local_data_addr.port(),
-        local_control_port: chan.local_control_addr.port(),
-    })
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-}
-
-#[tracing::instrument(level = "DEBUG", ret, err, skip(state, shared_data))]
 async fn setup_video<A, V: VideoDevice, K>(
     state: &ServiceState<A, V, K>,
     conn: &Connection,
@@ -465,48 +287,153 @@ async fn setup_video<A, V: VideoDevice, K>(
     id: u64,
     shared_data: Arc<SharedData>,
 ) -> Result<StreamResponse, StatusCode> {
-    // This must work like that
-    #[allow(clippy::cast_sign_loss)]
-    let stream_connection_id = stream_connection_id as u64;
-
     state
         .stream_channels
         .lock()
         .unwrap()
         .insert((id, StreamType::Video as u32), Arc::clone(&shared_data));
-    let params = VideoParams {};
-    let stream = state
-        .config
-        .video
-        .device
-        .create(
-            id,
-            VideoParams {},
-            Arc::downgrade(&shared_data) as Weak<dyn ChannelHandle>,
-        )
-        .await
-        .inspect(|_| tracing::trace!("new stream opened"))
-        .inspect_err(|err| tracing::error!(%err, ?params, "stream couldn't be created"))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    VideoChannel::create(
-        conn.bind_addr(),
-        conn.remote_addr.ip(),
-        shared_data,
-        stream,
-        state.config.video.buf_size,
-        EncryptionMaterial {
-            chacha_key: None,
-            aeskey: state.ekey.read(),
-            aesiv: state.eiv.read(),
-            session_key: conn.session_key.read(),
-            stream_connection_id: Some(stream_connection_id),
-        },
-    )
-    .await
-    .map(|chan| StreamResponse::Video {
+    let channel = ChannelSetup {
         id,
-        local_data_port: chan.local_addr.port(),
-    })
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+        bind_addr: conn.bind_addr(),
+        expected_remote_addr: conn.remote_addr.ip(),
+        shared_data,
+        device: &state.config.video.device,
+    };
+    let keys = EncryptionMaterial {
+        stream_connection_id: Some(stream_connection_id.cast_unsigned()),
+        chacha_key: None,
+        aeskey: state.ekey.read(),
+        aesiv: state.eiv.read(),
+        session_key: conn.session_key.read(),
+    };
+
+    VideoChannel::create(channel, VideoParams {}, state.config.video.buf_size, keys)
+        .await
+        .map(|chan| StreamResponse::Video {
+            id,
+            local_data_port: chan.local_addr.port(),
+        })
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+#[tracing::instrument(level = "DEBUG", ret, err, skip(state, shared_data))]
+async fn setup_buffered_audio<A: AudioDevice, V, K>(
+    state: &ServiceState<A, V, K>,
+    conn: &Connection,
+    request: AudioRequest,
+    id: u64,
+    shared_data: Arc<SharedData>,
+) -> Result<StreamResponse, StatusCode> {
+    let (channel, params, keys) = prepare_audio(
+        state,
+        conn,
+        id,
+        shared_data,
+        StreamType::AudioBuffered,
+        request,
+    )?;
+
+    AudioBufferedChannel::create(channel, params, state.config.audio.buf_size, keys)
+        .await
+        .map(|chan| StreamResponse::AudioBuffered {
+            id,
+            local_data_port: chan.local_addr.port(),
+            audio_buffer_size: chan.audio_buf_size,
+        })
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+#[tracing::instrument(level = "DEBUG", ret, err, skip(state, shared_data))]
+async fn setup_realtime_audio<A: AudioDevice, V, K>(
+    state: &ServiceState<A, V, K>,
+    conn: &Connection,
+    request: AudioRequest,
+    id: u64,
+    shared_data: Arc<SharedData>,
+) -> Result<StreamResponse, StatusCode> {
+    let (channel, params, keys) = prepare_audio(
+        state,
+        conn,
+        id,
+        shared_data,
+        StreamType::AudioRealtime,
+        request,
+    )?;
+
+    AudioRealtimeChannel::create(channel, params, state.config.audio.buf_size, keys)
+        .await
+        .map(|chan| StreamResponse::AudioRealtime {
+            id,
+            local_data_port: chan.local_data_addr.port(),
+            local_control_port: chan.local_control_addr.port(),
+        })
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+#[inline]
+fn prepare_audio<'a, A, V, K>(
+    state: &'a ServiceState<A, V, K>,
+    conn: &Connection,
+    id: u64,
+    shared_data: Arc<SharedData>,
+    ty: StreamType,
+    AudioRequest {
+        audio_format,
+        audio_format_index,
+        samples_per_frame,
+        stream_connection_id,
+        shared_key,
+        ..
+    }: AudioRequest,
+) -> Result<(ChannelSetup<'a, A>, AudioParams, EncryptionMaterial), StatusCode> {
+    let chacha_key = shared_key
+        .map(|shk| {
+            ChaCha20Poly1305Key::try_from(shk.as_ref())
+                .inspect_err(|_| {
+                    tracing::error!(len = shk.len(), "invalid audio shared key length");
+                })
+                .map_err(|_| StatusCode::BAD_REQUEST)
+        })
+        .transpose()?;
+
+    let Some(codec) = AUDIO_FORMATS
+        .get(audio_format_index.map_or_else(|| audio_format.trailing_zeros() as usize, usize::from))
+        .copied()
+    else {
+        tracing::error!(
+            %audio_format,
+            ?audio_format_index,
+            "unknown audio codec"
+        );
+        return Err(StatusCode::BAD_REQUEST);
+    };
+    tracing::debug!(?codec, "codec parsed");
+
+    state
+        .stream_channels
+        .lock()
+        .unwrap()
+        .insert((id, ty as u32), Arc::clone(&shared_data));
+
+    let channel = ChannelSetup {
+        id,
+        bind_addr: conn.bind_addr(),
+        expected_remote_addr: conn.remote_addr.ip(),
+        shared_data,
+        device: &state.config.audio.device,
+    };
+    let params = AudioParams {
+        samples_per_frame,
+        codec,
+    };
+    let keys = EncryptionMaterial {
+        stream_connection_id: stream_connection_id.map(i64::cast_unsigned),
+        chacha_key,
+        aeskey: state.ekey.read(),
+        aesiv: state.eiv.read(),
+        session_key: conn.session_key.read(),
+    };
+
+    Ok((channel, params, keys))
 }

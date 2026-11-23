@@ -1,9 +1,7 @@
-use std::{
-    convert::Infallible, error::Error, fmt, future::Future, marker::PhantomData, sync::Weak,
-};
+use std::{convert::Infallible, fmt, future::Future, marker::PhantomData, sync::Weak};
 
 use super::{
-    ChannelHandle, Device, Stream,
+    ChannelHandle, Device, EndReason, Stream,
     audio::{AudioDevice, AudioPacket, AudioParams},
     video::{VideoDevice, VideoPacket, VideoParams},
 };
@@ -67,11 +65,13 @@ where
         tracing::trace!(?content, "stream feed with content");
     }
 
-    fn on_ok(self) {
-        tracing::info!("null stream finished successfully");
-    }
-
-    fn on_err(self, err: Box<dyn Error>) {
-        tracing::error!(%err, "null stream finished with an error");
+    fn on_end(self, reason: EndReason) {
+        match reason {
+            EndReason::Finished => tracing::info!("null stream finished successfully"),
+            EndReason::Cancelled => tracing::info!("null stream cancelled"),
+            EndReason::Transport(err) => {
+                tracing::error!(%err, "null stream finished with an error")
+            }
+        }
     }
 }
