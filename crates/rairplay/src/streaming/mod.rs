@@ -6,6 +6,7 @@ use std::{
 };
 
 use derivative::Derivative;
+use futures::TryFutureExt;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
 use crate::{
@@ -120,7 +121,9 @@ impl AudioBufferedChannel {
 
         tokio::spawn(async move {
             let task = async {
-                let tcp_stream = accept_from(&listener, channel.expected_remote_addr).await?;
+                let tcp_stream = accept_from(&listener, channel.expected_remote_addr)
+                    .await
+                    .map_err(EndReason::Transport)?;
                 processing::audio_buffered_processor(
                     tcp_stream,
                     &stream,
@@ -133,7 +136,7 @@ impl AudioBufferedChannel {
             let reason = tokio::select! {
                 biased;
                 () = &channel.shared_data.waker_flag => EndReason::Cancelled,
-                res = task => transport_end_reason(res),
+                res = task => end_reason(res),
             };
             stream.on_end(reason);
         });
@@ -179,7 +182,8 @@ impl AudioRealtimeChannel {
                     encryption,
                 );
                 let control =
-                    processing::control_processor(channel.expected_remote_addr, control_socket);
+                    processing::control_processor(channel.expected_remote_addr, control_socket)
+                        .map_err(EndReason::Transport);
 
                 tokio::try_join!(data, control)?;
 
@@ -189,7 +193,7 @@ impl AudioRealtimeChannel {
             let reason = tokio::select! {
                 biased;
                 () = &channel.shared_data.waker_flag => EndReason::Cancelled,
-                res = task => transport_end_reason(res),
+                res = task => end_reason(res),
             };
             stream.on_end(reason);
         });
@@ -221,14 +225,16 @@ impl VideoChannel {
 
         tokio::spawn(async move {
             let task = async {
-                let tcp_stream = accept_from(&listener, channel.expected_remote_addr).await?;
+                let tcp_stream = accept_from(&listener, channel.expected_remote_addr)
+                    .await
+                    .map_err(EndReason::Transport)?;
                 processing::video_processor(tcp_stream, &stream, video_buf_size, encryption).await
             };
 
             let reason = tokio::select! {
                 biased;
                 () = &channel.shared_data.waker_flag => EndReason::Cancelled,
-                res = task => transport_end_reason(res),
+                res = task => end_reason(res),
             };
             stream.on_end(reason);
         });
@@ -265,10 +271,10 @@ async fn accept_from(
     }
 }
 
-fn transport_end_reason(res: io::Result<()>) -> EndReason {
+fn end_reason<E>(res: Result<(), EndReason<E>>) -> EndReason<E> {
     match res {
         Ok(()) => EndReason::Finished,
-        Err(err)
+        Err(EndReason::Transport(err))
             if matches!(
                 err.kind(),
                 io::ErrorKind::UnexpectedEof
@@ -278,6 +284,6 @@ fn transport_end_reason(res: io::Result<()>) -> EndReason {
         {
             EndReason::Finished
         }
-        Err(err) => EndReason::Transport(err),
+        Err(reason) => reason,
     }
 }

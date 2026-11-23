@@ -91,7 +91,7 @@ The null devices are useful for bring-up and protocol testing because they accep
 
 - `playback::audio::AudioDevice` creates per-stream audio sinks and exposes volume control
 - `playback::video::VideoDevice` creates per-stream video sinks
-- `playback::Stream` receives decrypted packets through `on_data`. When the stream ends, the receiver calls `on_end` once with the reason.
+- `playback::Stream` receives decrypted packets through `on_data`. The receiver calls `on_end` once when the stream ends. Returning `Err(error)` from `on_data` ends that stream with `EndReason::Backend(error)`.
 
 That design keeps the crate transport- and protocol-focused. It is a good fit if you want to wire AirPlay into an existing media pipeline, custom player, transcoder, or embedded device.
 

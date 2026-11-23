@@ -60,18 +60,21 @@ where
     C: fmt::Debug + 'static,
 {
     type Content = C;
+    type Error = Infallible;
 
-    fn on_data(&self, content: Self::Content) {
+    fn on_data(&self, content: Self::Content) -> Result<(), Self::Error> {
         tracing::trace!(?content, "stream feed with content");
+        Ok(())
     }
 
-    fn on_end(self, reason: EndReason) {
+    fn on_end(self, reason: EndReason<Self::Error>) {
         match reason {
             EndReason::Finished => tracing::info!("null stream finished successfully"),
             EndReason::Cancelled => tracing::info!("null stream cancelled"),
             EndReason::Transport(err) => {
                 tracing::error!(%err, "null stream finished with an error")
             }
+            EndReason::Backend(err) => match err {},
         }
     }
 }

@@ -12,6 +12,7 @@ use crate::{
     crypto::{AesIv128, AesKey128, ChaCha20Poly1305Key},
     pairing::SessionKey,
     playback::{
+        EndReason,
         audio::{AudioPacket, AudioStream},
         video::{PacketKind, VideoPacket, VideoStream},
     },
@@ -77,12 +78,12 @@ pub async fn event_processor(listener: TcpListener) {
 }
 
 #[tracing::instrument(level = "DEBUG", skip(stream))]
-pub async fn audio_buffered_processor(
+pub async fn audio_buffered_processor<S: AudioStream>(
     mut tcp_stream: TcpStream,
-    stream: &impl AudioStream,
+    stream: &S,
     audio_buf_size: u32,
     encryption: Encryption,
-) -> io::Result<()> {
+) -> Result<(), EndReason<S::Error>> {
     const TRAILER_LEN: usize = 24;
 
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
@@ -90,16 +91,21 @@ pub async fn audio_buffered_processor(
 
     loop {
         async {
-            let pkt_len = tcp_stream.read_u16().await?;
+            let pkt_len = tcp_stream.read_u16().await.map_err(EndReason::Transport)?;
             // 2 is pkt_len field size itself
             let pkt_len: usize = pkt_len.saturating_sub(2).into();
 
             if pkt_len < AudioPacket::HEADER_LEN + TRAILER_LEN {
-                return Err(io::Error::other("malformed buffered stream"));
+                return Err(EndReason::Transport(io::Error::other(
+                    "malformed buffered stream",
+                )));
             }
 
             let mut rtp = audio_buf.allocate_buf(pkt_len);
-            tcp_stream.read_exact(&mut rtp).await?;
+            tcp_stream
+                .read_exact(&mut rtp)
+                .await
+                .map_err(EndReason::Transport)?;
             tracing::trace!(%pkt_len, "packet read");
 
             if cipher.decrypt(&mut rtp).is_ok() {
@@ -108,7 +114,9 @@ pub async fn audio_buffered_processor(
                 tracing::warn!("packet decryption failed");
             }
 
-            stream.on_data(AudioPacket { rtp });
+            stream
+                .on_data(AudioPacket { rtp })
+                .map_err(EndReason::Backend)?;
             tokio::task::consume_budget().await;
 
             Ok(())
@@ -119,20 +127,23 @@ pub async fn audio_buffered_processor(
 }
 
 #[tracing::instrument(level = "DEBUG", skip(stream))]
-pub async fn audio_realtime_processor(
+pub async fn audio_realtime_processor<S: AudioStream>(
     expected_remote_addr: IpAddr,
     socket: UdpSocket,
-    stream: &impl AudioStream,
+    stream: &S,
     audio_buf_size: u32,
     encryption: Encryption,
-) -> io::Result<()> {
+) -> Result<(), EndReason<S::Error>> {
     let mut pkt_buf = [0u8; 16 * 1024];
     let mut audio_buf = memory::BytesHunk::new(audio_buf_size as usize);
     let cipher = build_audio_cipher(&encryption);
 
     loop {
         async {
-            let (pkt_len, remote_addr) = socket.recv_from(&mut pkt_buf).await?;
+            let (pkt_len, remote_addr) = socket
+                .recv_from(&mut pkt_buf)
+                .await
+                .map_err(EndReason::Transport)?;
 
             // Filter out unexpected addresses
             if expected_remote_addr == remote_addr.ip() {
@@ -149,14 +160,16 @@ pub async fn audio_realtime_processor(
                         tracing::warn!("packet decryption failed");
                     }
 
-                    stream.on_data(AudioPacket { rtp });
+                    stream
+                        .on_data(AudioPacket { rtp })
+                        .map_err(EndReason::Backend)?;
                     tokio::task::consume_budget().await;
                 }
             } else {
                 tracing::debug!(%remote_addr, "skip invalid connection");
             }
 
-            io::Result::Ok(())
+            Ok(())
         }
         .instrument(tracing::debug_span!("packet.realtime"))
         .await?;
@@ -174,19 +187,22 @@ pub async fn control_processor(_expected_remote_addr: IpAddr, socket: UdpSocket)
 }
 
 #[tracing::instrument(level = "DEBUG", skip(stream))]
-pub async fn video_processor(
+pub async fn video_processor<S: VideoStream>(
     mut tcp_stream: TcpStream,
-    stream: &impl VideoStream,
+    stream: &S,
     video_buf_size: u32,
     encryption: Encryption,
-) -> io::Result<()> {
+) -> Result<(), EndReason<S::Error>> {
     let mut video_buf = memory::BytesHunk::new(video_buf_size as usize);
     let mut cipher = build_video_cipher(&encryption);
 
     loop {
         async {
             let mut header = [0u8; _];
-            tcp_stream.read_exact(&mut header).await?;
+            tcp_stream
+                .read_exact(&mut header)
+                .await
+                .map_err(EndReason::Transport)?;
 
             let mut ptr = &header[..];
             let payload_len = ptr.get_u32_le();
@@ -195,7 +211,10 @@ pub async fn video_processor(
             let timestamp = ptr.get_u64_le();
 
             let mut payload = video_buf.allocate_buf(payload_len as usize);
-            tcp_stream.read_exact(&mut payload).await?;
+            tcp_stream
+                .read_exact(&mut payload)
+                .await
+                .map_err(EndReason::Transport)?;
 
             let kind = match packet_type {
                 1 => {
@@ -227,10 +246,10 @@ pub async fn video_processor(
                 }
             }
 
-            stream.on_data(pkt);
+            stream.on_data(pkt).map_err(EndReason::Backend)?;
             tokio::task::consume_budget().await;
 
-            io::Result::Ok(())
+            Ok(())
         }
         .instrument(tracing::debug_span!("packet.video"))
         .await?;

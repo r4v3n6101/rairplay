@@ -37,21 +37,30 @@ pub trait ChannelHandle: Send + Sync + 'static {
 pub trait Stream: Send + Sync + 'static {
     /// Packet type delivered to this stream.
     type Content;
+    /// Error returned if packet delivery fails.
+    type Error: Error + Send + Sync + 'static;
 
-    /// Delivers one decrypted packet.
-    fn on_data(&self, content: Self::Content);
+    /// Delivers one packet.
+    ///
+    /// Runs on the network task and should return promptly.
+    /// The backend may queue or drop the packet and return [`Ok(())`](Result::Ok).
+    ///
+    /// An error ends this stream.
+    fn on_data(&self, content: Self::Content) -> Result<(), Self::Error>;
 
     /// Reports why the channel ended and consumes the stream.
-    fn on_end(self, reason: EndReason);
+    fn on_end(self, reason: EndReason<Self::Error>);
 }
 
 /// Why a playback stream ended.
 #[derive(Debug)]
-pub enum EndReason {
+pub enum EndReason<E> {
     /// The transport finished, including a peer EOF, reset, or abort.
     Finished,
     /// The receiver closed the channel or cancelled its setup.
     Cancelled,
     /// Accepting a media connection or processing the stream failed.
     Transport(io::Error),
+    /// [`Stream::on_data`] returned an error.
+    Backend(E),
 }
